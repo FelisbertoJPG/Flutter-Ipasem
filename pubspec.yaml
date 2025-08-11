@@ -1,0 +1,44 @@
+name: ipasem_dart_project
+description: "Ipasem App Multi Plataform"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path_ios: assets/images/icons/appicon_ios_1024.png
+  adaptive_icon_foreground: assets/images/icons/appicon_foreground.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_monochrome: assets/images/icons/appicon_monochrome.png
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/images/icons/splash_logo.png
+  android: true
+  ios: true
+  web: true
+  android_12:
+    color: "#FFFFFF"
+    image: assets/images/icons/splash_logo_android12.png
