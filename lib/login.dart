@@ -1,6 +1,7 @@
 // lib/login.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
@@ -17,17 +18,16 @@ class LoginPage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextField(
-              decoration: const InputDecoration(labelText: 'Usuário'),
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(11),
+              ],
+              decoration: const InputDecoration(labelText: 'Insira seu CPF'),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: const InputDecoration(labelText: 'Senha'),
-              obscureText: true,
-            ),
-            const SizedBox(height: 24),
             ElevatedButton(
               onPressed: () {
-                // Aqui vai a lógica de login
+                //logica do login aqui
               },
               child: const Text('Entrar'),
             ),

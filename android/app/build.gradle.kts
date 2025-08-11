@@ -9,6 +9,8 @@ android {
     namespace = "com.ipapp.ipasem_dart_project"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+    //ndkVersion = "27.0.12077973"
+
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
