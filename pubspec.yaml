@@ -16,7 +16,7 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
-  flutter_native_splash: ^2.4.0
+  flutter_native_splash: ^2.4.6
 
 flutter:
   uses-material-design: true
@@ -25,9 +25,10 @@ flutter:
 
 
 flutter_launcher_icons:
-  android: true
+  android: "launcher_icon"
   ios: true
   image_path_ios: assets/images/icons/appicon_ios_1024.png
+  image_path_android: assets/images/icons/appicon_foreground.png
   adaptive_icon_foreground: assets/images/icons/appicon_foreground.png
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_monochrome: assets/images/icons/appicon_monochrome.png
