@@ -10,6 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  webview_flutter:
+  url_launcher:
+  open_filex:
+  path_provider:
+
 
 dev_dependencies:
   flutter_test:
@@ -21,7 +26,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
+    - assets/
+    - assets/images/icons/
 
 
 flutter_launcher_icons:

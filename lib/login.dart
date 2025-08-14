@@ -1,12 +1,20 @@
 // lib/login.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'webview_screen.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
 
   static const Color _brandBlue = Color(0xFF143C8D);
   static const Color _accentPurple = Color(0xFF6A37B8);
+
+  // URLs do assistweb
+  static const String _loginUrl =
+      'https://assistweb.ipasemnh.com.br/site/login';
+  static const String _primeiroAcessoUrl =
+      'https://assistweb.ipasemnh.com.br/site/recuperar-senha';
 
   @override
   Widget build(BuildContext context) {
@@ -20,18 +28,17 @@ class LoginPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Logo topo-esquerda
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Image.asset(
-                    'assets/images/icons/splash_logo.png', // icone png
-                    height: 44,
+                    'assets/images/icons/logo_ipasem.png',
+                    height: 72,
                     fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                // Label "Insira seu CPF"
                 Text(
                   'Insira seu CPF',
                   style: const TextStyle(
@@ -41,7 +48,6 @@ class LoginPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
 
-                // Campo CPF
                 TextField(
                   keyboardType: TextInputType.number,
                   inputFormatters: [
@@ -59,19 +65,27 @@ class LoginPage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: _brandBlue, width: 2.5),
+                      borderSide:
+                      const BorderSide(color: _brandBlue, width: 2.5),
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                // Botão Entrar
                 SizedBox(
                   height: 50,
                   child: ElevatedButton(
                     onPressed: () {
-                      // TODO: lógica do login
+                      // Abre o login do assistweb em uma WebView
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const WebViewScreen(
+                            url: 'https://assistweb.ipasemnh.com.br/site/login',
+                            title: 'Login',
+                          ),
+                        ),
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _brandBlue,
@@ -83,6 +97,7 @@ class LoginPage extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.1,
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -90,22 +105,28 @@ class LoginPage extends StatelessWidget {
 
                 const SizedBox(height: 24),
 
-                // Link "Primeiro Acesso? Clique Aqui!!"
                 Center(
                   child: TextButton(
                     onPressed: () {
-                      // TODO: navegar para primeiro acesso
+                      // Abre "Primeiro Acesso / Recuperar Senha" em WebView
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const WebViewScreen(
+                            url: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
+                            title: 'Primeiro Acesso',
+                          )
+                        ),
+                      );
                     },
                     child: const Text(
                       'Primeiro Acesso? Clique Aqui!!',
                       style: TextStyle(fontWeight: FontWeight.w600),
-                    ).copyWith(color: _accentPurple),
+                    ),
                   ),
                 ),
 
                 const SizedBox(height: 8),
 
-                // "Duvidas ?"
                 Center(
                   child: Text(
                     'Duvidas ?',
@@ -116,7 +137,6 @@ class LoginPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
 
-                // Cartões de ação
                 Row(
                   children: [
                     Expanded(
@@ -125,8 +145,16 @@ class LoginPage extends StatelessWidget {
                         label: 'Enviar E-mail',
                         iconColor: _brandBlue,
                         labelColor: _accentPurple,
-                        onTap: () {
-                          // TODO: ação de e-mail
+                        onTap: () async {
+                          // Troque pelo e-mail oficial
+                          final uri = Uri(
+                            scheme: 'mailto',
+                            path: 'atendimento@ipasemnh.com.br',
+                            query:
+                            'subject=Atendimento%20IPASEM&body=Olá,%20preciso%20de%20ajuda%20no%20app.',
+                          );
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
                         },
                       ),
                     ),
@@ -137,8 +165,11 @@ class LoginPage extends StatelessWidget {
                         label: 'Ligar',
                         iconColor: _brandBlue,
                         labelColor: _accentPurple,
-                        onTap: () {
-                          // TODO: ação de telefonar
+                        onTap: () async {
+                          // Troque pelo telefone oficial
+                          final uri = Uri.parse('tel:+5551999999999');
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
                         },
                       ),
                     ),
@@ -198,4 +229,3 @@ class _ActionCard extends StatelessWidget {
     );
   }
 }
-
