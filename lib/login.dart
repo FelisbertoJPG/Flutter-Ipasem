@@ -1,21 +1,65 @@
 // lib/login.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'webview_screen.dart';
 
-class LoginPage extends StatelessWidget {
+class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
   static const Color _brandBlue = Color(0xFF143C8D);
   static const Color _accentPurple = Color(0xFF6A37B8);
 
   // URLs do assistweb
-  static const String _loginUrl =
-      'https://assistweb.ipasemnh.com.br/site/login';
-  static const String _primeiroAcessoUrl =
-      'https://assistweb.ipasemnh.com.br/site/recuperar-senha';
+  static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
+  static const String _primeiroAcessoUrl = 'https://assistweb.ipasemnh.com.br/site/recuperar-senha';
 
+  static const String _prefsKeyCpf = 'saved_cpf';
+
+  final TextEditingController _cpfController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCpf();
+  }
+
+  Future<void> _loadSavedCpf() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_prefsKeyCpf) ?? '';
+    if (saved.isNotEmpty) {
+      _cpfController.text = saved;
+      setState(() {});
+    }
+  }
+
+  Future<void> _saveCpf() async {
+    final prefs = await SharedPreferences.getInstance();
+    final digits = _cpfController.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.isNotEmpty) {
+      await prefs.setString(_prefsKeyCpf, digits);
+    }
+  }
+  // Envia o CPF pra proxima view
+  void _openWeb(String url, String title) async {
+    await _saveCpf(); // salva ao navegar
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WebViewScreen(
+          url: 'https://assistweb.ipasemnh.com.br/site/login',
+          title: 'Portal',
+          initialCpf: _cpfController.text.replaceAll(RegExp(r'\D'), ''), // só dígitos
+        ),
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -41,14 +85,13 @@ class LoginPage extends StatelessWidget {
 
                 Text(
                   'Insira seu CPF',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ).copyWith(color: _brandBlue),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)
+                      .copyWith(color: _brandBlue),
                 ),
                 const SizedBox(height: 8),
 
                 TextField(
+                  controller: _cpfController,
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
@@ -56,37 +99,24 @@ class LoginPage extends StatelessWidget {
                   ],
                   decoration: InputDecoration(
                     hintText: '000.000.000-00',
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     enabledBorder: OutlineInputBorder(
                       borderSide: const BorderSide(color: _brandBlue, width: 2),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderSide:
-                      const BorderSide(color: _brandBlue, width: 2.5),
+                      borderSide: const BorderSide(color: _brandBlue, width: 2.5),
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 20),
 
                 SizedBox(
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: () {
-                      // Abre o login do assistweb em uma WebView
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const WebViewScreen(
-                            url: 'https://assistweb.ipasemnh.com.br/site/login',
-                            title: 'Login',
-                          ),
-                        ),
-                      );
-                    },
+                    onPressed: () => _openWeb(_loginUrl, 'Login'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _brandBlue,
                       shape: const StadiumBorder(),
@@ -107,17 +137,7 @@ class LoginPage extends StatelessWidget {
 
                 Center(
                   child: TextButton(
-                    onPressed: () {
-                      // Abre "Primeiro Acesso / Recuperar Senha" em WebView
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const WebViewScreen(
-                            url: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
-                            title: 'Primeiro Acesso',
-                          )
-                        ),
-                      );
-                    },
+                    onPressed: () => _openWeb(_primeiroAcessoUrl, 'Primeiro Acesso'),
                     child: const Text(
                       'Primeiro Acesso? Clique Aqui!!',
                       style: TextStyle(fontWeight: FontWeight.w600),
@@ -130,9 +150,8 @@ class LoginPage extends StatelessWidget {
                 Center(
                   child: Text(
                     'Duvidas ?',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                    ).copyWith(color: _accentPurple),
+                    style: const TextStyle(fontWeight: FontWeight.w600)
+                        .copyWith(color: _accentPurple),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -146,15 +165,12 @@ class LoginPage extends StatelessWidget {
                         iconColor: _brandBlue,
                         labelColor: _accentPurple,
                         onTap: () async {
-                          // Troque pelo e-mail oficial
                           final uri = Uri(
                             scheme: 'mailto',
-                            path: 'atendimento@ipasemnh.com.br',
-                            query:
-                            'subject=Atendimento%20IPASEM&body=Olá,%20preciso%20de%20ajuda%20no%20app.',
+                            path: 'contato@ipasemnh.com.br',
+                            query: 'subject=Atendimento%20IPASEM&body=Olá,%20preciso%20de%20ajuda%20no%20app.',
                           );
-                          await launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
                         },
                       ),
                     ),
@@ -166,10 +182,8 @@ class LoginPage extends StatelessWidget {
                         iconColor: _brandBlue,
                         labelColor: _accentPurple,
                         onTap: () async {
-                          // Troque pelo telefone oficial
-                          final uri = Uri.parse('tel:+5551999999999');
-                          await launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
+                          final uri = Uri.parse('tel:+5551359491629');
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
                         },
                       ),
                     ),
@@ -217,10 +231,7 @@ class _ActionCard extends StatelessWidget {
               Text(
                 label,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: labelColor,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: labelColor, fontWeight: FontWeight.w600),
               ),
             ],
           ),
