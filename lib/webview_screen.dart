@@ -1,9 +1,10 @@
-// lib/webview_screen.dart
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'services/pdf_controller.dart';
 
 class WebViewScreen extends StatefulWidget {
   final String url;
@@ -23,12 +24,22 @@ class WebViewScreen extends StatefulWidget {
 
 class _WebViewScreenState extends State<WebViewScreen> {
   late final WebViewController _controller;
-  final _pdf = PdfController();
   int _progress = 0;
   bool _loading = false;
 
   void _showLoading() => setState(() => _loading = true);
   void _hideLoading() => setState(() => _loading = false);
+  // Endpoints que retornam PDF via GET
+  static const List<String> _pdfEndpoints = [
+    '/reimpressao/imprimir-segunda-via',
+    '/reimpressao/imprimir-autorizacao',
+    '/emitir-comprovante',
+    '/ordem/historico-pdf',
+    '/imprimir-ordem',
+  ];
+
+  bool _isPdfEndpoint(String url) =>
+      _pdfEndpoints.any((e) => url.contains(e));
 
   @override
   void initState() {
@@ -36,66 +47,82 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel('Android', onMessageReceived: (m) {
-        if (m.message.startsWith('showLoading')) _showLoading();
-        if (m.message.startsWith('hideLoading')) _hideLoading();
-      })
-      ..addJavaScriptChannel('Pdf', onMessageReceived: (m) async {
-        // payload: {"method":"GET"|"POST","url":"...","data":{"k":"v"},"multipart":false}
-        try {
-          final map = jsonDecode(m.message) as Map<String, dynamic>;
-          final method = (map['method'] as String).toUpperCase();
-          final url = map['url'] as String;
-          final multipart = (map['multipart'] as bool?) ?? false;
-          final data = (map['data'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString())) ?? <String,String>{};
 
-          _showLoading();
-          if (method == 'GET') {
-            await _pdf.handlePdfGet(url, _controller);
-          } else if (method == 'POST') {
-            if (multipart) {
-              await _pdf.handlePdfPostMultipart(url, Map<String,String>.from(data), _controller);
-            } else {
-              await _pdf.handlePdfPostUrlEncoded(url, Map<String,String>.from(data), _controller);
-            }
-          }
+    // Canal para ligar/desligar overlay a partir do JS
+      ..addJavaScriptChannel('UI', onMessageReceived: (m) {
+        final msg = m.message.trim().toLowerCase();
+        if (msg == 'loading:on') _showLoading();
+        if (msg == 'loading:off') _hideLoading();
+      })
+
+    // Canal que recebe o PDF (dataURL + filename) e abre
+      ..addJavaScriptChannel('Downloader', onMessageReceived: (msg) async {
+        try {
+          final map = jsonDecode(msg.message) as Map<String, dynamic>;
+          final name = (map['name'] as String?)?.trim();
+          final dataUrl = map['dataUrl'] as String;
+
+          final i = dataUrl.indexOf('base64,');
+          if (i < 0) throw Exception('DataURL inválido');
+          final b64 = dataUrl.substring(i + 7);
+          final bytes = base64Decode(b64);
+
+          final dir = await getTemporaryDirectory();
+          final safeName = (name?.isNotEmpty == true ? name! : 'documento.pdf')
+              .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+
+          final file = File('${dir.path}/$safeName');
+          await file.writeAsBytes(bytes);
+          await OpenFilex.open(file.path);
         } catch (e) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('PDF erro: $e')));
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('Falha ao abrir PDF: $e')));
           }
         } finally {
           _hideLoading();
         }
       })
+
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) => setState(() => _progress = p),
-          onPageFinished: (url) async {
+
+          // injeta hooks SEMPRE ao terminar
+          onPageFinished: (_) async {
             await _injectHooks(initialCpf: widget.initialCpf);
           },
+
+          // links externos e .pdf direto
           onNavigationRequest: (req) async {
-            final url = req.url.toLowerCase();
+            final url = req.url;
+            final lower = url.toLowerCase();
+
             // esquemas externos
-            if (!url.startsWith('http') ||
-                url.startsWith('tel:') ||
-                url.startsWith('mailto:') ||
-                url.startsWith('whatsapp:') ||
-                url.startsWith('intent:')) {
-              final uri = Uri.parse(req.url);
+            if (!lower.startsWith('http') ||
+                lower.startsWith('tel:') ||
+                lower.startsWith('mailto:') ||
+                lower.startsWith('whatsapp:') ||
+                lower.startsWith('intent:')) {
+              final uri = Uri.parse(url);
               if (await canLaunchUrl(uri)) {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
                 return NavigationDecision.prevent;
               }
             }
-            // .pdf direto → GET via controller
-            if (url.endsWith('.pdf')) {
+
+            // .pdf DIRETO ou endpoint que gera PDF → baixa via fetch
+            if (lower.endsWith('.pdf') || _isPdfEndpoint(url)) {
               _showLoading();
-              await _pdf.handlePdfGet(req.url, _controller);
+              await _downloadPdfThroughWebView(url);
               _hideLoading();
               return NavigationDecision.prevent;
             }
+
             return NavigationDecision.navigate;
           },
+
+
           onWebResourceError: (_) => _hideLoading(),
         ),
       )
@@ -104,21 +131,73 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   Future<void> _injectHooks({String? initialCpf}) async {
     final cpf = (initialCpf ?? '').replaceAll(RegExp(r'\\D'), '');
+
     final js = r"""
 (function(){
-  if (window.__ipasem) return; window.__ipasem = true;
+  if (window.__ipasemHooks) return; window.__ipasemHooks = true;
 
-  // Android.showLoading/hideLoading
-  if (!window.Android) window.Android = {};
-  Android.showLoading = function(){ try{ Android.postMessage('showLoading'); }catch(e){} };
-  Android.hideLoading = function(){ try{ Android.postMessage('hideLoading'); }catch(e){} };
+  // ===== UI helpers (sem Android.*) =====
+  function uiOn(){ try { UI.postMessage('loading:on'); } catch(_){} }
+  function uiOff(){ try { UI.postMessage('loading:off'); } catch(_){} }
 
-  // Envia instruções de PDF ao Flutter
-  function pdfGet(url){ Pdf.postMessage(JSON.stringify({method:'GET', url:url})); }
-  function pdfPostUrlEncoded(url, data){ Pdf.postMessage(JSON.stringify({method:'POST', url:url, data:data, multipart:false})); }
-  function pdfPostMultipart(url, data){ Pdf.postMessage(JSON.stringify({method:'POST', url:url, data:data, multipart:true})); }
+  // baixa um PDF com fetch e manda ao Flutter via Downloader
+  function fetchPdfToDownloader(u, fallbackName){
+    uiOn();
+    fetch(u, { credentials:'include' })
+      .then(async function(resp){
+        var cd = resp.headers.get('content-disposition') || '';
+        var filename = fallbackName || (u.split('/').pop() || 'arquivo.pdf');
+        try {
+          var m = cd.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
+          if (m && m[1]) filename = decodeURIComponent(m[1].replace(/\"/g,''));
+        } catch(e){}
+        var blob = await resp.blob();
+        var r = new FileReader();
+        r.onloadend = function(){
+          Downloader.postMessage(JSON.stringify({ name: filename, dataUrl: r.result }));
+        };
+        r.readAsDataURL(blob);
+      })
+      .catch(function(_){ uiOff(); });
+  }
 
-  // Reimpressão: anexa token_login de localStorage e mostra loading
+  // POST de formulário (urlencoded por padrão). Se precisar multipart, troque.
+  function postFormAndDownload(action, data, useMultipart){
+    uiOn();
+    if (useMultipart) {
+      var fd = new FormData();
+      Object.keys(data||{}).forEach(function(k){ fd.append(k, data[k]); });
+      fetch(action, { method:'POST', body: fd, credentials:'include' })
+        .then(handleResp).catch(function(_){ uiOff(); });
+    } else {
+      var usp = new URLSearchParams();
+      Object.keys(data||{}).forEach(function(k){ usp.append(k, data[k]); });
+      fetch(action, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+        body: usp.toString(),
+        credentials:'include'
+      }).then(handleResp).catch(function(_){ uiOff(); });
+    }
+
+    async function handleResp(resp){
+      var cd = resp.headers.get('content-disposition') || '';
+      var filename = 'relatorio.pdf';
+      try {
+        var m = cd.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
+        if (m && m[1]) filename = decodeURIComponent(m[1].replace(/\"/g,''));
+      } catch(e){}
+      var blob = await resp.blob();
+      var r = new FileReader();
+      r.onloadend = function(){
+        Downloader.postMessage(JSON.stringify({ name: filename, dataUrl: r.result }));
+      };
+      r.readAsDataURL(blob);
+    }
+  }
+
+  // ========== Hooks (baseado no teu Java) ==========
+  // Reimpressão: anexa token_login e tenta baixar via GET se o alvo for PDF
   document.querySelectorAll('a[id^="reimpressao-"]').forEach(function(btn){
     if (btn.__hooked) return; btn.__hooked = true;
     btn.addEventListener('click', function(e){
@@ -132,67 +211,51 @@ class _WebViewScreenState extends State<WebViewScreen> {
             btn.setAttribute('href', href);
           }
         }
+        var hrefLow = (btn.getAttribute('href')||'').toLowerCase();
+        if (hrefLow.endsWith('.pdf')) { e.preventDefault(); fetchPdfToDownloader(btn.href); return false; }
       }catch(_){}
-      Android.showLoading();
     }, true);
   });
 
-  // Imprimir ordem/autorização
+  // Imprimir ordem/autorização (apenas liga loading; o request real vai pelo navegador)
   document.querySelectorAll('a[href*="imprimir-ordem"]').forEach(function(a){
     if (a.__hooked) return; a.__hooked = true;
-    a.addEventListener('click', function(){ Android.showLoading(); }, true);
+    a.addEventListener('click', function(){ uiOn(); setTimeout(uiOff, 20000); }, true);
   });
 
   // Botão modal imprimir PDF
   var modalBtn = document.getElementById('btn-imprimir-pdf');
   if (modalBtn && !modalBtn.__hooked){
     modalBtn.__hooked = true;
-    modalBtn.addEventListener('click', function(){ Android.showLoading(); }, true);
+    modalBtn.addEventListener('click', function(){ uiOn(); setTimeout(uiOff, 20000); }, true);
   }
 
-  // Forms normais → loading
-  document.querySelectorAll('form').forEach(function(f){
-    if (f.__hooked) return; f.__hooked = true;
-    f.addEventListener('submit', function(){ Android.showLoading(); }, true);
-  });
-
-  // Selects específicos → loading
-  ['#especialidade','#cidade','.prestador','.dependente'].forEach(function(sel){
-    document.querySelectorAll(sel).forEach(function(el){
-      if (el.__hooked) return; el.__hooked = true;
-      el.addEventListener('change', function(){ Android.showLoading(); }, true);
-    });
-  });
-
-  // --- FORM RELATÓRIOS (POST para Flutter) ---
-  function hookRelForm(id){
+  // Forms de relatório: POST -> baixa PDF
+  function hookRelForm(id, multipart){
     var f = document.getElementById(id);
     if (!f || f.__relHook) return; f.__relHook = true;
     f.addEventListener('submit', function(e){
       e.preventDefault();
-      Android.showLoading();
       var data = {};
       Array.from(f.elements).forEach(function(el){ if(el.name) data[el.name]=el.value; });
-      // Primeiro tente urlencoded (compatível com a maioria dos backends PHP)
-      pdfPostUrlEncoded(f.action, data);
+      postFormAndDownload(f.action, data, !!multipart);
       return false;
     }, true);
   }
-  hookRelForm('form-extrato');
-  hookRelForm('form-extrato-irpf');
+  hookRelForm('form-extrato', false);
+  hookRelForm('form-extrato-irpf', false);
 
-  // Links .pdf → GET via controller
+  // Links .pdf → GET via fetch
   document.querySelectorAll('a[href$=".pdf"]').forEach(function(a){
     if (a.__pdfHook) return; a.__pdfHook = true;
     a.addEventListener('click', function(e){
       e.preventDefault();
-      Android.showLoading();
-      pdfGet(a.href);
+      fetchPdfToDownloader(a.href);
       return false;
     }, true);
   });
 
-  // window.open para .pdf
+  // window.open(.pdf)
   try{
     if (!window.__openPatched){
       window.__openPatched = true;
@@ -200,8 +263,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       window.open = function(u, n, f){
         try{
           if (typeof u === 'string' && u.toLowerCase().endsWith('.pdf')){
-            Android.showLoading();
-            pdfGet(u);
+            fetchPdfToDownloader(u);
             return null;
           }
         }catch(_){}
@@ -237,6 +299,35 @@ class _WebViewScreenState extends State<WebViewScreen> {
   })('""" + cpf + r"""');
 })();
 """;
+
+    await _controller.runJavaScript(js);
+  }
+
+  // Força um GET de PDF via fetch (mantém cookies) quando a navegação tenta abrir .pdf
+  Future<void> _downloadPdfThroughWebView(String url) async {
+    final escaped = url.replaceAll("\\", "\\\\").replaceAll("'", r"\'");
+    final js = """
+      (function(){
+        try { UI.postMessage('loading:on'); } catch(e){}
+        var url = '$escaped';
+        fetch(url, { credentials:'include' })
+          .then(async function(resp){
+            var cd = resp.headers.get('content-disposition') || '';
+            var filename = (url.split('/').pop() || 'arquivo.pdf');
+            try {
+              var m = cd.match(/filename\\*?=(?:UTF-8''|")?([^\\\";]+)/i);
+              if (m && m[1]) filename = decodeURIComponent(m[1].replace(/\\\"/g,''));
+            } catch(e){}
+            var blob = await resp.blob();
+            var r = new FileReader();
+            r.onloadend = function(){
+              Downloader.postMessage(JSON.stringify({ name: filename, dataUrl: r.result }));
+            };
+            r.readAsDataURL(blob);
+          })
+          .catch(function(_){ try { UI.postMessage('loading:off'); } catch(e){} });
+      })();
+    """;
     await _controller.runJavaScript(js);
   }
 
@@ -250,10 +341,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
           if (_progress < 100) const LinearProgressIndicator(),
           if (_loading)
             Container(
-              color: Colors.black26,
+              color: Colors.black38,
               alignment: Alignment.center,
-              child: const SizedBox(
-                height: 64, width: 64, child: CircularProgressIndicator(strokeWidth: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  SizedBox(height: 56, width: 56, child: CircularProgressIndicator(strokeWidth: 5)),
+                  SizedBox(height: 12),
+                  Text('Gerando PDF...', style: TextStyle(color: Colors.white)),
+                ],
               ),
             ),
         ],
