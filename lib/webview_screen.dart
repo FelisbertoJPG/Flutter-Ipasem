@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'services/session_manager.dart';
+import 'widgets/ipasem_alert.dart';
+
 
 /// Tela de WebView com:
 /// • Interceptação/Download de PDFs (inclusive endpoints sem .pdf)
@@ -470,30 +472,16 @@ class _WebViewScreenState extends State<WebViewScreen>
         ),
         body: Stack(
           children: [
-            // A própria WebView
             WebViewWidget(controller: _controller),
-
-            // Barra de progresso fina (0–100)
+            //barra de progresso
             if (_progress < 100) LinearProgressIndicator(value: _progress / 100),
 
             // Overlay de loading (“Gerando PDF...”), controlado pelo canal "UI"
             if (_loading)
-              Container(
-                color: Colors.black38,
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    SizedBox(
-                      height: 56,
-                      width: 56,
-                      child: CircularProgressIndicator(strokeWidth: 5),
-                    ),
-                    SizedBox(height: 12),
-                    Text('Gerando PDF...', style: TextStyle(color: Colors.white)),
-                  ],
-                ),
-              ),
+            const IpasemAlertOverlay(
+            message: 'PDF sendo gerado, aguarde...',
+            type: IpasemAlertType.loading,
+            showProgress: true,),
           ],
         ),
       ),
