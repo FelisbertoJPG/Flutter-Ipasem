@@ -1,18 +1,25 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-/// Tipos de alerta (só para mapear ícone/cor rapidamente)
 enum IpasemAlertType { info, success, warning, error, loading }
+
+/// Variante da badge:
+/// - printLike: círculo sólido + letra (ex.: "i"), igual ao print
+/// - materialIcon: usa o ícone do Material (info_rounded, warning, etc.)
+enum IpasemBadgeVariant { printLike, materialIcon }
 
 class IpasemAlertOverlay extends StatelessWidget {
   final String message;
   final IpasemAlertType type;
-
-  /// Cor do “badge” (bolinha) e do spinner. Se null, usamos a cor pelo [type].
   final Color? accentColor;
-
-  /// Mostra um CircularProgress quando for loading
   final bool showProgress;
+
+  /// Escolha da badge (default = printLike para bater com o print)
+  final IpasemBadgeVariant badgeVariant;
+
+  /// Tamanho da bolinha/ícone
+  final double badgeRadius;
+  final double badgeIconSize;
 
   const IpasemAlertOverlay({
     super.key,
@@ -20,10 +27,12 @@ class IpasemAlertOverlay extends StatelessWidget {
     this.type = IpasemAlertType.info,
     this.accentColor,
     this.showProgress = false,
+    this.badgeVariant = IpasemBadgeVariant.printLike,
+    this.badgeRadius = 28,
+    this.badgeIconSize = 28,
   });
 
-  // Cores e ícones padrão por tipo
-  (IconData, Color) _styleByType(BuildContext ctx) {
+  (IconData, Color) _styleByType() {
     const brandBlue = Color(0xFF143C8D);
     switch (type) {
       case IpasemAlertType.success:
@@ -40,14 +49,30 @@ class IpasemAlertOverlay extends StatelessWidget {
     }
   }
 
+  /// Letra mostrada no modo printLike (para o “i” ficar sem círculo do ícone)
+  String _glyphByType() {
+    switch (type) {
+      case IpasemAlertType.success:
+        return '✓';
+      case IpasemAlertType.warning:
+        return '!';
+      case IpasemAlertType.error:
+        return '!';
+      case IpasemAlertType.loading:
+      case IpasemAlertType.info:
+      default:
+        return 'i';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final (icon, color) = _styleByType(context);
+    final (icon, color) = _styleByType();
     final w = MediaQuery.of(context).size.width;
     final cardWidth = math.min(w * 0.82, 380.0);
 
-    return Material( // cobre a tela toda
-      color: Colors.black38,
+    return Material(
+      color: Colors.black38, // backdrop
       child: Center(
         child: TweenAnimationBuilder<double>(
           duration: const Duration(milliseconds: 180),
@@ -57,7 +82,7 @@ class IpasemAlertOverlay extends StatelessWidget {
               Transform.scale(scale: scale, child: child),
           child: Container(
             width: cardWidth,
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
@@ -72,16 +97,38 @@ class IpasemAlertOverlay extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Badge do cartão
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: color,
-                  child: Icon(icon, size: 28, color: Colors.white),
-                ),
+                /// ===== BADGE (dentro do cartão) =====
+                if (badgeVariant == IpasemBadgeVariant.printLike)
+                  Container(
+                    width: badgeRadius * 2,
+                    height: badgeRadius * 2,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _glyphByType(),
+                      /// “i” igual ao print: fonte pesada e sem espaçamento
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: badgeIconSize,
+                        height: 1.0, // evita “pular” vertical
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  )
+                else
+                  CircleAvatar(
+                    radius: badgeRadius,
+                    backgroundColor: color,
+                    child: Icon(icon, size: badgeIconSize, color: Colors.white),
+                  ),
 
                 const SizedBox(height: 16),
 
-                // Mensagem centralizada
+                // Mensagem
                 Text(
                   message,
                   textAlign: TextAlign.center,
@@ -91,7 +138,8 @@ class IpasemAlertOverlay extends StatelessWidget {
                 if (showProgress) ...[
                   const SizedBox(height: 16),
                   SizedBox(
-                    width: 30, height: 30,
+                    width: 30,
+                    height: 30,
                     child: CircularProgressIndicator(
                       strokeWidth: 4,
                       color: color,
@@ -107,9 +155,8 @@ class IpasemAlertOverlay extends StatelessWidget {
   }
 }
 
-/// Helpers prontos para exibir/fechar como diálogo
+/// Helpers para exibir/fechar rapidamente
 class IpasemAlert {
-  /// Mostra um dialog “toast modal” com auto-fechamento opcional.
   static Future<void> show(
       BuildContext context, {
         required String message,
@@ -121,6 +168,8 @@ class IpasemAlert {
         message: message,
         type: type,
         showProgress: type == IpasemAlertType.loading,
+        // garante que use o estilo do print por padrão:
+        badgeVariant: IpasemBadgeVariant.printLike,
       ),
     );
     Overlay.of(context, rootOverlay: true).insert(entry);
@@ -130,7 +179,6 @@ class IpasemAlert {
     }
   }
 
-  /// Mostra um “loading modal” bloqueante (usa showGeneralDialog).
   static Future<void> showBlockingLoading(
       BuildContext context, {
         String message = 'Processando, aguarde...',
@@ -144,11 +192,11 @@ class IpasemAlert {
         message: message,
         type: IpasemAlertType.loading,
         showProgress: true,
+        badgeVariant: IpasemBadgeVariant.printLike,
       ),
     );
   }
 
-  /// Fecha qualquer dialog aberto via [showGeneralDialog].
   static void closeBlocking(BuildContext context) {
     if (Navigator.of(context, rootNavigator: true).canPop()) {
       Navigator.of(context, rootNavigator: true).pop();

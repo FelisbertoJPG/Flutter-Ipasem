@@ -478,10 +478,15 @@ class _WebViewScreenState extends State<WebViewScreen>
 
             // Overlay de loading (“Gerando PDF...”), controlado pelo canal "UI"
             if (_loading)
-            const IpasemAlertOverlay(
-            message: 'PDF sendo gerado, aguarde...',
-            type: IpasemAlertType.loading,
-            showProgress: true,),
+              const IpasemAlertOverlay(
+                message: 'PDF sendo gerado, aguarde...',
+                type: IpasemAlertType.loading,
+                showProgress: true,
+                badgeVariant: IpasemBadgeVariant.printLike,
+                badgeRadius: 22,     // ↓ menor que 28
+                badgeIconSize: 18,   // ↓ ajusta o “i”
+              ),
+
           ],
         ),
       ),
