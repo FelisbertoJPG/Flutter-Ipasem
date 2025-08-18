@@ -4,10 +4,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'services/session_manager.dart';
 import 'widgets/ipasem_alert.dart';
+import 'widgets/carteirinha_overlay.dart';
+import 'services/api_service.dart';
 
 
 /// Tela de WebView com:
@@ -83,7 +86,12 @@ class _WebViewScreenState extends State<WebViewScreen>
         if (msg == 'loading:on') _showLoading();
         if (msg == 'loading:off') _hideLoading();
       })
-
+    // ===== Carteirinha ===================
+    ..addJavaScriptChannel('Token', onMessageReceived: (m) async {
+      final token = m.message;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token_login', token);
+    })
     // ===== Canal "Downloader": o JS envia {name,dataUrl} (PDF em base64) para o Flutter salvar/abrir
       ..addJavaScriptChannel('Downloader', onMessageReceived: (msg) async {
         try {
@@ -126,6 +134,23 @@ class _WebViewScreenState extends State<WebViewScreen>
           // Ao terminar de carregar, injeta os hooks JS (interceptação, autofill, etc.)
           onPageFinished: (_) async {
             await _injectHooks(initialCpf: widget.initialCpf);
+
+            // lê o token do localStorage dentro da página e traz de volta pro Dart
+            try {
+              final result = await _controller.runJavaScriptReturningResult(
+                  "(() => { try { return localStorage.getItem('tokenLogin') || ''; } catch(e){ return ''; } })();"
+              );
+
+              // o plugin retorna string JS com aspas; normalizar:
+              final token = (result is String)
+                  ? result.replaceAll('"', '')
+                  : (result ?? '').toString();
+
+              if (token.isNotEmpty) {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('token_login', token);
+              }
+            } catch (_) {}
           },
 
           // Decide se bloqueia ou permite a navegação de uma URL
@@ -462,6 +487,16 @@ class _WebViewScreenState extends State<WebViewScreen>
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.title ?? 'Navegador'),
+          actions: [
+            IconButton(
+              tooltip: 'Mostrar carteirinha',
+              icon: const Icon(Icons.badge_outlined),
+              onPressed: () {
+                final api = ApiService('https://assistweb.ipasemnh.com.br'); // ajuste sua base
+                showCarteirinhaOverlay(context, api: api);
+              },
+            ),
+          ],
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () async {
@@ -470,6 +505,7 @@ class _WebViewScreenState extends State<WebViewScreen>
             },
           ),
         ),
+
         body: Stack(
           children: [
             WebViewWidget(controller: _controller),

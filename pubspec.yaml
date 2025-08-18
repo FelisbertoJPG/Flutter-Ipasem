@@ -14,8 +14,9 @@ dependencies:
   url_launcher:
   open_filex:
   path_provider:
-  shared_preferences:
+  shared_preferences: ^2.3.2
   http:
+
 
 
 dev_dependencies:
