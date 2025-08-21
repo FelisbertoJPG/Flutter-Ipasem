@@ -11,6 +11,7 @@ import 'services/session_manager.dart';
 import 'widgets/ipasem_alert.dart';
 import 'widgets/carteirinha_overlay.dart';
 import 'services/api_service.dart';
+import 'package:flutter/material.dart';
 
 
 /// Tela de WebView com:
@@ -37,7 +38,8 @@ class WebViewScreen extends StatefulWidget {
 }
 
 class _WebViewScreenState extends State<WebViewScreen>
-    with WidgetsBindingObserver { // Observa mudanças no ciclo de vida do app
+    with WidgetsBindingObserver {
+  // Observa mudanças no ciclo de vida do app
 
   // Controlador da WebView para executar JS, navegar, etc.
   late final WebViewController _controller;
@@ -47,6 +49,8 @@ class _WebViewScreenState extends State<WebViewScreen>
 
   // Flag do overlay de loading (ligado/desligado pelo JS via canal "UI")
   bool _loading = false;
+  Timer? _bgTimer;              // controla logout agendado
+  bool _openedExternal = false; // true quando abrimos PDF/app externo
 
   // (Opcional) Endpoint de logout do site (POST com fallback em GET)
   static const String _logoutUrl =
@@ -66,6 +70,7 @@ class _WebViewScreenState extends State<WebViewScreen>
 
   // Liga/desliga overlay de loading
   void _showLoading() => setState(() => _loading = true);
+
   void _hideLoading() => setState(() => _loading = false);
 
   @override
@@ -87,32 +92,31 @@ class _WebViewScreenState extends State<WebViewScreen>
         if (msg == 'loading:off') _hideLoading();
       })
     // ===== Carteirinha ===================
-    ..addJavaScriptChannel('Token', onMessageReceived: (m) async {
-      final token = m.message;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token_login', token);
-    })
+      ..addJavaScriptChannel('Token', onMessageReceived: (m) async {
+        final token = m.message;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('token_login', token);
+      })
     // ===== Canal "Downloader": o JS envia {name,dataUrl} (PDF em base64) para o Flutter salvar/abrir
       ..addJavaScriptChannel('Downloader', onMessageReceived: (msg) async {
         try {
-          // Decodifica o JSON recebido do JS
           final map = jsonDecode(msg.message) as Map<String, dynamic>;
           final name = (map['name'] as String?)?.trim();
           final dataUrl = map['dataUrl'] as String;
 
-          // Extrai a parte base64 do dataURL
           final i = dataUrl.indexOf('base64,');
           if (i < 0) throw Exception('DataURL inválido');
           final b64 = dataUrl.substring(i + 7);
           final bytes = base64Decode(b64);
 
-          // Salva como arquivo temporário (nome sanitizado) e abre no app nativo de PDF
           final dir = await getTemporaryDirectory();
           final safeName = (name?.isNotEmpty == true ? name! : 'documento.pdf')
               .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 
           final file = File('${dir.path}/$safeName');
           await file.writeAsBytes(bytes);
+
+          _openedExternal = true;                // <<< AQUI
           await OpenFilex.open(file.path);
         } catch (e) {
           if (mounted) {
@@ -121,9 +125,10 @@ class _WebViewScreenState extends State<WebViewScreen>
             );
           }
         } finally {
-          _hideLoading(); // Sempre esconder overlay no fim do fluxo
+          _hideLoading();
         }
       })
+
 
     // ===== Delegate de navegação: decide se navega normal ou se intercepta (PDF, links externos, etc.)
       ..setNavigationDelegate(
@@ -166,16 +171,20 @@ class _WebViewScreenState extends State<WebViewScreen>
                 lower.startsWith('intent:')) {
               final uri = Uri.parse(url);
               if (await canLaunchUrl(uri)) {
+                _openedExternal = true;                         // <<< AQUI
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
-                return NavigationDecision.prevent; // cancela navegação interna
+                return NavigationDecision.prevent;
               }
             }
+
 
             // 2) PDFs (termina com .pdf) OU endpoints dinâmicos → intercepta e baixa via fetch no contexto da página
             if (lower.endsWith('.pdf') || _isPdfEndpoint(url)) {
               _showLoading();
-              await _downloadPdfThroughWebView(url); // baixa com cookies HttpOnly
-              return NavigationDecision.prevent;      // não deixa a WebView “ir” pra URL direta
+              await _downloadPdfThroughWebView(
+                  url); // baixa com cookies HttpOnly
+              return NavigationDecision
+                  .prevent; // não deixa a WebView “ir” pra URL direta
             }
 
             // 3) Qualquer outra URL → navega normal
@@ -193,22 +202,42 @@ class _WebViewScreenState extends State<WebViewScreen>
 
   @override
   void dispose() {
-    // Para de observar ciclo de vida
     WidgetsBinding.instance.removeObserver(this);
-    // Limpa sessão (cookies/cache/storage). Sem await pois dispose não é async.
-    SessionManager.wipeAll(_controller);
+    _bgTimer?.cancel();
+    // Se não quiser deslogar ao sair da tela, comente a linha abaixo:
+    // SessionManager.wipeAll(_controller);
     super.dispose();
   }
+
 
   /// Observa mudanças no ciclo de vida do app:
   /// • paused/detached → tenta deslogar no servidor e limpa sessão local
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
+    if (state == AppLifecycleState.resumed) {
+      // Voltou pro app: cancela logout agendado e limpa o flag
+      _bgTimer?.cancel();
+      _openedExternal = false;
+    }
+
+    if (state == AppLifecycleState.paused) {
+      if (_openedExternal) {
+        // Pausou porque abrimos um PDF/app externo: NÃO deslogar agora
+        return;
+      }
+      // (Opcional) deslogar só se ficar em background por 5 minutos
+      _bgTimer?.cancel();
+      _bgTimer = Timer(const Duration(minutes: 5), () {
+        _logoutAndWipe();
+      });
+    }
+
+    if (state == AppLifecycleState.detached) {
+      // App sendo destruído — pode deslogar imediatamente
       _logoutAndWipe();
     }
   }
+
 
   /// Faz logout no servidor (POST com fallback em GET) e limpa cookies/cache/storage.
   /// Rodamos o fetch **dentro** do contexto da página para levar cookies HttpOnly.
@@ -481,49 +510,31 @@ class _WebViewScreenState extends State<WebViewScreen>
 
   @override
   Widget build(BuildContext context) {
-    // WillPopScope: garante que “back” volte no histórico da WebView antes de sair da tela
     return WillPopScope(
       onWillPop: _handleBack,
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title ?? 'Navegador'),
-          actions: [
-            IconButton(
-              tooltip: 'Mostrar carteirinha',
-              icon: const Icon(Icons.badge_outlined),
-              onPressed: () {
-                final api = ApiService('https://assistweb.ipasemnh.com.br'); // ajuste sua base
-                showCarteirinhaOverlay(context, api: api);
-              },
-            ),
-          ],
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () async {
-              final canLeave = await _handleBack();
-              if (canLeave && mounted) Navigator.of(context).pop();
-            },
+        // SEM AppBar
+        body: SafeArea(
+          child: Stack(
+            children: [
+              WebViewWidget(controller: _controller),
+
+              // barra de progresso no topo (fica dentro da SafeArea)
+              if (_progress < 100)
+                LinearProgressIndicator(value: _progress / 100),
+
+              // overlay “Gerando PDF...”
+              if (_loading)
+                const IpasemAlertOverlay(
+                  message: 'PDF sendo gerado, aguarde...',
+                  type: IpasemAlertType.loading,
+                  showProgress: true,
+                  badgeVariant: IpasemBadgeVariant.printLike,
+                  badgeRadius: 22,
+                  badgeIconSize: 18,
+                ),
+            ],
           ),
-        ),
-
-        body: Stack(
-          children: [
-            WebViewWidget(controller: _controller),
-            //barra de progresso
-            if (_progress < 100) LinearProgressIndicator(value: _progress / 100),
-
-            // Overlay de loading (“Gerando PDF...”), controlado pelo canal "UI"
-            if (_loading)
-              const IpasemAlertOverlay(
-                message: 'PDF sendo gerado, aguarde...',
-                type: IpasemAlertType.loading,
-                showProgress: true,
-                badgeVariant: IpasemBadgeVariant.printLike,
-                badgeRadius: 22,     // ↓ menor que 28
-                badgeIconSize: 18,   // ↓ ajusta o “i”
-              ),
-
-          ],
         ),
       ),
     );

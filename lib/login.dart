@@ -48,18 +48,17 @@ class _LoginPageState extends State<LoginPage> {
   }
   // Envia o CPF pra proxima view
   void _openWeb(String url, String title) async {
-    await _saveCpf(); // salva ao navegar
+    await _saveCpf();
     if (!mounted) return;
+    final cpfDigits = _cpfController.text.replaceAll(RegExp(r'\D'), '');
+    //permitir voltar ao Login:
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => WebViewScreen(
-          url: 'https://assistweb.ipasemnh.com.br/site/login',
-          title: 'Portal',
-          initialCpf: _cpfController.text.replaceAll(RegExp(r'\D'), ''), // só dígitos
-        ),
-      ),
-    );
+    slideUpRoute(
+    WebViewScreen(url: url, title: title, initialCpf: cpfDigits),
+    ),
+     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -240,3 +239,16 @@ class _ActionCard extends StatelessWidget {
     );
   }
 }
+Route<T> slideUpRoute<T>(Widget page, {int durationMs = 420}) {
+  return PageRouteBuilder<T>(
+    transitionDuration: Duration(milliseconds: durationMs),
+    reverseTransitionDuration: const Duration(milliseconds: 320),
+    pageBuilder: (_, __, ___) => page,
+    transitionsBuilder: (_, animation, __, child) {
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      final offset = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero).animate(curved);
+      return SlideTransition(position: offset, child: child);
+    },
+  );
+}
+
