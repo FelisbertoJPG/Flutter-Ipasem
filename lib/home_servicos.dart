@@ -76,7 +76,7 @@ class _HomeServicosState extends State<HomeServicos> {
       _Service('Enviar E-mail', Icons.alternate_email_outlined, _Action.web,
           url:
           'mailto:contato@ipasemnh.com.br?subject=Atendimento%20IPASEM&body=Ol%C3%A1,%20preciso%20de%20ajuda%20no%20app.'),
-      _Service('Ligar', Icons.add_call, _Action.web, url: 'tel:51359491629'),
+      _Service('Ligar', Icons.add_call, _Action.web, url: 'tel:5135949162'),
     ];
 
     return Scaffold(
