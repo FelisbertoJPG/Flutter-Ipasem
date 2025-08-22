@@ -1,18 +1,18 @@
+// webview_screen.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+
 import 'services/session_manager.dart';
 import 'widgets/ipasem_alert.dart';
-import 'widgets/carteirinha_overlay.dart';
-import 'services/api_service.dart';
-import 'package:flutter/material.dart';
-
 
 /// Tela de WebView com:
 /// • Interceptação/Download de PDFs (inclusive endpoints sem .pdf)
@@ -25,12 +25,14 @@ class WebViewScreen extends StatefulWidget {
   final String url;         // URL inicial da página
   final String? title;      // Título da AppBar
   final String? initialCpf; // CPF (só dígitos) para autofill no site
+  final WebViewController? prewarmed;
 
   const WebViewScreen({
     super.key,
     required this.url,
     this.title,
     this.initialCpf,
+    this.prewarmed,
   });
 
   @override
@@ -39,24 +41,16 @@ class WebViewScreen extends StatefulWidget {
 
 class _WebViewScreenState extends State<WebViewScreen>
     with WidgetsBindingObserver {
-  // Observa mudanças no ciclo de vida do app
+  late final WebViewController _controller =
+      widget.prewarmed ?? (WebViewController()..setJavaScriptMode(JavaScriptMode.unrestricted));
 
-  // Controlador da WebView para executar JS, navegar, etc.
-  late final WebViewController _controller;
-
-  // Progresso da navegação [0–100] para mostrar a barrinha de progresso
   int _progress = 0;
-
-  // Flag do overlay de loading (ligado/desligado pelo JS via canal "UI")
   bool _loading = false;
-  Timer? _bgTimer;              // controla logout agendado
-  bool _openedExternal = false; // true quando abrimos PDF/app externo
+  Timer? _bgTimer;
+  bool _openedExternal = false;
 
-  // (Opcional) Endpoint de logout do site (POST com fallback em GET)
-  static const String _logoutUrl =
-      'https://assistweb.ipasemnh.com.br/site/logout';
+  static const String _logoutUrl = 'https://assistweb.ipasemnh.com.br/site/logout';
 
-  // Endpoints “dinâmicos” que retornam PDF via GET mas não terminam com .pdf
   static const List<String> _pdfEndpoints = [
     '/reimpressao/imprimir-segunda-via',
     '/reimpressao/imprimir-autorizacao',
@@ -65,39 +59,38 @@ class _WebViewScreenState extends State<WebViewScreen>
     '/imprimir-ordem',
   ];
 
-  // Checa se a URL contém algum dos endpoints dinâmicos de PDF
   bool _isPdfEndpoint(String url) => _pdfEndpoints.any((e) => url.contains(e));
 
-  // Liga/desliga overlay de loading
   void _showLoading() => setState(() => _loading = true);
-
   void _hideLoading() => setState(() => _loading = false);
 
   @override
   void initState() {
     super.initState();
 
-    // Começa a observar ciclo de vida (para limpar sessão em pause/detach)
     WidgetsBinding.instance.addObserver(this);
 
-    // Configuração do controlador
-    _controller = WebViewController()
-    // Libera JavaScript
+
+
+    // Toda a configuração precisa estar encadeada no _controller.
+    _controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
 
-    // ===== Canal "UI": o JS manda 'loading:on' / 'loading:off' para controlar overlay
+    // ===== Canal "UI": 'loading:on' / 'loading:off' controla overlay
       ..addJavaScriptChannel('UI', onMessageReceived: (m) {
         final msg = m.message.trim().toLowerCase();
         if (msg == 'loading:on') _showLoading();
         if (msg == 'loading:off') _hideLoading();
       })
-    // ===== Carteirinha ===================
+
+    // ===== Canal "Token": salva tokenLogin
       ..addJavaScriptChannel('Token', onMessageReceived: (m) async {
         final token = m.message;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token_login', token);
       })
-    // ===== Canal "Downloader": o JS envia {name,dataUrl} (PDF em base64) para o Flutter salvar/abrir
+
+    // ===== Canal "Downloader": recebe {name,dataUrl(base64)} e abre no app nativo
       ..addJavaScriptChannel('Downloader', onMessageReceived: (msg) async {
         try {
           final map = jsonDecode(msg.message) as Map<String, dynamic>;
@@ -116,7 +109,7 @@ class _WebViewScreenState extends State<WebViewScreen>
           final file = File('${dir.path}/$safeName');
           await file.writeAsBytes(bytes);
 
-          _openedExternal = true;                // <<< AQUI
+          _openedExternal = true;
           await OpenFilex.open(file.path);
         } catch (e) {
           if (mounted) {
@@ -129,28 +122,22 @@ class _WebViewScreenState extends State<WebViewScreen>
         }
       })
 
-
-    // ===== Delegate de navegação: decide se navega normal ou se intercepta (PDF, links externos, etc.)
+    // ===== Delegate de navegação
       ..setNavigationDelegate(
         NavigationDelegate(
-          // Atualiza a UI do progresso
           onProgress: (p) => setState(() => _progress = p),
 
-          // Ao terminar de carregar, injeta os hooks JS (interceptação, autofill, etc.)
           onPageFinished: (_) async {
             await _injectHooks(initialCpf: widget.initialCpf);
 
-            // lê o token do localStorage dentro da página e traz de volta pro Dart
+            // Tenta ler token do localStorage
             try {
               final result = await _controller.runJavaScriptReturningResult(
-                  "(() => { try { return localStorage.getItem('tokenLogin') || ''; } catch(e){ return ''; } })();"
+                "(() => { try { return localStorage.getItem('tokenLogin') || ''; } catch(e){ return ''; } })();",
               );
-
-              // o plugin retorna string JS com aspas; normalizar:
               final token = (result is String)
                   ? result.replaceAll('"', '')
                   : (result ?? '').toString();
-
               if (token.isNotEmpty) {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setString('token_login', token);
@@ -158,12 +145,11 @@ class _WebViewScreenState extends State<WebViewScreen>
             } catch (_) {}
           },
 
-          // Decide se bloqueia ou permite a navegação de uma URL
           onNavigationRequest: (req) async {
             final url = req.url;
             final lower = url.toLowerCase();
 
-            // 1) Esquemas externos (tel:, mailto:, whatsapp:, intent:, etc.) → abre fora do app
+            // 1) esquemas externos (tel:, mailto: etc.) -> fora do app
             if (!lower.startsWith('http') ||
                 lower.startsWith('tel:') ||
                 lower.startsWith('mailto:') ||
@@ -171,32 +157,28 @@ class _WebViewScreenState extends State<WebViewScreen>
                 lower.startsWith('intent:')) {
               final uri = Uri.parse(url);
               if (await canLaunchUrl(uri)) {
-                _openedExternal = true;                         // <<< AQUI
+                _openedExternal = true;
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
                 return NavigationDecision.prevent;
               }
             }
 
-
-            // 2) PDFs (termina com .pdf) OU endpoints dinâmicos → intercepta e baixa via fetch no contexto da página
+            // 2) PDFs explícitos ou endpoints dinâmicos -> intercepta e baixa via fetch
             if (lower.endsWith('.pdf') || _isPdfEndpoint(url)) {
               _showLoading();
-              await _downloadPdfThroughWebView(
-                  url); // baixa com cookies HttpOnly
-              return NavigationDecision
-                  .prevent; // não deixa a WebView “ir” pra URL direta
+              await _downloadPdfThroughWebView(url);
+              return NavigationDecision.prevent;
             }
 
-            // 3) Qualquer outra URL → navega normal
+            // 3) demais URLs -> navega normal
             return NavigationDecision.navigate;
           },
 
-          // Em qualquer erro de recurso, esconde overlay de loading
           onWebResourceError: (_) => _hideLoading(),
         ),
       )
 
-    // Carrega a página inicial
+    // Página inicial
       ..loadRequest(Uri.parse(widget.url));
   }
 
@@ -204,97 +186,67 @@ class _WebViewScreenState extends State<WebViewScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _bgTimer?.cancel();
-    // Se não quiser deslogar ao sair da tela, comente a linha abaixo:
+    // (Opcional) deslogar ao sair desta tela:
     // SessionManager.wipeAll(_controller);
     super.dispose();
   }
 
-
-  /// Observa mudanças no ciclo de vida do app:
-  /// • paused/detached → tenta deslogar no servidor e limpa sessão local
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Voltou pro app: cancela logout agendado e limpa o flag
       _bgTimer?.cancel();
       _openedExternal = false;
     }
 
     if (state == AppLifecycleState.paused) {
-      if (_openedExternal) {
-        // Pausou porque abrimos um PDF/app externo: NÃO deslogar agora
-        return;
-      }
-      // (Opcional) deslogar só se ficar em background por 5 minutos
+      if (_openedExternal) return; // não desloga se abriu app externo/PDF
       _bgTimer?.cancel();
-      _bgTimer = Timer(const Duration(minutes: 5), () {
-        _logoutAndWipe();
-      });
+      _bgTimer = Timer(const Duration(minutes: 5), _logoutAndWipe);
     }
 
     if (state == AppLifecycleState.detached) {
-      // App sendo destruído — pode deslogar imediatamente
       _logoutAndWipe();
     }
   }
 
-
-  /// Faz logout no servidor (POST com fallback em GET) e limpa cookies/cache/storage.
-  /// Rodamos o fetch **dentro** do contexto da página para levar cookies HttpOnly.
   Future<void> _logoutAndWipe() async {
     try {
       await _controller.runJavaScript(r'''
         (async function(){
-          try{
-            await fetch("''' + _logoutUrl + r'''", {method:'POST', credentials:'include'});
-          }catch(e){
-            try{ await fetch("''' + _logoutUrl + r'''", {credentials:'include'}); }catch(_){}
-          }
+          try{ await fetch("''' + _logoutUrl + r'''", {method:'POST', credentials:'include'}); }
+          catch(e){ try{ await fetch("''' + _logoutUrl + r'''", {credentials:'include'}); }catch(_){ } }
           try{ localStorage.clear(); }catch(_){}
           try{ sessionStorage.clear(); }catch(_){}
           try{
             if (window.caches){
               const ks = await caches.keys();
-              ks.forEach(k => caches.delete(k));
+              for (const k of ks){ await caches.delete(k); }
             }
           }catch(_){}
         })();
       ''');
-    } catch (_) {
-      // Ignora erros do JS/fetch — limpeza nativa logo abaixo garante “deslogado”
-    }
-
-    // Limpeza nativa (cookies/cache) para garantir logout local
+    } catch (_) {}
     await SessionManager.wipeAll(_controller);
   }
 
-  /// Botão “voltar”: prioriza histórico da WebView; se não houver, sai da tela Flutter
   Future<bool> _handleBack() async {
     if (await _controller.canGoBack()) {
       await _controller.goBack();
-      return false; // impede Navigator.pop()
+      return false;
     }
-    return true; // permite Navigator.pop()
+    return true;
   }
 
-  /// Injeta hooks JS:
-  /// • UI.on/off (overlay)
-  /// • fetch GET/POST para baixar PDFs mantendo cookies
-  /// • Intercepta links, window.open, reimpressão, formulários de relatório
-  /// • Autofill de CPF (heurística em id/name/placeholder)
   Future<void> _injectHooks({String? initialCpf}) async {
-    final cpf = (initialCpf ?? '').replaceAll(RegExp(r'\D'), ''); // só dígitos
+    final cpf = (initialCpf ?? '').replaceAll(RegExp(r'\D'), '');
 
-    // String raw r"""...""" evita ter que escapar barras.
     final js = r"""
 (function(){
   if (window.__ipasemHooks) return; window.__ipasemHooks = true;
 
-  // Overlay via canal "UI"
   function uiOn(){ try { UI.postMessage('loading:on'); } catch(_){} }
   function uiOff(){ try { UI.postMessage('loading:off'); } catch(_){} }
 
-  // GET de PDF com fetch (cookies HttpOnly via credentials:'include')
   function fetchPdfToDownloader(u, fallbackName){
     uiOn();
     fetch(u, {
@@ -319,7 +271,6 @@ class _WebViewScreenState extends State<WebViewScreen>
     .catch(function(_){ uiOff(); });
   }
 
-  // POST que retorna PDF (urlencoded por padrão; setar multipart=true se precisar)
   function postFormAndDownload(action, data, useMultipart){
     uiOn();
     if (useMultipart) {
@@ -353,7 +304,6 @@ class _WebViewScreenState extends State<WebViewScreen>
     }
   }
 
-  // Reimpressão: injeta token_login (se existir) e baixa se o href final terminar em .pdf
   document.querySelectorAll('a[id^="reimpressao-"]').forEach(function(btn){
     if (btn.__hooked) return; btn.__hooked = true;
     btn.addEventListener('click', function(e){
@@ -373,21 +323,17 @@ class _WebViewScreenState extends State<WebViewScreen>
     }, true);
   });
 
-  // Ações de imprimir ordem/autorização: overlay “visual” (navegação segue pelo site)
   document.querySelectorAll('a[href*="imprimir-ordem"]').forEach(function(a){
     if (a.__hooked) return; a.__hooked = true;
     a.addEventListener('click', function(){ uiOn(); setTimeout(uiOff, 20000); }, true);
   });
 
-  // Botão modal "imprimir PDF" (se existir): overlay temporário
   var modalBtn = document.getElementById('btn-imprimir-pdf');
   if (modalBtn && !modalBtn.__hooked){
     modalBtn.__hooked = true;
     modalBtn.addEventListener('click', function(){ uiOn(); setTimeout(uiOff, 20000); }, true);
   }
 
-  // Formulários de relatório: intercepta submit, coleta dados e faz POST → download
-  // (se algum for multipart, trocar false → true)
   function hookRelForm(id, multipart){
     var f = document.getElementById(id);
     if (!f || f.__relHook) return; f.__relHook = true;
@@ -402,7 +348,6 @@ class _WebViewScreenState extends State<WebViewScreen>
   hookRelForm('form-extrato', false);
   hookRelForm('form-extrato-irpf', false);
 
-  // Intercepta links que geram PDF (.pdf e endpoints dinâmicos) e baixa via fetch
   const EP = [
     '/reimpressao/imprimir-segunda-via',
     '/reimpressao/imprimir-autorizacao',
@@ -425,7 +370,6 @@ class _WebViewScreenState extends State<WebViewScreen>
     }, true);
   });
 
-  // Intercepta window.open para .pdf/endpoints e baixa via fetch
   try{
     if (!window.__openPatched){
       window.__openPatched = true;
@@ -443,7 +387,6 @@ class _WebViewScreenState extends State<WebViewScreen>
     }
   }catch(_){}
 
-  // Autofill do CPF: tenta por id/name/placeholder contendo "cpf" (ou heurística por maxlength=11)
   (function(cpf){
     try{
       if (!cpf) return;
@@ -471,14 +414,10 @@ class _WebViewScreenState extends State<WebViewScreen>
 })();
 """;
 
-    // Executa o JS na página atual
     await _controller.runJavaScript(js);
   }
 
-  /// Força um GET via fetch quando a navegação tenta abrir .pdf/endpoint dinâmico.
-  /// Fazemos no contexto da página para levar cookies da sessão.
   Future<void> _downloadPdfThroughWebView(String url) async {
-    // Escapa aspas/barras para interpolar com segurança dentro do JS
     final escaped = url.replaceAll("\\", "\\\\").replaceAll("'", r"\'");
 
     final js = """
@@ -513,17 +452,14 @@ class _WebViewScreenState extends State<WebViewScreen>
     return WillPopScope(
       onWillPop: _handleBack,
       child: Scaffold(
-        // SEM AppBar
+
         body: SafeArea(
           child: Stack(
             children: [
               WebViewWidget(controller: _controller),
 
-              // barra de progresso no topo (fica dentro da SafeArea)
-              if (_progress < 100)
-                LinearProgressIndicator(value: _progress / 100),
+              if (_progress < 100) LinearProgressIndicator(value: _progress / 100),
 
-              // overlay “Gerando PDF...”
               if (_loading)
                 const IpasemAlertOverlay(
                   message: 'PDF sendo gerado, aguarde...',

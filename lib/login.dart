@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'webview_screen.dart';
+import 'home_servicos.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,9 +17,12 @@ class _LoginPageState extends State<LoginPage> {
   static const Color _brandBlue = Color(0xFF143C8D);
   static const Color _accentPurple = Color(0xFF6A37B8);
 
-  // URLs do assistweb
+  // URLs do assistweb - 18
   static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
   static const String _primeiroAcessoUrl = 'https://assistweb.ipasemnh.com.br/site/recuperar-senha';
+  // URLs do IpasemNH - 125
+  static const String _noticiasUrl = 'https://www.ipasemnh.com.br/home';
+
 
   static const String _prefsKeyCpf = 'saved_cpf';
 
@@ -181,13 +185,24 @@ class _LoginPageState extends State<LoginPage> {
                         iconColor: _brandBlue,
                         labelColor: _accentPurple,
                         onTap: () async {
-                          final uri = Uri.parse('tel:+5551359491629');
+                          final uri = Uri.parse('tel:5135949162');
                           await launchUrl(uri, mode: LaunchMode.externalApplication);
                         },
                       ),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _ActionCard(
+                        icon: Icons.article_outlined,        // ícone de “notícia”
+                        label: 'Notícias',
+                        iconColor: _brandBlue,
+                        labelColor: _accentPurple,
+                        onTap: () => _openWeb(_noticiasUrl, 'Notícias'), // abre em nova view (WebView interna)
+                      ),
+                    ),
                   ],
                 ),
+
               ],
             ),
           ),

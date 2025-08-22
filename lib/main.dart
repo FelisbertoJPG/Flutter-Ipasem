@@ -1,36 +1,44 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
-import 'login.dart';
-import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'update_enforcer.dart';
+import 'home_servicos.dart';
+import 'animation_warmup.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SharedPreferences.getInstance(); // pré-aquecimento do prefs
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  static const splashBg = Color(0xFFFFFFFF); // MESMA cor do splash nativo
+  static const splashBg = Color(0xFFFFFFFF);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Login Demo',
+      title: 'IpasemNH',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        scaffoldBackgroundColor: splashBg, // evita “flash”
+        scaffoldBackgroundColor: splashBg,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const LoginSlidesOverSplash(
-        splashColor: splashBg,
-        splashImage: 'assets/images/icons/splash_logo.png', // MESMA imagem do splash
-        durationMs: 420,
+      // ⬇️ AQUI: injeta o warm-up de animação DENTRO do MaterialApp
+      builder: (context, child) =>
+          AnimationWarmUp(child: child ?? const SizedBox()),
+      home: PlayUpdateEnforcer(
+        child: const LoginSlidesOverSplash(
+          splashColor: MyApp.splashBg,
+          splashImage: 'assets/images/icons/splash_logo.png',
+          durationMs: 420,
+        ),
       ),
     );
   }
 }
 
-/// Mantém o splash parado no fundo e FAZ A LoginPage SUBIR por cima.
 class LoginSlidesOverSplash extends StatefulWidget {
   final Color splashColor;
   final String splashImage;
@@ -52,8 +60,8 @@ class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));
   late final Animation<Offset> _slide = Tween<Offset>(
-    begin: const Offset(0, 1), // começa fora da tela (embaixo)
-    end: Offset.zero,          // termina ocupando a tela
+    begin: const Offset(0, 1),
+    end: Offset.zero,
   ).animate(CurvedAnimation(parent: _c, curve: Curves.easeOutCubic));
 
   bool _hideSplash = false;
@@ -61,13 +69,12 @@ class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
   @override
   void initState() {
     super.initState();
-    // Garante primeiro frame e cache da imagem antes de animar.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await precacheImage(AssetImage(widget.splashImage), context);
       await Future.delayed(const Duration(milliseconds: 16));
       if (!mounted) return;
       await _c.forward();
-      if (mounted) setState(() => _hideSplash = true); // remove splash do tree
+      if (mounted) setState(() => _hideSplash = true);
     });
   }
 
@@ -86,19 +93,14 @@ class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
             child: Container(
               color: widget.splashColor,
               alignment: Alignment.center,
-              child: Image.asset(
-                widget.splashImage,
-                width: 180,
-                fit: BoxFit.contain,
-              ),
+              child: Image.asset(widget.splashImage, width: 180, fit: BoxFit.contain),
             ),
           ),
-        // A LoginPage sobe por cima do splash
         Positioned.fill(
-          child: ClipRect( // evita desenhar fora da tela durante o slide
+          child: ClipRect(
             child: SlideTransition(
               position: _slide,
-              child: const LoginPage(),
+              child: const HomeServicos(),
             ),
           ),
         ),
@@ -106,6 +108,7 @@ class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
     );
   }
 }
+
 Route<T> slideUpRoute<T>(Widget page, {int durationMs = 420}) {
   return PageRouteBuilder<T>(
     transitionDuration: Duration(milliseconds: durationMs),
@@ -118,3 +121,4 @@ Route<T> slideUpRoute<T>(Widget page, {int durationMs = 420}) {
     },
   );
 }
+//
