@@ -13,6 +13,11 @@ import 'services/ipasem_js.dart';
 import 'services/session_manager.dart';
 import 'widgets/ipasem_alert.dart';
 
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+import 'services/file_upload_manager.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart'
+    show AndroidWebViewController, FileSelectorMode;
+
 class WebViewScreen extends StatefulWidget {
   final String url;
   final String? title;
@@ -32,8 +37,7 @@ class WebViewScreen extends StatefulWidget {
 }
 
 class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserver {
-  late final WebViewController _controller =
-      widget.prewarmed ?? (WebViewController()..setJavaScriptMode(JavaScriptMode.unrestricted));
+  late final WebViewController _controller;
 
   int _progress = 0;
   bool _loading = false;
@@ -59,6 +63,26 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // controller com suporte a file chooser no Android
+    if (widget.prewarmed != null) {
+      _controller = widget.prewarmed!;
+    } else {
+      const params = PlatformWebViewControllerCreationParams();
+      _controller = WebViewController.fromPlatformCreationParams(params);
+    }
+
+    // Hook do seletor de arquivos (Android)
+    if (_controller.platform is AndroidWebViewController) {
+      final android = _controller.platform as AndroidWebViewController;
+      android.setOnShowFileSelector((p) async {
+        // p.acceptTypes (List<String>), p.mode (FileSelectorMode)
+        final multiple = p.mode == FileSelectorMode.openMultiple;
+        return await FileUploadManager.pick(
+          acceptTypes: p.acceptTypes,
+          allowMultiple: multiple,
+        );
+      });
+    }
 
     _controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -116,40 +140,39 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
             // Fallback: se o site não desligar pelo canal JS, desligamos aqui.
             _hideLoading();
           },
-
           onNavigationRequest: (req) async {
-              final url = req.url;
-              final lower = url.toLowerCase();
+            final url = req.url;
+            final lower = url.toLowerCase();
 
-              // Só esses esquemas vão para fora do app
-              if (lower.startsWith('tel:') ||
-                  lower.startsWith('mailto:') ||
-                  lower.startsWith('whatsapp:') ||
-                  lower.startsWith('intent:')) {
-                final uri = Uri.parse(url);
-                if (await canLaunchUrl(uri)) {
-                  _openedExternal = true;
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  return NavigationDecision.prevent;
-                }
-              }
-
-              // Intercepta PDF/endpoints
-              if (lower.endsWith('.pdf') || _isPdfEndpoint(url)) {
-                _showLoading();
-                await IpasemJs.downloadThroughWebView(_controller, url);
+            // Só esses esquemas vão para fora do app
+            if (lower.startsWith('tel:') ||
+                lower.startsWith('mailto:') ||
+                lower.startsWith('whatsapp:') ||
+                lower.startsWith('intent:')) {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                _openedExternal = true;
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
                 return NavigationDecision.prevent;
               }
+            }
 
-              return NavigationDecision.navigate;
-            },
+            // Intercepta PDF/endpoints
+            if (lower.endsWith('.pdf') || _isPdfEndpoint(url)) {
+              _showLoading();
+              await IpasemJs.downloadThroughWebView(_controller, url);
+              return NavigationDecision.prevent;
+            }
+
+            return NavigationDecision.navigate;
+          },
           onWebResourceError: (_) => _hideLoading(),
         ),
       )
       ..loadRequest(Uri.parse(widget.url));
   }
 
-  // === TODO 2: limpar sessão ao sair da tela (hardware back / pop / fechar app) ===
+  // limpar sessão ao sair da tela (hardware back / pop / fechar app)
   Future<void> _logoutAndWipe() async {
     if (_didWipe) return;
     _didWipe = true;
@@ -172,7 +195,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     await SessionManager.wipeAll(_controller);
   }
 
-  // === TODO 3: back físico do Android respeita histórico da WebView antes de sair ===
+  // back físico respeita histórico da WebView
   Future<bool> _handleBack() async {
     if (await _controller.canGoBack()) {
       await _controller.goBack();
