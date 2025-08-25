@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'webview_screen.dart';
 
+// adicionar mais um botão que nos redireciona pro contra cheque do link
+// https://nuvem.agendadatacenter.com.br/novohamburgo/portal/login
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
@@ -48,7 +50,7 @@ class _HomeServicosState extends State<HomeServicos> {
     super.dispose();
   }
 
-  // --- NOVO: helper que reusa a WebView pré-aquecida no primeiro push
+  // --- helper que reusa a WebView pré-aquecida no primeiro push
   void _openWeb(BuildContext context, {required String url, required String title, String? cpf}) {
     final prewarmed = _usedWarmup ? null : _warmupCtrl;
 
@@ -71,6 +73,15 @@ class _HomeServicosState extends State<HomeServicos> {
     final services = <_Service>[
       _Service('Autorizações', Icons.assignment_turned_in_outlined, _Action.cpfThenWeb,
           url: HomeServicos._loginUrl),
+
+      // 👇 NOVO BOTÃO: Contra Cheque
+      _Service(
+        'Contra Cheque',
+        Icons.receipt_long_outlined,
+        _Action.web,
+        url: 'https://nuvem.agendadatacenter.com.br/novohamburgo/portal/login',
+      ),
+
       _Service('Site', Icons.article_outlined, _Action.web,
           url: 'https://www.ipasemnh.com.br/home'),
       _Service('Enviar E-mail', Icons.alternate_email_outlined, _Action.web,
@@ -118,6 +129,8 @@ class _HomeServicosState extends State<HomeServicos> {
                               Navigator.of(context).push(
                                 _softSlideRoute(WebViewScreen(url: u, title: s.title)),
                               );
+                              // Se preferir usar o pré-aquecido:
+                              // _openWeb(context, url: u, title: s.title);
                             }
                           } else {
                             await _promptCpfAndOpen(context, url: s.url!, title: s.title);
@@ -305,8 +318,7 @@ Future<void> _promptCpfAndOpen(BuildContext context,
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () async {
-                          final digits =
-                          ctrl.text.replaceAll(RegExp(r'\D'), '');
+                          final digits = ctrl.text.replaceAll(RegExp(r'\D'), '');
                           if (digits.length != 11) {
                             setState(() => error = 'CPF deve ter 11 dígitos');
                             return;
