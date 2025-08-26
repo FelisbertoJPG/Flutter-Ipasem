@@ -4,24 +4,37 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'webview_screen.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-// adicionar mais um botão que nos redireciona pro contra cheque do link
-// https://nuvem.agendadatacenter.com.br/novohamburgo/portal/login
+
+// === Cores padronizadas ===
+const _cardBg    = Color(0xFFEFF6F9); // mesma cor do Card-logo
+const _cardBorder= Color(0xFFE2ECF2); // mesma borda usada nos cards
+const _brand     = Color(0xFF143C8D); // azul dos ícones/textos
+
+
+// Home: serviços rápidos do app
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
   static const String _prefsKeyCpf = 'saved_cpf';
   static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
 
+  // contatos
+  static const String _tel = 'tel:5135949162';
+  static const String _mailto =
+      'mailto:contato@ipasemnh.com.br?subject=Atendimento%20IPASEM&body=Ol%C3%A1,%20preciso%20de%20ajuda%20no%20app.';
+
   @override
   State<HomeServicos> createState() => _HomeServicosState();
 }
 
 class _HomeServicosState extends State<HomeServicos> {
+  // WebView pré-aquecida (primeira navegação mais rápida)
   late final WebViewController _warmupCtrl =
   WebViewController()..setJavaScriptMode(JavaScriptMode.unrestricted);
   OverlayEntry? _warmupOverlay;
-  bool _usedWarmup = false; // <- NOVO
+  bool _usedWarmup = false;
 
   @override
   void initState() {
@@ -35,7 +48,11 @@ class _HomeServicosState extends State<HomeServicos> {
             opacity: 0,
             child: Align(
               alignment: Alignment.topLeft,
-              child: SizedBox(width: 1, height: 1, child: WebViewWidget(controller: _warmupCtrl)),
+              child: SizedBox(
+                width: 1,
+                height: 1,
+                child: WebViewWidget(controller: _warmupCtrl),
+              ),
             ),
           ),
         ),
@@ -50,11 +67,11 @@ class _HomeServicosState extends State<HomeServicos> {
     super.dispose();
   }
 
-  // --- helper que reusa a WebView pré-aquecida no primeiro push
-  void _openWeb(BuildContext context, {required String url, required String title, String? cpf}) {
+  // Reusa a WebView pré-aquecida no primeiro push
+  void _openWeb(BuildContext context,
+      {required String url, required String title, String? cpf}) {
     final prewarmed = _usedWarmup ? null : _warmupCtrl;
 
-    // Detacha a WebView invisível ANTES de navegar, para liberar o controller
     if (!_usedWarmup) {
       _warmupOverlay?.remove();
       _warmupOverlay = null;
@@ -71,23 +88,15 @@ class _HomeServicosState extends State<HomeServicos> {
   @override
   Widget build(BuildContext context) {
     final services = <_Service>[
-      _Service('Autorizações', Icons.assignment_turned_in_outlined, _Action.cpfThenWeb,
+      _Service('Autorização de Exames', Icons.how_to_reg_outlined, _Action.cpfThenWeb,
           url: HomeServicos._loginUrl),
 
-      // 👇 NOVO BOTÃO: Contra Cheque
-      _Service(
-        'Contra Cheque',
-        Icons.receipt_long_outlined,
-        _Action.web,
-        url: 'https://nuvem.agendadatacenter.com.br/novohamburgo/portal/login',
-      ),
 
-      _Service('Site', Icons.article_outlined, _Action.web,
+      _Service('Site', Icons.public_outlined, _Action.web,
           url: 'https://www.ipasemnh.com.br/home'),
-      _Service('Enviar E-mail', Icons.alternate_email_outlined, _Action.web,
-          url:
-          'mailto:contato@ipasemnh.com.br?subject=Atendimento%20IPASEM&body=Ol%C3%A1,%20preciso%20de%20ajuda%20no%20app.'),
-      _Service('Ligar', Icons.add_call, _Action.web, url: 'tel:5135949162'),
+
+      // novo card único de contatos
+      _Service('Contatos', Icons.support_agent_outlined, _Action.contacts),
     ];
 
     return Scaffold(
@@ -100,46 +109,31 @@ class _HomeServicosState extends State<HomeServicos> {
               children: [
                 const _LogoBanner(),
                 const SizedBox(height: 20),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    mainAxisExtent: 120,
+
+                // barras compridas com sombra
+                ...services.map((s) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _LongActionButton(
+                    title: s.title,
+                    icon: s.icon,
+                    onTap: () {
+                      WidgetsBinding.instance.addPostFrameCallback((_) async {
+                        switch (s.action) {
+                          case _Action.web:
+                            _openWeb(context, url: s.url!, title: s.title);
+                            break;
+                          case _Action.cpfThenWeb:
+                            await _promptCpfAndOpen(context,
+                                url: s.url!, title: s.title);
+                            break;
+                          case _Action.contacts:
+                            await _showContactsSheet(context);
+                            break;
+                        }
+                      });
+                    },
                   ),
-                  itemCount: services.length,
-                  itemBuilder: (_, i) {
-                    final s = services[i];
-                    return _ServiceTile(
-                      title: s.title,
-                      icon: s.icon,
-                      onTap: () {
-                        // empurra pro próximo frame pra não competir com layout
-                        WidgetsBinding.instance.addPostFrameCallback((_) async {
-                          if (s.action == _Action.web) {
-                            final u = s.url!;
-                            if (u.startsWith('mailto:') ||
-                                u.startsWith('tel:') ||
-                                u.startsWith('whatsapp:')) {
-                              await launchUrl(Uri.parse(u),
-                                  mode: LaunchMode.externalApplication);
-                            } else {
-                              Navigator.of(context).push(
-                                _softSlideRoute(WebViewScreen(url: u, title: s.title)),
-                              );
-                              // Se preferir usar o pré-aquecido:
-                              // _openWeb(context, url: u, title: s.title);
-                            }
-                          } else {
-                            await _promptCpfAndOpen(context, url: s.url!, title: s.title);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
+                )),
               ],
             ),
           ),
@@ -149,7 +143,7 @@ class _HomeServicosState extends State<HomeServicos> {
   }
 }
 
-enum _Action { web, cpfThenWeb }
+enum _Action { web, cpfThenWeb, contacts }
 
 class _Service {
   final String title;
@@ -159,42 +153,72 @@ class _Service {
   const _Service(this.title, this.icon, this.action, {this.url});
 }
 
-class _ServiceTile extends StatelessWidget {
+// Botão comprido com ícone à esquerda, título centralizado e sombra
+// Botão comprido com ícone à esquerda, título centralizado e sombra
+class _LongActionButton extends StatelessWidget {
   final String title;
   final IconData icon;
   final VoidCallback onTap;
-  const _ServiceTile({required this.title, required this.icon, required this.onTap});
+  const _LongActionButton({required this.title, required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFFF4F8FA),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE2ECF2)),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 22, color: const Color(0xFF143C8D)),
-              const Spacer(),
-              Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              ),
-            ],
+    final radius = BorderRadius.circular(14);
+
+    return Material(
+      // Material transparente pra manter o ripple do InkWell bonitinho
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: _cardBg, //cor do logo
+          borderRadius: radius,
+          border: Border.all(color: _cardBorder),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 10,
+              spreadRadius: 0,
+              offset: Offset(0, 4),
+              color: Color(0x14000000), // sombra leve (8% opacidade)
+            ),
+          ],
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              children: [
+                const SizedBox(width: 12),
+                Icon(icon, size: 22, color: _brand),
+                const SizedBox(width: 12),
+
+                // título centralizado
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+
+                // "peso" visual à direita para manter o centro real
+                const SizedBox(width: 12),
+                Opacity(opacity: 0, child: Icon(Icons.circle, size: 22)),
+                const SizedBox(width: 12),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 }
+
 
 class _LogoBanner extends StatelessWidget {
   const _LogoBanner();
@@ -220,6 +244,70 @@ class _LogoBanner extends StatelessWidget {
   }
 }
 
+// Bottom-sheet de contatos (Ligar / E-mail)
+Future<void> _showContactsSheet(BuildContext context) async {
+  Future<void> _go(String raw) async {
+    final uri = Uri.parse(raw);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+    ),
+    builder: (ctx) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCE5EE),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'Contatos',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.call_outlined),
+                title: const Text('Ligar'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _go(HomeServicos._tel);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.alternate_email_outlined),
+                title: const Text('Enviar E-mail'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _go(HomeServicos._mailto);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// Prompt de CPF (mantido)
 Future<void> _promptCpfAndOpen(BuildContext context,
     {required String url, required String title}) async {
   final ctrl = TextEditingController();
@@ -366,3 +454,4 @@ Route<T> _softSlideRoute<T>(Widget page, {int durationMs = 360}) {
     },
   );
 }
+//Todo: Deixar os botões na mesma cor do Card-logo que creio ser essa FFEFF6F9

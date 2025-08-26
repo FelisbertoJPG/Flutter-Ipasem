@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: splashBg,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      // ⬇️ AQUI: injeta o warm-up de animação DENTRO do MaterialApp
+      //  AQUI: injeta o warm-up de animação DENTRO do MaterialApp
       builder: (context, child) =>
           AnimationWarmUp(child: child ?? const SizedBox()),
       home: PlayUpdateEnforcer(
