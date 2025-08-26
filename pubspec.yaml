@@ -20,10 +20,7 @@ dependencies:
   url_launcher:
   file_picker: ^8.0.0
   font_awesome_flutter:
-
-
-
-
+#Adicionado Dependencias
 
 dev_dependencies:
   flutter_test:
