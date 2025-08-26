@@ -6,6 +6,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'webview_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+//Todo: Problema com a Geração do Email
 
 // === Cores padronizadas ===
 const _cardBg    = Color(0xFFEFF6F9); // mesma cor do Card-logo
@@ -22,8 +23,6 @@ class HomeServicos extends StatefulWidget {
 
   // contatos
   static const String _tel = 'tel:5135949162';
-  static const String _mailto =
-      'mailto:contato@ipasemnh.com.br?subject=Atendimento%20IPASEM&body=Ol%C3%A1,%20preciso%20de%20ajuda%20no%20app.';
 
   @override
   State<HomeServicos> createState() => _HomeServicosState();
@@ -112,7 +111,7 @@ class _HomeServicosState extends State<HomeServicos> {
 
                 // barras compridas com sombra
                 ...services.map((s) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 16),
                   child: _LongActionButton(
                     title: s.title,
                     icon: s.icon,
@@ -154,62 +153,100 @@ class _Service {
 }
 
 // Botão comprido com ícone à esquerda, título centralizado e sombra
-// Botão comprido com ícone à esquerda, título centralizado e sombra
+// --- ajuste no widget do botão ---
 class _LongActionButton extends StatelessWidget {
   final String title;
-  final IconData icon;
+  final IconData icon;          // fallback se "leading" for nulo
+  final Widget? leading;        // pode ser FaIcon, etc.
+  final bool showNew;
   final VoidCallback onTap;
-  const _LongActionButton({required this.title, required this.icon, required this.onTap});
+
+  // Tamanhos
+  final double height;          // altura do botão
+  final double iconSize;        // tamanho do ícone
+  final double fontSize;        // tamanho do texto
+
+  // >>> NOVOS parâmetros de borda
+  final double borderWidth;
+  final Color borderColor;
+
+  const _LongActionButton({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+    this.leading,
+    this.showNew = false,
+    this.height = 56,
+    this.iconSize = 22,
+    this.fontSize = 16,
+    this.borderWidth = 2,              // <<< mais forte
+    this.borderColor = _cardBorder,    // <<< mantém a mesma cor da UI
+  });
 
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(14);
 
     return Material(
-      // Material transparente pra manter o ripple do InkWell bonitinho
       color: Colors.transparent,
       borderRadius: radius,
       child: Ink(
         decoration: BoxDecoration(
-          color: _cardBg, //cor do logo
+          color: _cardBg, // mantém a cor dos botões
           borderRadius: radius,
-          border: Border.all(color: _cardBorder),
+          border: Border.all(color: borderColor, width: borderWidth), // <<< aqui
           boxShadow: const [
-            BoxShadow(
-              blurRadius: 10,
-              spreadRadius: 0,
-              offset: Offset(0, 4),
-              color: Color(0x14000000), // sombra leve (8% opacidade)
-            ),
+            BoxShadow(blurRadius: 10, offset: Offset(0, 4), color: Color(0x14000000)),
           ],
         ),
         child: InkWell(
           borderRadius: radius,
           onTap: onTap,
           child: SizedBox(
-            height: 56,
-            child: Row(
+            height: height,
+            child: Stack(
               children: [
-                const SizedBox(width: 12),
-                Icon(icon, size: 22, color: _brand),
-                const SizedBox(width: 12),
-
-                // título centralizado
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    const SizedBox(width: 12),
+                    IconTheme.merge(
+                      data: IconThemeData(size: iconSize, color: _brand),
+                      child: leading ?? Icon(icon),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: fontSize,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Opacity(opacity: 0, child: Icon(Icons.circle, size: iconSize)),
+                    const SizedBox(width: 12),
+                  ],
+                ),
+                if (showNew)
+                  Positioned(
+                    top: 6, left: 8,
+                    child: Row(
+                      children: [
+                        SizedBox(width: 10, height: 10,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('NOVIDADE',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.red),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-
-                // "peso" visual à direita para manter o centro real
-                const SizedBox(width: 12),
-                Opacity(opacity: 0, child: Icon(Icons.circle, size: 22)),
-                const SizedBox(width: 12),
               ],
             ),
           ),
@@ -242,6 +279,45 @@ class _LogoBanner extends StatelessWidget {
       ),
     );
   }
+}
+Future<void> _goEmail(BuildContext context) async {
+  final mail = Uri(
+    scheme: 'mailto',
+    path: 'contato@ipasemnh.com.br',
+    queryParameters: const {
+      'subject': 'Atendimento IPASEM',
+      'body': '',
+    },
+  );
+
+  // 1) Tenta abrir em app de e-mail
+  try {
+    if (await canLaunchUrl(mail)) {
+      final ok = await launchUrl(mail, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    }
+  } catch (_) {}
+
+  // 2) Fallback: Gmail web compose (abre no navegador logado)
+  final gmailWeb = Uri.https('mail.google.com', '/mail/', {
+    'view': 'cm',
+    'fs': '1',
+    'to': 'contato@ipasemnh.com.br',
+    'su': 'Atendimento IPASEM',
+    'body': '',
+  });
+
+  if (await canLaunchUrl(gmailWeb)) {
+    await launchUrl(gmailWeb, mode: LaunchMode.externalApplication);
+    return;
+  }
+
+  // 3) Último recurso: copia o e-mail e avisa
+  await Clipboard.setData(const ClipboardData(text: 'contato@ipasemnh.com.br'));
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Nenhum app de e-mail encontrado. Endereço copiado.')),
+    //TODO: Ta caindo aqui o erro
+  );
 }
 
 // Bottom-sheet de contatos (Ligar / E-mail)
@@ -295,7 +371,7 @@ Future<void> _showContactsSheet(BuildContext context) async {
                 title: const Text('Enviar E-mail'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _go(HomeServicos._mailto);
+                  _goEmail(context);
                 },
               ),
               const SizedBox(height: 8),
@@ -454,4 +530,3 @@ Route<T> _softSlideRoute<T>(Widget page, {int durationMs = 360}) {
     },
   );
 }
-//Todo: Deixar os botões na mesma cor do Card-logo que creio ser essa FFEFF6F9
