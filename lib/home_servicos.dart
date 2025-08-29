@@ -327,7 +327,7 @@ class _SocialLinks extends StatelessWidget {
     // ajuste rápido aqui:
     const side      = 60.0; // tamanho do quadrado
     const iconSize  = 24.0; // tamanho do ícone
-    const gap       = 25.0; // espaçamento entre eles
+    const gap       = 25.0; // espaçamento entre eles s
 
     return Center(
       child: Wrap(
