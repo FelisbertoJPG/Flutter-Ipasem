@@ -1,9 +1,10 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'login_screen.dart';
 import 'update_enforcer.dart';
-import 'home_servicos.dart';
 import 'animation_warmup.dart';
+import 'root_nav_shell.dart'; // << usa o shell com BottomNav + Drawer
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,12 +23,12 @@ class MyApp extends StatelessWidget {
       title: 'IpasemNH',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        useMaterial3: true, // NavigationBar (Material 3)
         scaffoldBackgroundColor: splashBg,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF143C8D)),
       ),
-      //  AQUI: injeta o warm-up de animação DENTRO do MaterialApp
-      builder: (context, child) =>
-          AnimationWarmUp(child: child ?? const SizedBox()),
+      // injeta o warm-up de animação DENTRO do MaterialApp
+      builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
       home: PlayUpdateEnforcer(
         child: const LoginSlidesOverSplash(
           splashColor: MyApp.splashBg,
@@ -100,7 +101,8 @@ class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
           child: ClipRect(
             child: SlideTransition(
               position: _slide,
-              child: const HomeServicos(),
+              // >> AQUI: entra o shell com as abas Home/Serviços/Perfil
+              child: const LoginScreen(),
             ),
           ),
         ),
@@ -121,4 +123,3 @@ Route<T> slideUpRoute<T>(Widget page, {int durationMs = 420}) {
     },
   );
 }
-//

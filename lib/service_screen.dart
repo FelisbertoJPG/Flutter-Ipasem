@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'webview_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -13,23 +12,12 @@ const _cardBorder  = Color(0xFFE2ECF2); // borda clarinha dos botões
 const _panelBg     = Color(0xFFF4F5F7); // fundo do painel acinzentado
 const _panelBorder = Color(0xFFE5E8EE); // borda do painel acinzentado
 
-// Cores das redes
-const _instagramColor = Color(0xFFE1306C);
-const _youtubeColor   = Color(0xFFFF0000);
-
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
   static const String _prefsKeyCpf    = 'saved_cpf';
   static const String _loginUrl       = 'https://assistweb.ipasemnh.com.br/site/login';
   static const String _carteirinhaUrl = 'https://assistweb.ipasemnh.com.br/site/login'; // TODO: ajustar quando tiver a URL
-
-  // contatos
-  static const String _tel = 'tel:5135949162';
-
-  // redes sociais
-  static const String _instagramUrl = 'https://www.instagram.com/ipasem.nh/';
-  static const String _youtubeUrl   = 'https://www.youtube.com/ipasemnh';
 
   @override
   State<HomeServicos> createState() => _HomeServicosState();
@@ -92,8 +80,6 @@ class _HomeServicosState extends State<HomeServicos> {
 
   @override
   Widget build(BuildContext context) {
-    const saudacao = 'Olá! "Usuario"';
-
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -103,13 +89,6 @@ class _HomeServicosState extends State<HomeServicos> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 const _LogoBanner(),
-                const SizedBox(height: 12),
-
-                // Saudação
-                Text(
-                  saudacao,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
                 const SizedBox(height: 12),
 
                 // ====== Painel acinzentado com os botões dentro ======
@@ -136,6 +115,7 @@ class _HomeServicosState extends State<HomeServicos> {
                       _WideServiceButton(
                         title: 'Autorizações',
                         icon: FontAwesomeIcons.fileMedical,
+                        iconColor: Colors.red,
                         onTap: () async {
                           await _promptCpfAndOpen(
                             context,
@@ -149,6 +129,7 @@ class _HomeServicosState extends State<HomeServicos> {
                       _WideServiceButton(
                         title: 'Carteirinha Digital',
                         icon: FontAwesomeIcons.idCard,
+                        iconColor: Colors.green,
                         onTap: () {
                           _openWeb(
                             context,
@@ -170,24 +151,8 @@ class _HomeServicosState extends State<HomeServicos> {
                           );
                         },
                       ),
-                      const SizedBox(height: 10),
-
-                      _WideServiceButton(
-                        title: 'Contatos',
-                        icon: FontAwesomeIcons.headset,
-                        onTap: () async {
-                          await _showContactsSheet(context);
-                        },
-                      ),
                     ],
                   ),
-                ),
-
-                // ====== Redes sociais ======
-                const SizedBox(height: 20),
-                _SocialLinks(
-                  onInsta: () => _launchExternal(HomeServicos._instagramUrl, context),
-                  onYoutube: () => _launchExternal(HomeServicos._youtubeUrl, context),
                 ),
               ],
             ),
@@ -203,32 +168,29 @@ class _WideServiceButton extends StatelessWidget {
   final String title;
   final IconData icon;
   final VoidCallback onTap;
+  final Color? iconColor;
 
   const _WideServiceButton({
     required this.title,
     required this.icon,
     required this.onTap,
+    this.iconColor,
   });
 
   ButtonStyle _style(BuildContext context) {
-    // Estados (hover/pressed/focused)
     Color overlay(Set<MaterialState> s) {
-      if (s.contains(MaterialState.pressed)) {
-        return _brand.withOpacity(0.08);
-      }
-      if (s.contains(MaterialState.hovered)) {
-        return _brand.withOpacity(0.04);
-      }
+      if (s.contains(MaterialState.pressed)) return _brand.withOpacity(0.08);
+      if (s.contains(MaterialState.hovered)) return _brand.withOpacity(0.04);
       return Colors.transparent;
     }
 
     double elevation(Set<MaterialState> s) {
       if (s.contains(MaterialState.pressed)) return 2;
-      return 1; // leve, só pra cara de botão
+      return 1;
     }
 
     return ElevatedButton.styleFrom(
-      elevation: 0, // base zero; controlamos via .copyWith
+      elevation: 0,
       backgroundColor: _cardBg,
       foregroundColor: const Color(0xFF101828),
       minimumSize: const Size.fromHeight(68),
@@ -251,7 +213,6 @@ class _WideServiceButton extends StatelessWidget {
       onPressed: onTap,
       child: Row(
         children: [
-          // Leading “pílula” branca com borda
           Container(
             width: 44,
             height: 44,
@@ -261,11 +222,9 @@ class _WideServiceButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             alignment: Alignment.center,
-            child: Icon(icon, size: 22, color: _brand),
+            child: Icon(icon, size: 22, color: iconColor ?? _brand),
           ),
           const SizedBox(width: 12),
-
-          // Título (não quebra, vira reticências)
           Expanded(
             child: Text(
               title,
@@ -279,8 +238,6 @@ class _WideServiceButton extends StatelessWidget {
               ),
             ),
           ),
-
-          // Chevron para reforçar affordance de botão
           const Icon(Icons.chevron_right, color: _brand),
         ],
       ),
@@ -311,320 +268,6 @@ class _LogoBanner extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ====== Redes sociais (menores + mais espaçadas) ======
-class _SocialLinks extends StatelessWidget {
-  final VoidCallback onInsta;
-  final VoidCallback onYoutube;
-
-  const _SocialLinks({required this.onInsta, required this.onYoutube});
-
-  @override
-  Widget build(BuildContext context) {
-    // ajuste rápido aqui:
-    const side      = 60.0; // tamanho do quadrado
-    const iconSize  = 24.0; // tamanho do ícone
-    const gap       = 25.0; // espaçamento entre eles s
-
-    return Center(
-      child: Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: [
-          _SocialSquareButton(
-            color: _instagramColor,
-            icon: FontAwesomeIcons.instagram,
-            onTap: onInsta,
-            size: side,
-            iconSize: iconSize,
-            semanticLabel: 'Abrir Instagram do IPASEM',
-          ),
-          _SocialSquareButton(
-            color: _youtubeColor,
-            icon: FontAwesomeIcons.youtube,
-            onTap: onYoutube,
-            size: side,
-            iconSize: iconSize,
-            semanticLabel: 'Abrir YouTube do IPASEM',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-class _SocialSquareButton extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  final double size;
-  final double iconSize;
-  final String semanticLabel;
-
-  const _SocialSquareButton({
-    required this.icon,
-    required this.color,
-    required this.onTap,
-    required this.size,
-    required this.iconSize,
-    required this.semanticLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(16);
-
-    Color overlay(Set<MaterialState> s) {
-      if (s.contains(MaterialState.pressed)) return Colors.black.withOpacity(0.12);
-      if (s.contains(MaterialState.hovered)) return Colors.black.withOpacity(0.08);
-      return Colors.transparent;
-    }
-
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: color,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: radius),
-            elevation: 0,
-            padding: EdgeInsets.zero,
-          ).copyWith(
-            overlayColor: MaterialStateProperty.resolveWith(overlay),
-          ),
-          onPressed: onTap,
-          child: Icon(icon, size: iconSize, color: Colors.white),
-        ),
-      ),
-    );
-  }
-}
-
-
-// Botão preenchido (ícone + texto + chevron)
-class _SocialFilledButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color color;
-  final double height;
-  final double iconSize;
-
-  const _SocialFilledButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    required this.color,
-    this.height = 56,
-    this.iconSize = 22,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    Color overlay(Set<MaterialState> s) {
-      if (s.contains(MaterialState.pressed)) return Colors.black.withOpacity(0.10);
-      if (s.contains(MaterialState.hovered)) return Colors.black.withOpacity(0.06);
-      return Colors.transparent;
-    }
-
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        minimumSize: Size.fromHeight(height),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        elevation: 0,
-        shadowColor: Colors.transparent,
-      ).copyWith(
-        overlayColor: MaterialStateProperty.resolveWith(overlay),
-      ),
-      onPressed: onTap,
-      child: Row(
-        children: [
-          Icon(icon, size: iconSize),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const Icon(Icons.chevron_right, color: Colors.white),
-        ],
-      ),
-    );
-  }
-}
-
-class _SocialIconButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  final double size;
-  final double iconSize;
-  final Color color;
-
-  const _SocialIconButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.size = 44,
-    this.iconSize = 20,
-    this.color = _brand,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(size / 2),
-        onTap: onTap,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: _cardBorder, width: 2),
-            borderRadius: BorderRadius.circular(size / 2),
-          ),
-          alignment: Alignment.center,
-          child: Icon(icon, size: iconSize, color: color),
-        ),
-      ),
-    );
-  }
-}
-
-// ====== Contatos: liga / e-mail ======
-Future<void> _showContactsSheet(BuildContext context) async {
-  Future<void> _goTel(String raw) async {
-    final uri = Uri.parse(raw);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-    ),
-    builder: (ctx) {
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCE5EE),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const Text(
-                'Contatos',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const Icon(Icons.call_outlined),
-                title: const Text('Ligar'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _goTel(HomeServicos._tel);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.alternate_email_outlined),
-                title: const Text('Enviar E-mail'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _goEmail(context);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-
-// ====== E-mail com fallback robusto (mailto -> Gmail web -> copiar) ======
-Future<void> _goEmail(BuildContext context) async {
-  final mail = Uri(
-    scheme: 'mailto',
-    path: 'contato@ipasemnh.com.br',
-    queryParameters: const {
-      'subject': 'Atendimento IPASEM',
-      'body': 'Olá, preciso de ajuda no app.',
-    },
-  );
-
-  try {
-    final opened = await launchUrl(mail, mode: LaunchMode.externalApplication);
-    if (opened) return;
-  } catch (e) {
-    debugPrint('mailto launch error: $e');
-  }
-
-  final gmailWeb = Uri.https('mail.google.com', '/mail/', {
-    'view': 'cm',
-    'fs': '1',
-    'to': 'contato@ipasemnh.com.br',
-    'su': 'Atendimento IPASEM',
-    'body': 'Olá, preciso de ajuda no app.',
-  });
-
-  try {
-    final openedWeb = await launchUrl(gmailWeb, mode: LaunchMode.externalApplication);
-    if (openedWeb) return;
-  } catch (e) {
-    debugPrint('gmail web launch error: $e');
-  }
-
-  await Clipboard.setData(const ClipboardData(text: 'contato@ipasemnh.com.br'));
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Nenhum app de e-mail encontrado. Endereço copiado.')),
-  );
-}
-
-// ====== Abre URL externa genérica ======
-Future<void> _launchExternal(String url, BuildContext context) async {
-  final uri = Uri.parse(url);
-  try {
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok) throw Exception('launch falhou');
-  } catch (_) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Não foi possível abrir: $url')),
     );
   }
 }
