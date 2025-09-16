@@ -1,5 +1,8 @@
 // lib/profile_screen.dart
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'login_screen.dart'; // para o logout
 
 /// Cores alinhadas com as outras telas
 const _brand       = Color(0xFF143C8D);
@@ -45,9 +48,53 @@ class _ProfileScreenState extends State<ProfileScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Perfil'),
+        leading: Builder(
+          builder: (ctx) => IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Menu',
+            onPressed: () => Scaffold.of(ctx).openDrawer(),
+          ),
+        ),
         actions: const [
-          // reservado para futuras ações (ex.: notificações)
+          _LogoAction(
+            imagePath: 'assets/images/logo_ipasem.png',
+            size: 28,
+            borderRadius: 6,
+          ),
+          SizedBox(width: 8),
         ],
+      ),
+      drawer: Drawer(
+        child: SafeArea(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              const DrawerHeader(
+                child: Text(
+                  'Menu',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('Sobre'),
+              ),
+              const ListTile(
+                leading: Icon(Icons.privacy_tip_outlined),
+                title: Text('Privacidade'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Sair'),
+                onTap: () async {
+                  Navigator.of(context).pop(); // fecha o drawer
+                  await _logout(context);
+                },
+              ),
+            ],
+          ),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -101,20 +148,23 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('Sobre o aplicativo'),
-                  subtitle: const Text('Versão, mantenedor e informações gerais.'),
+                  subtitle:
+                  const Text('Versão, mantenedor e informações gerais.'),
                   onTap: () => _fallbackSnack('Sobre: implementar navegação.'),
                   minLeadingWidth: 0,
                 ),
                 ListTile(
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text('Política de Privacidade'),
-                  onTap: () => _fallbackSnack('Privacidade: implementar navegação.'),
+                  onTap: () =>
+                      _fallbackSnack('Privacidade: implementar navegação.'),
                   minLeadingWidth: 0,
                 ),
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
                   title: const Text('Termos de Uso'),
-                  onTap: () => _fallbackSnack('Termos: implementar navegação.'),
+                  onTap: () =>
+                      _fallbackSnack('Termos: implementar navegação.'),
                   minLeadingWidth: 0,
                 ),
               ],
@@ -141,6 +191,26 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
+
+  Future<void> _logout(BuildContext context) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('saved_cpf');
+      await prefs.remove('auth_token');
+      await prefs.setBool('is_logged_in', false);
+
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível encerrar a sessão.')),
+      );
+    }
+  }
 }
 
 // ================== Widgets de composição ==================
@@ -166,7 +236,8 @@ class _HeaderCardVisitor extends StatelessWidget {
           CircleAvatar(
             radius: 28,
             backgroundColor: _brand,
-            child: const Icon(Icons.person_outline, color: Colors.white, size: 28),
+            child:
+            const Icon(Icons.person_outline, color: Colors.white, size: 28),
           ),
           const SizedBox(width: 12),
 
@@ -183,7 +254,6 @@ class _HeaderCardVisitor extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
 
-                // ALTERAÇÃO: Row -> Wrap para evitar overflow horizontal
                 Wrap(
                   spacing: 8,
                   runSpacing: 6,
@@ -341,6 +411,40 @@ extension _ActionArea on Widget {
           secondary,
         ],
       ],
+    );
+  }
+}
+
+/// Ação de AppBar que garante que qualquer imagem seja contida no quadrado,
+/// recortada sem deformar (BoxFit.cover + ClipRRect).
+class _LogoAction extends StatelessWidget {
+  final String imagePath;
+  final double size;
+  final double borderRadius;
+
+  const _LogoAction({
+    super.key,
+    required this.imagePath,
+    this.size = 28,
+    this.borderRadius = 6,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(borderRadius),
+          child: Image.asset(
+            imagePath,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.medium,
+          ),
+        ),
+      ),
     );
   }
 }
