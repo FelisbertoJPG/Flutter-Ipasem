@@ -4,8 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'route_transitions.dart'; // pushSharedAxis / pushReplacementSharedAxis / pushAndRemoveAllSharedAxis
+import 'route_transitions.dart';
 import 'root_nav_shell.dart';
+
+// [CONFIG] acesso aos params (ex.: passwordMinLength)
+import 'config/app_config.dart';
+
+// [API] cliente HTTP centralizado
+import 'services/api_client.dart';
 
 // ====== Paleta / estilos base (alinhada às outras telas) ======
 const _brand       = Color(0xFF143C8D); // azul da marca
@@ -17,7 +23,9 @@ const _panelBorder = Color(0xFFE5E8EE);
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
-  static const String _prefsKeyCpf = 'saved_cpf';
+  static const String _prefsKeyCpf   = 'saved_cpf';
+  static const String _prefsAuth     = 'auth_token';   // <— onde salvo o token retornado
+  static const String _prefsLoggedIn = 'is_logged_in'; // <— flag simples de sessão
   static const String _firstAccessUrl =
       'https://assistweb.ipasemnh.com.br/site/recuperar-senha';
 
@@ -28,14 +36,14 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _cpfCtrl = TextEditingController();
-  final _pwdCtrl = TextEditingController();
+  final _cpfCtrl  = TextEditingController();
+  final _pwdCtrl  = TextEditingController();
   final _cpfFocus = FocusNode();
   final _pwdFocus = FocusNode();
 
   bool _rememberCpf = true;
-  bool _obscure = true;
-  bool _loading = false;
+  bool _obscure     = true;
+  bool _loading     = false;
 
   @override
   void initState() {
@@ -44,11 +52,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loadSavedCpf() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(LoginScreen._prefsKeyCpf) ?? '';
+    final prefs  = await SharedPreferences.getInstance();
+    final saved  = prefs.getString(LoginScreen._prefsKeyCpf) ?? '';
     if (saved.isNotEmpty) {
-      _cpfCtrl.text = saved;
-      _rememberCpf = true;
+      _cpfCtrl.text   = saved;
+      _rememberCpf    = true;
       setState(() {});
     }
   }
@@ -61,8 +69,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String? _validatePwd(String? v) {
-    if ((v ?? '').isEmpty) return 'Informe sua senha';
-    if ((v ?? '').length < 4) return 'Senha muito curta';
+    // usa minLength dos params (com fallback 4 se algo der errado)
+    final minLen = AppConfig.maybeOf(context)?.params.passwordMinLength ?? 4;
+    final value = v ?? '';
+    if (value.isEmpty) return 'Informe sua senha';
+    if (value.length < minLen) return 'Senha muito curta (mínimo: $minLen)';
     return null;
   }
 
@@ -72,25 +83,49 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _loading = true);
     try {
+      // Normaliza CPF
+      final digits = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
+      final senha  = _pwdCtrl.text;
+
       // Salva/limpa CPF conforme opção
       final prefs = await SharedPreferences.getInstance();
-      final digits = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
       if (_rememberCpf) {
         await prefs.setString(LoginScreen._prefsKeyCpf, digits);
       } else {
         await prefs.remove(LoginScreen._prefsKeyCpf);
       }
 
-      // TODO: chamada real de autenticação
-      await Future.delayed(const Duration(milliseconds: 500));
+      // ===== Chamada real de autenticação =====
+      final api = ApiClient.of(context);
+      final base = AppConfig.of(context).params.baseApiUrl;
+      debugPrint('[API] baseApiUrl = $base');
+      // Backend pode aceitar apenas CPF; enviamos ambos: backend ignora se não usar senha.
+      final resp = await api.login(cpf: digits, senha: senha);
 
+      final data = (resp.data is Map) ? (resp.data as Map) : {};
+      if (data['ok'] != true) {
+        final msg = (data['message'] ?? 'Falha ao autenticar').toString();
+        throw Exception(msg);
+      }
+
+      // Token retornado (ajuste se for access_token/refresh_token)
+      final token = (data['token'] ??
+          data['access_token'] ??
+          data['session'] ??
+          '') as String;
+
+      // Salva token/flag simples (considere flutter_secure_storage depois)
+      if (token.isNotEmpty) {
+        await prefs.setString(LoginScreen._prefsAuth, token);
+      }
+      await prefs.setBool(LoginScreen._prefsLoggedIn, true);
+
+      // Fecha teclado e sincroniza frame
       if (!mounted) return;
-
-      // Evita jank com o teclado aberto
       FocusScope.of(context).unfocus();
       await Future.delayed(const Duration(milliseconds: 16));
 
-      // Anima vertical e limpa a pilha
+      // Navega limpando a pilha
       await pushAndRemoveAllSharedAxis(
         context,
         const RootNavShell(),
@@ -108,6 +143,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _continueAsGuest() async {
     if (!mounted) return;
+
+    // Limpa qualquer resquício de sessão
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(LoginScreen._prefsAuth);
+    await prefs.setBool(LoginScreen._prefsLoggedIn, false);
 
     FocusScope.of(context).unfocus();
     await Future.delayed(const Duration(milliseconds: 16));

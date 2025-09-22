@@ -1,6 +1,6 @@
 {
   "APP_FLAVOR": "hml",
-  "BASE_API_URL": "https://seu-backend.exemplo/api",
+  "BASE_API_URL": "http://192.9.200.98/admin/api",
   "SUPPORT_EMAIL": "hml-suporte@ipasemnh.com.br",
   "SENDER_EMAIL": "hml-naoresponder@ipasemnh.com.br",
   "USER_PASSWORD_RESET_TOKEN_EXPIRE": 3600,
