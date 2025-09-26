@@ -185,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final maxWidth = MediaQuery.of(context).size.width;
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrar')),
+
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(

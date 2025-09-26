@@ -47,7 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Perfil'),
+
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu),
@@ -57,7 +57,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
         actions: const [
           _LogoAction(
-            imagePath: 'assets/images/logo_ipasem.png',
+            imagePath: 'assets/images/icons/logo_ipasem.png',
             size: 28,
             borderRadius: 6,
           ),
