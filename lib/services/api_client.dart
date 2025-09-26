@@ -3,38 +3,39 @@ import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import '../config/app_config.dart';
 
-/// Cliente HTTP centralizado do app.
-/// - Baseia-se em BASE_API_URL dos AppParams (ex.: https://seu-dominio/api)
-/// - Timeouts sensatos
-/// - Interceptor opcional de Auth (Bearer)
 class ApiClient {
   final Dio _dio;
 
   ApiClient._(this._dio);
 
-  /// Constrói um ApiClient usando o contexto para ler AppConfig (BASE_API_URL).
-  /// Você pode fornecer callbacks para obter/atualizar token se quiser
-  /// habilitar o interceptor de autenticação.
   factory ApiClient.of(
       BuildContext context, {
         Future<String?> Function()? getAccessToken, // opcional
       }) {
-    final baseUrl = AppConfig.of(context).params.baseApiUrl;
+    // Espera BASE_API_URL = http://192.9.200.98/admin/api (sem / no final)
+    final raw = AppConfig.of(context).params.baseApiUrl.trim();
+    final baseUrl = raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
+
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        headers: const {'Content-Type': 'application/json'},
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 30),
+        // Deixa o Dio lançar exceção em 4xx/5xx (padrão). Se quiser
+        // receber Response mesmo com erro, descomente:
+        // validateStatus: (_) => true,
       ),
     );
 
-    // Interceptor de log opcional (descomente se quiser ver requisições/respostas)
+    // Logs (útil em HML)
     // dio.interceptors.add(LogInterceptor(
     //   requestBody: true, responseBody: true, requestHeader: false, responseHeader: false,
     // ));
 
-    // Interceptor de Auth (Bearer) opcional
     if (getAccessToken != null) {
       dio.interceptors.add(_AuthInterceptor(getAccessToken: getAccessToken));
     }
@@ -42,47 +43,70 @@ class ApiClient {
     return ApiClient._(dio);
   }
 
-  /// Login no backend (POST /auth/login)
-  /// Envia CPF e, se disponível, a senha. O backend decide se usa ambos ou só CPF.
-  Future<Response<dynamic>> login({
-    required String cpf,
-    String? senha,
-  }) {
-    final body = <String, dynamic>{'cpf': cpf};
-    if (senha != null && senha.isNotEmpty) {
-      body['senha'] = senha;
+  /// POST genérico com parse e tratamento de erro
+  Future<dynamic> _post(String path, Map<String, dynamic> data) async {
+    try {
+      final res = await _dio.post(path, data: data);
+      return res.data; // Dio já faz decode do JSON
+    } on DioException catch (e) {
+      // Tenta extrair mensagem amigável do backend
+      final msg = e.response?.data is Map
+          ? (e.response!.data['error'] ??
+          e.response!.data['message'] ??
+          'Erro HTTP ${e.response!.statusCode}')
+          : (e.message ?? 'Falha de rede');
+      throw Exception(msg);
     }
-    return _dio.post('/auth/login', data: body);
   }
 
-  /// Chama procedure no Postgres via backend (POST /proc/pg-run)
-  /// name: ex. "public.minha_proc"
-  /// args: mapa simples com parâmetros
-  Future<Response<dynamic>> pgRun({
+  /// GET simples (se precisar)
+  Future<dynamic> get(String path, {Map<String, dynamic>? query}) async {
+    try {
+      final res = await _dio.get(path, queryParameters: query);
+      return res.data;
+    } on DioException catch (e) {
+      final msg = e.response?.data is Map
+          ? (e.response!.data['error'] ??
+          e.response!.data['message'] ??
+          'Erro HTTP ${e.response!.statusCode}')
+          : (e.message ?? 'Falha de rede');
+      throw Exception(msg);
+    }
+  }
+
+  /// Ping (opcional)
+  Future<dynamic> ping() => get('/ping');
+
+  /// Login -> POST /auth/login
+  Future<dynamic> login({
+    required String cpf,
+    required String senha,
+  }) {
+    final digits = cpf.replaceAll(RegExp(r'\D'), '');
+    return _post('/auth/login', {'cpf': digits, 'senha': senha});
+  }
+
+  /// Postgres: POST /proc/pg-run
+  Future<dynamic> pgRun({
     required String name,
     Map<String, dynamic> args = const {},
     String path = '/proc/pg-run',
   }) {
-    return _dio.post(path, data: {'name': name, 'args': args});
+    return _post(path, {'name': name, 'args': args});
   }
 
-  /// Chama procedure no Firebird via backend (POST /proc/fb-run)
-  /// name: ex. "MINHA_PROC"
-  Future<Response<dynamic>> fbRun({
+  /// Firebird: POST /proc/fb-run
+  Future<dynamic> fbRun({
     required String name,
     Map<String, dynamic> args = const {},
     String path = '/proc/fb-run',
   }) {
-    return _dio.post(path, data: {'name': name, 'args': args});
+    return _post(path, {'name': name, 'args': args});
   }
 }
 
-/// Interceptor simples que injeta Authorization: Bearer <token>
-/// se o callback getAccessToken() retornar algo não-nulo.
-/// Use quando tiver token salvo (ex.: flutter_secure_storage).
 class _AuthInterceptor extends Interceptor {
   final Future<String?> Function() getAccessToken;
-
   _AuthInterceptor({required this.getAccessToken});
 
   @override
@@ -93,7 +117,7 @@ class _AuthInterceptor extends Interceptor {
         options.headers['Authorization'] = 'Bearer $token';
       }
     } catch (_) {
-      // se falhar ao ler token, segue sem header
+      // segue sem header
     }
     handler.next(options);
   }
