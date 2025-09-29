@@ -2,15 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// IMPORTANTE:
-// Se você já tem as cores centralizadas em lib/theme/colors.dart,
-// use este import e REMOVA as consts locais.
-// Caso ainda não tenha, substitua o import e crie as consts aqui.
-// Recomendo centralizar :)
-import '../theme/colors.dart'; // exporta kBrand, kCardBg, kCardBorder, kPanelBg, kPanelBorder
-
 /// Scaffold padrão com AppBar + Drawer reaproveitáveis.
-/// - Navegação do Drawer via rotas nomeadas (sem importar screens)
+/// - Usa rotas nomeadas no Drawer (sem importar outras screens)
 /// - AppBar aceita `actions` opcionais para customização
 class AppScaffold extends StatelessWidget {
   final String title;

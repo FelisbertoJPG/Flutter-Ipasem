@@ -1,3 +1,4 @@
+// lib/ui/components/action_tile.dart
 import 'package:flutter/material.dart';
 import '../../theme/colors.dart';
 
@@ -6,6 +7,7 @@ class ActionTile extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final double width;
+  final Color? iconColor; // <-- novo
 
   const ActionTile({
     super.key,
@@ -13,6 +15,7 @@ class ActionTile extends StatelessWidget {
     required this.icon,
     required this.onTap,
     required this.width,
+    this.iconColor, // <-- novo
   });
 
   @override
@@ -44,7 +47,7 @@ class ActionTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               alignment: Alignment.center,
-              child: Icon(icon, size: 24, color: kBrand),
+              child: Icon(icon, size: 24, color: iconColor ?? kBrand), // <-- usa iconColor
             ),
             const SizedBox(width: 12),
             Expanded(

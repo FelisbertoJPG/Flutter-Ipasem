@@ -1,28 +1,20 @@
-// lib/home_servicos.dart
+// lib/screens/home_servicos.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import '../webview_screen.dart';
-import 'login_screen.dart';
-import 'profile_screen.dart';
-import 'home_screen.dart';
-
-// ====== Paleta / estilos base (mesmo da Home) ======
-const _brand       = Color(0xFF143C8D); // azul da marca (ícones/títulos)
-const _cardBg      = Color(0xFFEFF6F9); // fundo dos botões
-const _cardBorder  = Color(0xFFE2ECF2); // borda clarinha dos botões
-const _panelBg     = Color(0xFFF4F5F7); // fundo do painel acinzentado
-const _panelBorder = Color(0xFFE5E8EE); // borda do painel acinzentado
+import '../ui/app_shell.dart';      // AppScaffold
+import '../theme/colors.dart';      // kBrand, kCardBg, kCardBorder, kPanelBg, kPanelBorder
+import '../webview_screen.dart';    // sua tela de WebView
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
   static const String _prefsKeyCpf    = 'saved_cpf';
   static const String _loginUrl       = 'https://assistweb.ipasemnh.com.br/site/login';
-  static const String _carteirinhaUrl = 'https://assistweb.ipasemnh.com.br/site/login'; // TODO: ajustar quando tiver a URL
+  static const String _carteirinhaUrl = 'https://assistweb.ipasemnh.com.br/site/login'; // TODO: ajustar
 
   @override
   State<HomeServicos> createState() => _HomeServicosState();
@@ -38,12 +30,10 @@ class _HomeServicosState extends State<HomeServicos> {
   @override
   void initState() {
     super.initState();
-    // HTML mínimo para pré-aquecer o engine (garante viewport correta)
     _warmupCtrl.loadHtmlString(
       '<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body></body></html>',
     );
 
-    // Insere WebView invisível após o primeiro frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _warmupOverlay = OverlayEntry(
         builder: (_) => IgnorePointer(
@@ -92,46 +82,11 @@ class _HomeServicosState extends State<HomeServicos> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // ===== AppBar com hambúrguer e título =====
-      appBar: AppBar(
-        title: const Text('Serviços'),
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu),
-            tooltip: 'Menu',
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
-          ),
-        ),
-        actions: const [
-          _LogoAction(
-            imagePath: 'assets/images/icons/logo_ipasem.png',
-            size: 28,
-            borderRadius: 6,
-          ),
-          SizedBox(width: 8),
-        ],
-      ),
-
-      // ===== Drawer padrão alinhado com a Home =====
-      drawer: _AppDrawer(
-        onHome: () {
-          Navigator.of(context).pop();
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-                (route) => false,
-          );
-        },
-        onPerfil: () {
-          Navigator.of(context).pop();
-          Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
-        },
-      ),
-
+    return AppScaffold(
+      title: 'Serviços',
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Mesmo comportamento da Home
             final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
 
             return Center(
@@ -140,12 +95,11 @@ class _HomeServicosState extends State<HomeServicos> {
                 child: ListView(
                   padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
                   children: [
-                    // ===== Painel com grade de ações (coerente com a Home) =====
                     Container(
                       decoration: BoxDecoration(
-                        color: _panelBg,
+                        color: kPanelBg,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _panelBorder, width: 2),
+                        border: Border.all(color: kPanelBorder, width: 2),
                       ),
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                       child: Column(
@@ -160,10 +114,11 @@ class _HomeServicosState extends State<HomeServicos> {
                             ),
                           ),
                           const SizedBox(height: 12),
-
                           LayoutBuilder(
                             builder: (context, c) {
                               final isWide = c.maxWidth >= 520;
+                              final itemW = isWide ? (c.maxWidth - 12) / 2 : c.maxWidth;
+
                               return Wrap(
                                 spacing: 12,
                                 runSpacing: 12,
@@ -179,7 +134,7 @@ class _HomeServicosState extends State<HomeServicos> {
                                         title: 'Autorizações',
                                       );
                                     },
-                                    width: isWide ? (c.maxWidth - 12) / 2 : c.maxWidth,
+                                    width: itemW,
                                   ),
                                   _ActionTile(
                                     title: 'Carteirinha Digital',
@@ -192,7 +147,7 @@ class _HomeServicosState extends State<HomeServicos> {
                                         title: 'Carteirinha Digital',
                                       );
                                     },
-                                    width: isWide ? (c.maxWidth - 12) / 2 : c.maxWidth,
+                                    width: itemW,
                                   ),
                                   _ActionTile(
                                     title: 'Site',
@@ -204,7 +159,7 @@ class _HomeServicosState extends State<HomeServicos> {
                                         title: 'Site',
                                       );
                                     },
-                                    width: isWide ? (c.maxWidth - 12) / 2 : c.maxWidth,
+                                    width: itemW,
                                   ),
                                 ],
                               );
@@ -218,72 +173,6 @@ class _HomeServicosState extends State<HomeServicos> {
               ),
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-// ===== Drawer básico alinhado ao app =====
-class _AppDrawer extends StatelessWidget {
-  final VoidCallback? onHome;
-  final VoidCallback? onPerfil;
-
-  const _AppDrawer({this.onHome, this.onPerfil});
-
-  Future<void> _logout(BuildContext context) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('saved_cpf');
-      await prefs.remove('auth_token');
-      await prefs.setBool('is_logged_in', false);
-
-      if (!context.mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (route) => false,
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível encerrar a sessão.')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            const DrawerHeader(
-              child: Text(
-                'Menu',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.home_outlined),
-              title: const Text('Início'),
-              onTap: onHome,
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: const Text('Perfil'),
-              onTap: onPerfil,
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Sair'),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _logout(context);
-              },
-            ),
-          ],
         ),
       ),
     );
@@ -313,13 +202,13 @@ class _ActionTile extends StatelessWidget {
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           elevation: 0,
-          backgroundColor: _cardBg,
+          backgroundColor: kCardBg,
           foregroundColor: const Color(0xFF101828),
           minimumSize: const Size.fromHeight(64),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: _cardBorder, width: 2),
+            side: const BorderSide(color: kCardBorder, width: 2),
           ),
           shadowColor: Colors.black12,
         ),
@@ -331,11 +220,11 @@ class _ActionTile extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: Colors.white,
-                border: Border.all(color: _cardBorder),
+                border: Border.all(color: kCardBorder),
                 borderRadius: BorderRadius.circular(12),
               ),
               alignment: Alignment.center,
-              child: Icon(icon, size: 22, color: iconColor ?? _brand),
+              child: Icon(icon, size: 22, color: iconColor ?? kBrand),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -351,42 +240,8 @@ class _ActionTile extends StatelessWidget {
                 ),
               ),
             ),
-            const Icon(Icons.chevron_right, color: _brand),
+            const Icon(Icons.chevron_right, color: kBrand),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Ação de AppBar que garante que qualquer imagem seja contida no quadrado,
-/// recortada sem deformar (BoxFit.cover + ClipRRect).
-class _LogoAction extends StatelessWidget {
-  final String imagePath;
-  final double size;
-  final double borderRadius;
-
-  const _LogoAction({
-    super.key,
-    required this.imagePath,
-    this.size = 28,
-    this.borderRadius = 6,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(borderRadius),
-          child: Image.asset(
-            imagePath,
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.medium,
-          ),
         ),
       ),
     );
@@ -521,7 +376,6 @@ Future<void> _promptCpfAndOpen(
   if (cpf == null || cpf.isEmpty) return;
   if (!context.mounted) return;
 
-  // abre a WebView com CPF para autofill
   Navigator.of(context).push(_softSlideRoute(
     WebViewScreen(url: url, title: title, initialCpf: cpf),
   ));

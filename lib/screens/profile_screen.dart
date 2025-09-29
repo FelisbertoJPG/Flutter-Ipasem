@@ -1,32 +1,19 @@
-// lib/profile_screen.dart
+// lib/screens/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'login_screen.dart'; // para o logout
+import '../theme/colors.dart';                    // kBrand, kCardBg, kCardBorder, kPanelBg, kPanelBorder
+import '../ui/app_shell.dart';                    // AppScaffold (AppBar + Drawer padrão)
+import '../ui/components/section_card.dart';      // SectionCard reutilizável
+import '../screens/login_screen.dart';            // fallback no push se rota não existir
 
-/// Cores alinhadas com as outras telas
-const _brand       = Color(0xFF143C8D);
-const _cardBg      = Color(0xFFEFF6F9);
-const _cardBorder  = Color(0xFFE2ECF2);
-const _panelBg     = Color(0xFFF4F5F7);
-const _panelBorder = Color(0xFFE5E8EE);
+// URL "Criar conta" (prestador) — atualizada
+const _createAccountUrl =
+    'https://assistweb.ipasemnh.com.br/requerimentos/recuperar-senha-prestador';
 
 class ProfileScreen extends StatefulWidget {
-  /// Para este passo, mantemos visitante como padrão.
-  final bool isVisitor;
-
-  /// Callback para acionar sua tela de login (Navigator.push ...)
-  final VoidCallback? onRequestSignIn;
-
-  /// Callback para "Criar conta" (opcional)
-  final VoidCallback? onRequestSignUp;
-
-  const ProfileScreen({
-    super.key,
-    this.isVisitor = true,
-    this.onRequestSignIn,
-    this.onRequestSignUp,
-  });
+  const ProfileScreen({super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -41,79 +28,77 @@ class _ProfileScreenState extends State<ProfileScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // --- Navegação segura para Login (rootNavigator + fallback) ---
+  void _goToLogin() {
+    FocusScope.of(context).unfocus();
+    try {
+      Navigator.of(context, rootNavigator: true).pushNamed('/login');
+    } catch (_) {
+      // fallback se a rota nomeada não estiver registrada
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('saved_cpf');
+      await prefs.remove('auth_token');
+      await prefs.setBool('is_logged_in', false);
+      if (!mounted) return;
+
+      // prefira rootNavigator para sair da shell/tab atual
+      Navigator.of(context, rootNavigator: true)
+          .pushNamedAndRemoveUntil('/login', (route) => false);
+
+      // Fallback (se a rota não existir):
+      // Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      //   MaterialPageRoute(builder: (_) => const LoginScreen()),
+      //   (route) => false,
+      // );
+    } catch (_) {
+      if (!mounted) return;
+      _fallbackSnack('Não foi possível encerrar a sessão.');
+    }
+  }
+
+  Future<void> _openCreateAccount() async {
+    try {
+      final ok = await launchUrl(
+        Uri.parse(_createAccountUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!ok) throw Exception();
+    } catch (_) {
+      if (!mounted) return;
+      _fallbackSnack('Não foi possível abrir o link.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    return Scaffold(
-      appBar: AppBar(
-
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu),
-            tooltip: 'Menu',
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
-          ),
-        ),
-        actions: const [
-          _LogoAction(
-            imagePath: 'assets/images/icons/logo_ipasem.png',
-            size: 28,
-            borderRadius: 6,
-          ),
-          SizedBox(width: 8),
-        ],
-      ),
-      drawer: Drawer(
-        child: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              const DrawerHeader(
-                child: Text(
-                  'Menu',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-              ),
-              const ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('Sobre'),
-              ),
-              const ListTile(
-                leading: Icon(Icons.privacy_tip_outlined),
-                title: Text('Privacidade'),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Sair'),
-                onTap: () async {
-                  Navigator.of(context).pop(); // fecha o drawer
-                  await _logout(context);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+    return AppScaffold(
+      title: 'Perfil',
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== Cabeçalho =====
+          // ===== Cabeçalho (Visitante) =====
           _HeaderCardVisitor(
-            onLogin: widget.onRequestSignIn ??
-                    () => _fallbackSnack('Ação de login não configurada.'),
-            onSignUp: widget.onRequestSignUp ??
-                    () => _fallbackSnack('Ação de criação de conta não configurada.'),
+            onLogin: _goToLogin,                // usa rootNavigator + fallback
+            onSignUp: _openCreateAccount,       // abre URL externa
           ),
 
           const SizedBox(height: 16),
 
           // ===== Dados bloqueados (somente após login) =====
-          _SectionCard(
+          const SectionCard(
             title: 'Dados do usuário',
             child: Column(
-              children: const [
+              children: [
                 _LockedInfoRow(label: 'Nome completo'),
                 _LockedInfoRow(label: 'CPF'),
                 _LockedInfoRow(label: 'Matrícula'),
@@ -124,13 +109,12 @@ class _ProfileScreenState extends State<ProfileScreen>
               ],
             ),
           ),
-
           const SizedBox(height: 12),
 
-          _SectionCard(
+          const SectionCard(
             title: 'Benefícios',
             child: Column(
-              children: const [
+              children: [
                 _LockedInfoRow(label: 'Plano de saúde'),
                 _LockedInfoRow(label: 'Dependentes'),
                 _LockedInfoRow(label: 'Autorizações recentes'),
@@ -141,31 +125,41 @@ class _ProfileScreenState extends State<ProfileScreen>
           const SizedBox(height: 12),
 
           // ===== Atalhos informativos / legais =====
-          _SectionCard(
+          SectionCard(
             title: 'Informações',
             child: Column(
               children: [
                 ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('Sobre o aplicativo'),
-                  subtitle:
-                  const Text('Versão, mantenedor e informações gerais.'),
-                  onTap: () => _fallbackSnack('Sobre: implementar navegação.'),
+                  subtitle: const Text('Versão, mantenedor e informações gerais.'),
+                  onTap: () => Navigator.of(context, rootNavigator: true).pushNamed('/sobre'),
                   minLeadingWidth: 0,
                 ),
                 ListTile(
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text('Política de Privacidade'),
-                  onTap: () =>
-                      _fallbackSnack('Privacidade: implementar navegação.'),
+                  onTap: () => Navigator.of(context, rootNavigator: true).pushNamed('/privacidade'),
                   minLeadingWidth: 0,
                 ),
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
                   title: const Text('Termos de Uso'),
-                  onTap: () =>
-                      _fallbackSnack('Termos: implementar navegação.'),
+                  onTap: () => _fallbackSnack('Termos: implementar rota /termos'),
                   minLeadingWidth: 0,
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    onPressed: _logout,
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Sair'),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: kBrand, width: 1.4),
+                      foregroundColor: kBrand,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -177,9 +171,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _panelBg,
+              color: kPanelBg,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _panelBorder),
+              border: Border.all(color: kPanelBorder),
             ),
             child: const Text(
               'Você está logado como Visitante. Faça login para visualizar seus dados '
@@ -191,29 +185,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-
-  Future<void> _logout(BuildContext context) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('saved_cpf');
-      await prefs.remove('auth_token');
-      await prefs.setBool('is_logged_in', false);
-
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (route) => false,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível encerrar a sessão.')),
-      );
-    }
-  }
 }
 
-// ================== Widgets de composição ==================
+// ================== Widgets específicos ==================
 
 class _HeaderCardVisitor extends StatelessWidget {
   final VoidCallback onLogin;
@@ -226,70 +200,81 @@ class _HeaderCardVisitor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: _blockDecoration(),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Avatar
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: _brand,
-            child:
-            const Icon(Icons.person_outline, color: Colors.white, size: 28),
+    return Column(
+      children: [
+        // Card principal
+        Container(
+          decoration: BoxDecoration(
+            color: kCardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: kCardBorder, width: 2),
           ),
-          const SizedBox(width: 12),
-
-          // Títulos + chips (com quebra automática)
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Visitante',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 4),
-
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: const [
-                    _StatusChip(
-                      label: 'Logado como Visitante',
-                      color: Color(0xFFB54708), // âmbar
-                      bg: Color(0xFFFFF4E5),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const CircleAvatar(
+                radius: 28,
+                backgroundColor: kBrand,
+                child: Icon(Icons.person_outline, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Visitante',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                     ),
-                    _StatusChip(
-                      label: 'Acesso limitado',
-                      color: Color(0xFF6941C6),
-                      bg: Color(0xFFF4EBFF),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: const [
+                        _StatusChip(
+                          label: 'Logado como Visitante',
+                          color: Color(0xFFB54708), // âmbar
+                          bg: Color(0xFFFFF4E5),
+                        ),
+                        _StatusChip(
+                          label: 'Acesso limitado',
+                          color: Color(0xFF6941C6),
+                          bg: Color(0xFFF4EBFF),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
-    ).wrapWithActions(
-      primary: FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: _brand,
-          minimumSize: const Size.fromHeight(44),
         ),
-        onPressed: onLogin,
-        icon: const Icon(Icons.login),
-        label: const Text('Fazer login'),
-      ),
-      secondary: OutlinedButton.icon(
-        onPressed: onSignUp,
-        icon: const Icon(Icons.person_add_alt_1_outlined),
-        label: const Text('Criar conta'),
-      ),
+        const SizedBox(height: 12),
+        // Ações
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: kBrand),
+            onPressed: onLogin,
+            icon: const Icon(Icons.login),
+            label: const Text('Fazer login'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: OutlinedButton.icon(
+            onPressed: onSignUp,
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            label: const Text('Criar conta'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -324,38 +309,6 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _SectionCard({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: _blockDecoration(),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF475467),
-            ),
-          ),
-          const SizedBox(height: 8),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
 class _LockedInfoRow extends StatelessWidget {
   final String label;
 
@@ -371,10 +324,7 @@ class _LockedInfoRow extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF101828),
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF101828)),
       ),
       subtitle: const Text(
         'Disponível após login',
@@ -383,68 +333,7 @@ class _LockedInfoRow extends StatelessWidget {
         style: TextStyle(color: Color(0xFF667085)),
       ),
       trailing: const Icon(Icons.chevron_right, color: Color(0xFF98A2B3)),
-      onTap: null, // bloqueado no modo visitante
       minLeadingWidth: 0,
-    );
-  }
-}
-
-// ================== Helpers de UI ==================
-
-BoxDecoration _blockDecoration() => BoxDecoration(
-  color: _cardBg,
-  borderRadius: BorderRadius.circular(16),
-  border: Border.all(color: _cardBorder, width: 2),
-);
-
-extension _ActionArea on Widget {
-  /// Anexa uma área de ações (botões) abaixo do bloco, com espaçamento consistente.
-  Widget wrapWithActions({required Widget primary, Widget? secondary}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        this,
-        const SizedBox(height: 12),
-        primary,
-        if (secondary != null) ...[
-          const SizedBox(height: 8),
-          secondary,
-        ],
-      ],
-    );
-  }
-}
-
-/// Ação de AppBar que garante que qualquer imagem seja contida no quadrado,
-/// recortada sem deformar (BoxFit.cover + ClipRRect).
-class _LogoAction extends StatelessWidget {
-  final String imagePath;
-  final double size;
-  final double borderRadius;
-
-  const _LogoAction({
-    super.key,
-    required this.imagePath,
-    this.size = 28,
-    this.borderRadius = 6,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(borderRadius),
-          child: Image.asset(
-            imagePath,
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.medium,
-          ),
-        ),
-      ),
     );
   }
 }
