@@ -11,7 +11,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'services/ipasem_js.dart';
 import 'services/session_manager.dart';
-import 'widgets/ipasem_alert.dart';
+import 'ui/widgets/ipasem_alert.dart';
 
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import 'services/file_upload_manager.dart';
