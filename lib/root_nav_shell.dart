@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'home_screen.dart';
-import 'service_screen.dart';   // HomeServicos
-import 'profile_screen.dart';  // ProfileScreen (Visitante)
+import 'screens/home_screen.dart';
+import 'screens/home_servicos.dart';   // HomeServicos
+import 'screens/profile_screen.dart';  // ProfileScreen (Visitante)
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});

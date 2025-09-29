@@ -6,7 +6,7 @@ import 'config/app_config.dart';
 import 'config/params.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
-import 'login_screen.dart';
+import 'screens/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

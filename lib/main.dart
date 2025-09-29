@@ -1,7 +1,7 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'login_screen.dart';
+import 'screens/login_screen.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
 import 'root_nav_shell.dart'; // << usa o shell com BottomNav + Drawer (mantido se for usado após login)

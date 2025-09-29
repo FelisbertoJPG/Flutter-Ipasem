@@ -5,10 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'webview_screen.dart';
-import 'login_screen.dart'; // apenas se o Drawer tiver "Sair" (logout)
+import '../webview_screen.dart';
+import 'login_screen.dart';
+import 'profile_screen.dart';
+import 'home_screen.dart';
 
-// ====== Paleta / estilos base ======
+// ====== Paleta / estilos base (mesmo da Home) ======
 const _brand       = Color(0xFF143C8D); // azul da marca (ícones/títulos)
 const _cardBg      = Color(0xFFEFF6F9); // fundo dos botões
 const _cardBorder  = Color(0xFFE2ECF2); // borda clarinha dos botões
@@ -36,8 +38,10 @@ class _HomeServicosState extends State<HomeServicos> {
   @override
   void initState() {
     super.initState();
-    // HTML mínimo para pré-aquecer o engine
-    _warmupCtrl.loadHtmlString('<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body></body></html>');
+    // HTML mínimo para pré-aquecer o engine (garante viewport correta)
+    _warmupCtrl.loadHtmlString(
+      '<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body></body></html>',
+    );
 
     // Insere WebView invisível após o primeiro frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -57,15 +61,12 @@ class _HomeServicosState extends State<HomeServicos> {
         ),
       );
       final overlay = Overlay.of(context, rootOverlay: true);
-      if (overlay != null) {
-        overlay.insert(_warmupOverlay!);
-      }
+      overlay?.insert(_warmupOverlay!);
     });
   }
 
   @override
   void dispose() {
-    // remove overlay se existir
     _warmupOverlay?.remove();
     _warmupOverlay = null;
     super.dispose();
@@ -82,6 +83,7 @@ class _HomeServicosState extends State<HomeServicos> {
     _usedWarmup = true;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       Navigator.of(context).push(_softSlideRoute(
         WebViewScreen(url: url, title: title, initialCpf: cpf, prewarmed: prewarmed),
       ));
@@ -91,9 +93,9 @@ class _HomeServicosState extends State<HomeServicos> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // ===== AppBar com hambúrguer e logo no canto (como no ProfileScreen) =====
+      // ===== AppBar com hambúrguer e título =====
       appBar: AppBar(
-
+        title: const Text('Serviços'),
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu),
@@ -111,23 +113,34 @@ class _HomeServicosState extends State<HomeServicos> {
         ],
       ),
 
-      // ===== Drawer padrão (ajuste conteúdos conforme seu app) =====
-      drawer: const _AppDrawer(),
+      // ===== Drawer padrão alinhado com a Home =====
+      drawer: _AppDrawer(
+        onHome: () {
+          Navigator.of(context).pop();
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+                (route) => false,
+          );
+        },
+        onPerfil: () {
+          Navigator.of(context).pop();
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
+        },
+      ),
 
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Padding base adaptativo: levemente maior em telas grandes
+            // Mesmo comportamento da Home
             final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
-            final verticalTop = 16.0;
 
             return Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
+                constraints: const BoxConstraints(maxWidth: 680),
                 child: ListView(
-                  padding: EdgeInsets.fromLTRB(horizontal, verticalTop, horizontal, 24),
+                  padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
                   children: [
-                    // ===== Painel acinzentado com os botões dentro =====
+                    // ===== Painel com grade de ações (coerente com a Home) =====
                     Container(
                       decoration: BoxDecoration(
                         color: _panelBg,
@@ -139,7 +152,7 @@ class _HomeServicosState extends State<HomeServicos> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Serviços em destaque!',
+                            'Serviços em destaque',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -148,42 +161,52 @@ class _HomeServicosState extends State<HomeServicos> {
                           ),
                           const SizedBox(height: 12),
 
-                          _WideServiceButton(
-                            title: 'Autorizações',
-                            icon: FontAwesomeIcons.fileMedical,
-                            iconColor: Colors.red,
-                            onTap: () async {
-                              await _promptCpfAndOpen(
-                                context,
-                                url: HomeServicos._loginUrl,
-                                title: 'Autorizações',
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 10),
-
-                          _WideServiceButton(
-                            title: 'Carteirinha Digital',
-                            icon: FontAwesomeIcons.idCard,
-                            iconColor: Colors.green,
-                            onTap: () {
-                              _openWeb(
-                                context,
-                                url: HomeServicos._carteirinhaUrl,
-                                title: 'Carteirinha Digital',
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 10),
-
-                          _WideServiceButton(
-                            title: 'Site',
-                            icon: FontAwesomeIcons.globe,
-                            onTap: () {
-                              _openWeb(
-                                context,
-                                url: 'https://www.ipasemnh.com.br/home',
-                                title: 'Site',
+                          LayoutBuilder(
+                            builder: (context, c) {
+                              final isWide = c.maxWidth >= 520;
+                              return Wrap(
+                                spacing: 12,
+                                runSpacing: 12,
+                                children: [
+                                  _ActionTile(
+                                    title: 'Autorizações',
+                                    icon: FontAwesomeIcons.fileMedical,
+                                    iconColor: Colors.red,
+                                    onTap: () async {
+                                      await _promptCpfAndOpen(
+                                        context,
+                                        url: HomeServicos._loginUrl,
+                                        title: 'Autorizações',
+                                      );
+                                    },
+                                    width: isWide ? (c.maxWidth - 12) / 2 : c.maxWidth,
+                                  ),
+                                  _ActionTile(
+                                    title: 'Carteirinha Digital',
+                                    icon: FontAwesomeIcons.idCard,
+                                    iconColor: Colors.green,
+                                    onTap: () {
+                                      _openWeb(
+                                        context,
+                                        url: HomeServicos._carteirinhaUrl,
+                                        title: 'Carteirinha Digital',
+                                      );
+                                    },
+                                    width: isWide ? (c.maxWidth - 12) / 2 : c.maxWidth,
+                                  ),
+                                  _ActionTile(
+                                    title: 'Site',
+                                    icon: FontAwesomeIcons.globe,
+                                    onTap: () {
+                                      _openWeb(
+                                        context,
+                                        url: 'https://www.ipasemnh.com.br/home',
+                                        title: 'Site',
+                                      );
+                                    },
+                                    width: isWide ? (c.maxWidth - 12) / 2 : c.maxWidth,
+                                  ),
+                                ],
                               );
                             },
                           ),
@@ -201,9 +224,12 @@ class _HomeServicosState extends State<HomeServicos> {
   }
 }
 
-// ===== Drawer básico (ajuste itens conforme necessidade) =====
+// ===== Drawer básico alinhado ao app =====
 class _AppDrawer extends StatelessWidget {
-  const _AppDrawer();
+  final VoidCallback? onHome;
+  final VoidCallback? onPerfil;
+
+  const _AppDrawer({this.onHome, this.onPerfil});
 
   Future<void> _logout(BuildContext context) async {
     try {
@@ -238,20 +264,22 @@ class _AppDrawer extends StatelessWidget {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
             ),
-            const ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text('Sobre'),
+            ListTile(
+              leading: const Icon(Icons.home_outlined),
+              title: const Text('Início'),
+              onTap: onHome,
             ),
-            const ListTile(
-              leading: Icon(Icons.privacy_tip_outlined),
-              title: Text('Privacidade'),
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: const Text('Perfil'),
+              onTap: onPerfil,
             ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Sair'),
               onTap: () async {
-                Navigator.of(context).pop(); // fecha o drawer
+                Navigator.of(context).pop();
                 await _logout(context);
               },
             ),
@@ -262,83 +290,70 @@ class _AppDrawer extends StatelessWidget {
   }
 }
 
-// ====== Botão largo com cara de botão (ElevatedButton) ======
-class _WideServiceButton extends StatelessWidget {
+// ====== Tile de ação (coerente com a Home QuickActions) ======
+class _ActionTile extends StatelessWidget {
   final String title;
   final IconData icon;
   final VoidCallback onTap;
+  final double width;
   final Color? iconColor;
 
-  const _WideServiceButton({
+  const _ActionTile({
     required this.title,
     required this.icon,
     required this.onTap,
+    required this.width,
     this.iconColor,
   });
 
-  ButtonStyle _style(BuildContext context) {
-    Color overlay(Set<MaterialState> s) {
-      if (s.contains(MaterialState.pressed)) return _brand.withOpacity(0.08);
-      if (s.contains(MaterialState.hovered)) return _brand.withOpacity(0.04);
-      return Colors.transparent;
-    }
-
-    double elevation(Set<MaterialState> s) {
-      if (s.contains(MaterialState.pressed)) return 2;
-      return 1;
-    }
-
-    return ElevatedButton.styleFrom(
-      elevation: 0,
-      backgroundColor: _cardBg,
-      foregroundColor: const Color(0xFF101828),
-      minimumSize: const Size.fromHeight(64), // levemente menor para telas pequenas
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: _cardBorder, width: 2),
-      ),
-      shadowColor: Colors.black12,
-    ).copyWith(
-      overlayColor: MaterialStateProperty.resolveWith(overlay),
-      elevation: MaterialStateProperty.resolveWith(elevation),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton(
-      style: _style(context),
-      onPressed: onTap,
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: _cardBorder),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            alignment: Alignment.center,
-            child: Icon(icon, size: 22, color: iconColor ?? _brand),
+    return SizedBox(
+      width: width,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: _cardBg,
+          foregroundColor: const Color(0xFF101828),
+          minimumSize: const Size.fromHeight(64),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: _cardBorder, width: 2),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-                color: Color(0xFF101828),
+          shadowColor: Colors.black12,
+        ),
+        onPressed: onTap,
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: _cardBorder),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, size: 22, color: iconColor ?? _brand),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  color: Color(0xFF101828),
+                ),
               ),
             ),
-          ),
-          const Icon(Icons.chevron_right, color: _brand),
-        ],
+            const Icon(Icons.chevron_right, color: _brand),
+          ],
+        ),
       ),
     );
   }
@@ -379,8 +394,11 @@ class _LogoAction extends StatelessWidget {
 }
 
 // ====== Prompt de CPF ======
-Future<void> _promptCpfAndOpen(BuildContext context,
-    {required String url, required String title}) async {
+Future<void> _promptCpfAndOpen(
+    BuildContext context, {
+      required String url,
+      required String title,
+    }) async {
   final ctrl = TextEditingController();
   final focus = FocusNode();
   String? error;
@@ -412,8 +430,7 @@ Future<void> _promptCpfAndOpen(BuildContext context,
         }
 
         final media = MediaQuery.of(ctx);
-        // Altura mínima segura mesmo em telas pequenas
-        final sheetHeight = media.size.height * 0.30; // um pouco maior, melhora teclado landscape
+        final sheetHeight = media.size.height * 0.30;
 
         return AnimatedPadding(
           duration: const Duration(milliseconds: 200),
@@ -502,8 +519,8 @@ Future<void> _promptCpfAndOpen(BuildContext context,
   );
 
   if (cpf == null || cpf.isEmpty) return;
-
   if (!context.mounted) return;
+
   // abre a WebView com CPF para autofill
   Navigator.of(context).push(_softSlideRoute(
     WebViewScreen(url: url, title: title, initialCpf: cpf),

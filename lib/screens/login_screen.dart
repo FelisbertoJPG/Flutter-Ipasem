@@ -4,14 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'route_transitions.dart';
-import 'root_nav_shell.dart';
+import '../route_transitions.dart';
+import '../root_nav_shell.dart';
 
 // [CONFIG] acesso aos params (ex.: passwordMinLength)
-import 'config/app_config.dart';
+import '../config/app_config.dart';
 
 // [API] cliente HTTP centralizado
-import 'services/api_client.dart';
+import '../services/api_client.dart';
 
 // ====== Paleta / estilos base (alinhada às outras telas) ======
 const _brand       = Color(0xFF143C8D); // azul da marca
