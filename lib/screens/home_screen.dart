@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/formatters.dart';        // fmtData, fmtCpf
 import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
+import '../theme/colors.dart';
 import '../ui/app_shell.dart';           // AppScaffold
 import '../ui/components/header_card.dart';
 import '../ui/components/quick_actions.dart';
@@ -11,7 +12,7 @@ import '../ui/components/section_list.dart';
 import '../ui/components/loading_placeholder.dart';
 import '../ui/components/locked_notice.dart';
 import '../ui/components/resumo_row.dart';
-
+import '../ui/components/welcome_card.dart';
 import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
@@ -75,16 +76,17 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ---- Navegação ----
-  void _goToServicos(BuildContext ctx) =>
-      Navigator.of(ctx).push(MaterialPageRoute(
-        builder: (_) => const HomeServicos(),
-      ));
+  void _goToServicos() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const HomeServicos()),
+    );
+  }
 
-  void _goToPerfil(BuildContext ctx) =>
-      Navigator.of(ctx).push(MaterialPageRoute(
-        builder: (_) => const ProfileScreen(),
-      ));
-
+  void _goToPerfil() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -103,22 +105,26 @@ class _HomeScreenState extends State<HomeScreen>
                   padding:
                   EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
                   children: [
+
+
                     // ===== Cabeçalho Visitante/Logado
-                    HeaderCard(
-                      isLoggedIn: _isLoggedIn,
-                      cpf: _cpf == null || _cpf!.isEmpty ? null : fmtCpf(_cpf!),
-                      onLogin: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    if (!_isLoggedIn)
+                      WelcomeCard(
+                        isLoggedIn: _isLoggedIn,
+                        cpf: _cpf == null || _cpf!.isEmpty ? null : fmtCpf(_cpf!),
+                        onLogin: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        ),
                       ),
-                      onPerfil: () => _goToPerfil(context),
-                    ),
                     const SizedBox(height: 16),
+
+
 
                     // ===== Ações rápidas (leva para Serviços)
                     QuickActions(
-                      onCarteirinha: () => _goToServicos(context),
-                      onAssistenciaSaude: () => _goToServicos(context),
-                      onAutorizacoes: () => _goToServicos(context),
+                      onCarteirinha: () => _goToServicos,
+                      onAssistenciaSaude: () => _goToServicos,
+                      onAutorizacoes: () => _goToServicos,
                     ),
                     const SizedBox(height: 16),
 
