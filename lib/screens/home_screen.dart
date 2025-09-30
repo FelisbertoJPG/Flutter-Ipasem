@@ -17,6 +17,8 @@ import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
 
+import '../flows/visitor_consent.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -73,6 +75,15 @@ class _HomeScreenState extends State<HomeScreen>
       _comunicados = avisos;
       _loading = false;
     });
+
+    // Se visitante e ainda não aceitou, mostra o diálogo após o primeiro frame
+    if (!_isLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await ensureVisitorConsent(context);
+      });
+    }
+
   }
 
   // ---- Navegação ----
@@ -208,6 +219,7 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
     );
+
   }
 }
 

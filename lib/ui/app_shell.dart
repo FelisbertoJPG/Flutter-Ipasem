@@ -2,23 +2,32 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Se você tem seu arquivo de cores centralizado, mantenha este import:
+import '../theme/colors.dart'; // exporta kBrand, kCardBg, kCardBorder, kPanelBg, kPanelBorder
+
 /// Scaffold padrão com AppBar + Drawer reaproveitáveis.
-/// - Usa rotas nomeadas no Drawer (sem importar outras screens)
-/// - AppBar aceita `actions` opcionais para customização
+/// - Use `minimal: true` para esconder AppBar e Drawer (ex.: Termos/Privacidade abrindo do diálogo)
 class AppScaffold extends StatelessWidget {
   final String title;
   final Widget body;
   final List<Widget>? actions;
+  final bool minimal; // <— NOVO
 
   const AppScaffold({
     super.key,
     required this.title,
     required this.body,
     this.actions,
+    this.minimal = false, // <— NOVO
   });
 
   @override
   Widget build(BuildContext context) {
+    if (minimal) {
+      // Sem AppBar, sem Drawer, só o body!
+      return Scaffold(body: body);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
@@ -68,7 +77,6 @@ class _AppDrawer extends StatelessWidget {
 
   void _go(BuildContext context, String routeName) {
     Navigator.of(context).pop(); // fecha o drawer
-    // Evita empilhar a mesma rota por cima dela mesma
     if (ModalRoute.of(context)?.settings.name != routeName) {
       Navigator.of(context).pushNamed(routeName);
     }
@@ -118,7 +126,7 @@ class _AppDrawer extends StatelessWidget {
               leading: const Icon(Icons.logout),
               title: const Text('Sair'),
               onTap: () async {
-                Navigator.of(context).pop(); // fecha o drawer
+                Navigator.of(context).pop();
                 await _logout(context);
               },
             ),

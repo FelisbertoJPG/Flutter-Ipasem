@@ -1,6 +1,8 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ipasemnhdigital/screens/privacidade_screen.dart';
+import 'package:ipasemnhdigital/screens/termos_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,6 +11,10 @@ import '../route_transitions.dart';
 import '../root_nav_shell.dart';
 import '../config/app_config.dart';
 import '../services/api_client.dart';
+
+import '../flows/visitor_consent.dart';
+import '../ui/components/consent_dialog.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -115,12 +121,41 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+
   Future<void> _continueAsGuest() async {
+    // Abre o diálogo de consentimento já existente
+    final accepted = await ConsentDialog.show(
+      context,
+      onOpenPrivacy: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const PrivacidadeScreen(minimal: true),
+            fullscreenDialog: true,
+          ),
+        );
+      },
+      onOpenTerms: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const TermosScreen(minimal: true),
+            fullscreenDialog: true,
+          ),
+        );
+      },
+    );
+
+    // Se o usuário cancelou/fechou sem aceitar, não continua
+    if (accepted != true) return;
+
+    // Marca como visitante (sem login) e segue para o app
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(LoginScreen._prefsAuth);
     await prefs.setBool(LoginScreen._prefsLoggedIn, false);
+    await prefs.setBool('visitor_consent_accepted', true);
+
     if (!mounted) return;
     FocusScope.of(context).unfocus();
+
     await pushAndRemoveAllSharedAxis(
       context,
       const RootNavShell(),
@@ -130,13 +165,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _openFirstAccess() async {
     try {
-      final ok = await launchUrl(Uri.parse(LoginScreen._firstAccessUrl),
-          mode: LaunchMode.externalApplication);
+      final ok = await launchUrl(
+        Uri.parse(LoginScreen._firstAccessUrl),
+        mode: LaunchMode.externalApplication,
+      );
       if (!ok) throw Exception();
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Não foi possível abrir o link.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir o link.')),
+      );
     }
   }
 

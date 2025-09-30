@@ -6,13 +6,21 @@ import 'config/app_config.dart';
 import 'config/params.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
+
+// TELAS
 import 'screens/login_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/home_servicos.dart';
+import 'screens/sobre_screen.dart';
+import 'screens/privacidade_screen.dart';
+import 'screens/termos_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SharedPreferences.getInstance(); // pré-aquecimento do prefs
+  await SharedPreferences.getInstance(); // warm-up
 
-  // Parâmetros locais (seu "params-local")
+  // Parâmetros locais (dev)
   const localParams = AppParams(
     adminEmail: 'admin@example.com',
     supportEmail: 'ipasem-naoresponder@ipasemnh.com.br',
@@ -20,20 +28,18 @@ void main() async {
     senderName:   'IpasemNH mailer',
     passwordResetTokenExpire: Duration(seconds: 3600),
     passwordMinLength: 8,
-    baseApiUrl: 'http://10.0.2.2:8080/api', // emulador -> localhost do host
+    baseApiUrl: 'http://10.0.2.2:8080/api', // emulador -> host
   );
-
 
   runApp(
     AppConfig(
       params: localParams,
       flavor: 'local',
-      child: const MyAppLocal(), // app igual ao do main.dart
+      child: const MyAppLocal(),
     ),
   );
 }
 
-/// Versão local do seu MyApp (mesma estrutura do main.dart)
 class MyAppLocal extends StatelessWidget {
   const MyAppLocal({super.key});
   static const splashBg = Color(0xFFFFFFFF);
@@ -41,27 +47,55 @@ class MyAppLocal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'IpasemNH',
+      title: 'IpasemNH (Local)',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: splashBg,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF143C8D)),
+        fontFamily: 'Roboto',
       ),
-      builder: (context, child) =>
-          AnimationWarmUp(child: child ?? const SizedBox()),
-      home: PlayUpdateEnforcer(
-        child: const LoginSlidesOverSplashLocal(
-          splashColor: MyAppLocal.splashBg,
-          splashImage: 'assets/images/icons/splash_logo.png',
-          durationMs: 420,
-        ),
+
+      // Deixa as primeiras animações suaves
+      builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
+
+      // ✅ Sem "home:". Usamos initialRoute + rotas nomeadas.
+      initialRoute: '/__splash_login',
+
+      routes: {
+        // Splash que revela a LoginScreen
+        '/__splash_login': (_) => const _SplashRouteWrapper(),
+
+        // Rotas principais do app
+        '/':            (_) => const HomeScreen(),
+        '/login':       (_) => const LoginScreen(),
+        '/perfil':      (_) => const ProfileScreen(),
+        '/servicos':    (_) => const HomeServicos(),
+        '/sobre':       (_) => const SobreScreen(),
+        '/privacidade': (_) => const PrivacidadeScreen(),
+        '/termos':      (_) => const TermosScreen(),
+      },
+    );
+  }
+}
+
+/// Envelopa o splash com o enforcer (igual você usava em `home:`)
+class _SplashRouteWrapper extends StatelessWidget {
+  const _SplashRouteWrapper();
+
+  @override
+  Widget build(BuildContext context) {
+    return PlayUpdateEnforcer(
+      child: const LoginSlidesOverSplashLocal(
+        splashColor: MyAppLocal.splashBg,
+        splashImage: 'assets/images/icons/splash_logo.png',
+        durationMs: 420,
       ),
     );
   }
 }
 
-/// Copiado do seu main.dart (renomeado para evitar conflitos)
+/// Mesmo splash que você já tinha, só que usado via rota.
 class LoginSlidesOverSplashLocal extends StatefulWidget {
   final Color splashColor;
   final String splashImage;
@@ -84,6 +118,7 @@ class _LoginSlidesOverSplashLocalState
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));
+
   late final Animation<Offset> _slide = Tween<Offset>(
     begin: const Offset(0, 1),
     end: Offset.zero,
@@ -118,7 +153,11 @@ class _LoginSlidesOverSplashLocalState
             child: Container(
               color: widget.splashColor,
               alignment: Alignment.center,
-              child: Image.asset(widget.splashImage, width: 180, fit: BoxFit.contain),
+              child: Image.asset(
+                widget.splashImage,
+                width: 180,
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         Positioned.fill(
