@@ -20,25 +20,34 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SharedPreferences.getInstance(); // warm-up
 
-  // Parâmetros locais (dev)
-  const localParams = AppParams(
-    adminEmail: 'admin@example.com',
-    supportEmail: 'ipasem-naoresponder@ipasemnh.com.br',
-    senderEmail:  'ipasem-naoresponder@ipasemnh.com.br',
-    senderName:   'IpasemNH mailer',
-    passwordResetTokenExpire: Duration(seconds: 3600),
-    passwordMinLength: 8,
-    baseApiUrl: 'http://10.0.2.2:8080/api', // emulador -> host
+  // Lê overrides por --dart-define (opcional)
+  const baseApi   = String.fromEnvironment('API_BASE',    defaultValue: 'http://192.9.200.98');
+  const adminMail = String.fromEnvironment('ADMIN_EMAIL', defaultValue: 'admin@ipasemnh.com.br');
+  const support   = String.fromEnvironment('SUPPORT_EMAIL', defaultValue: 'suporte@ipasemnh.com.br');
+  const sender    = String.fromEnvironment('SENDER_EMAIL',  defaultValue: 'no-reply@ipasemnh.com.br');
+  const senderNm  = String.fromEnvironment('SENDER_NAME',   defaultValue: 'IpasemNH');
+  final resetTtlM = int.tryParse(const String.fromEnvironment('PWD_RESET_TTL_MIN', defaultValue: '60')) ?? 60;
+  final minPwd    = int.tryParse(const String.fromEnvironment('PASSWORD_MIN', defaultValue: '4')) ?? 4;
+
+  final params = AppParams(
+    adminEmail: adminMail,
+    supportEmail: support,
+    senderEmail: sender,
+    senderName: senderNm,
+    passwordResetTokenExpire: Duration(minutes: resetTtlM),
+    passwordMinLength: minPwd,
+    baseApiUrl: baseApi,
   );
 
   runApp(
     AppConfig(
-      params: localParams,
-      flavor: 'local',
+      params: params,
+      flavor: '',
       child: const MyAppLocal(),
     ),
   );
 }
+
 
 class MyAppLocal extends StatelessWidget {
   const MyAppLocal({super.key});
@@ -55,18 +64,11 @@ class MyAppLocal extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF143C8D)),
         fontFamily: 'Roboto',
       ),
-
       // Deixa as primeiras animações suaves
       builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
-
-      // ✅ Sem "home:". Usamos initialRoute + rotas nomeadas.
       initialRoute: '/__splash_login',
-
       routes: {
-        // Splash que revela a LoginScreen
         '/__splash_login': (_) => const _SplashRouteWrapper(),
-
-        // Rotas principais do app
         '/':            (_) => const HomeScreen(),
         '/login':       (_) => const LoginScreen(),
         '/perfil':      (_) => const ProfileScreen(),
@@ -79,7 +81,7 @@ class MyAppLocal extends StatelessWidget {
   }
 }
 
-/// Envelopa o splash com o enforcer (igual você usava em `home:`)
+/// Envelopa o splash com o enforcer
 class _SplashRouteWrapper extends StatelessWidget {
   const _SplashRouteWrapper();
 
@@ -95,7 +97,6 @@ class _SplashRouteWrapper extends StatelessWidget {
   }
 }
 
-/// Mesmo splash que você já tinha, só que usado via rota.
 class LoginSlidesOverSplashLocal extends StatefulWidget {
   final Color splashColor;
   final String splashImage;

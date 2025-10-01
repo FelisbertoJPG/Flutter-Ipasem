@@ -1,20 +1,22 @@
 // lib/screens/login_screen.dart
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ipasemnhdigital/screens/privacidade_screen.dart';
-import 'package:ipasemnhdigital/screens/termos_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/dev_api.dart';
 import '../theme/colors.dart';
 import '../route_transitions.dart';
 import '../root_nav_shell.dart';
 import '../config/app_config.dart';
-import '../services/api_client.dart';
 
-import '../flows/visitor_consent.dart';
+import '../repositories/auth_repository.dart';
+import '../models/profile.dart';
+
+import 'privacidade_screen.dart';
+import 'termos_screen.dart';
 import '../ui/components/consent_dialog.dart';
-
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,13 +32,18 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _cpfCtrl = TextEditingController(), _pwdCtrl = TextEditingController();
-  final _cpfFocus = FocusNode(), _pwdFocus = FocusNode();
+  final _formKey  = GlobalKey<FormState>();
+  final _cpfCtrl  = TextEditingController();
+  final _pwdCtrl  = TextEditingController();
+  final _cpfFocus = FocusNode();
+  final _pwdFocus = FocusNode();
 
   bool _rememberCpf = true;
   bool _obscure = true;
   bool _loading = false;
+
+  late AuthRepository _repo;
+  bool _repoReady = false; // garante init único
 
   @override
   void initState() {
@@ -44,13 +51,27 @@ class _LoginScreenState extends State<LoginScreen> {
     _loadSavedCpf();
   }
 
+  // AppConfig/of(context) só aqui (ou no build)
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_repoReady) {
+      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
+          ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+      debugPrint('>>> API BASE = $baseUrl'); // veja no console
+      _repo = AuthRepository(DevApi(baseUrl));
+      _repoReady = true;
+    }
+  }
+
+
   Future<void> _loadSavedCpf() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(LoginScreen._prefsKeyCpf) ?? '';
     if (saved.isNotEmpty) {
       _cpfCtrl.text = saved;
       _rememberCpf = true;
-      setState(() {});
+      if (mounted) setState(() {});
     }
   }
 
@@ -88,23 +109,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!_repoReady) return;
+
     setState(() => _loading = true);
     try {
-      final cpf = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
+      final cpfDigits = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
       final senha = _pwdCtrl.text;
 
       final prefs = await SharedPreferences.getInstance();
-      _rememberCpf
-          ? await prefs.setString(LoginScreen._prefsKeyCpf, cpf)
-          : await prefs.remove(LoginScreen._prefsKeyCpf);
+      if (_rememberCpf) {
+        await prefs.setString(LoginScreen._prefsKeyCpf, cpfDigits);
+      } else {
+        await prefs.remove(LoginScreen._prefsKeyCpf);
+      }
 
-      final data = await ApiClient.of(context).login(cpf: cpf, senha: senha);
-      final map = (data.data is Map) ? (data.data as Map) : const {};
-      if (map['ok'] != true) throw Exception((map['message'] ?? 'Falha ao autenticar').toString());
+      final Profile profile = await _repo.login(cpfDigits, senha);
 
-      final token = (map['token'] ?? map['access_token'] ?? map['session'] ?? '') as String;
-      if (token.isNotEmpty) await prefs.setString(LoginScreen._prefsAuth, token);
+      await prefs.setString('profile_nome', profile.nome);
+      await prefs.setString('profile_cpf', profile.cpf);
+      await prefs.setInt('profile_id', profile.id);
       await prefs.setBool(LoginScreen._prefsLoggedIn, true);
+      await prefs.setString(LoginScreen._prefsAuth, 'dev');
 
       if (!mounted) return;
       FocusScope.of(context).unfocus();
@@ -113,41 +138,45 @@ class _LoginScreenState extends State<LoginScreen> {
         const RootNavShell(),
         type: SharedAxisTransitionType.vertical,
       );
-    } catch (e) {
+    } on DioException catch (e) {
+      // Mostra exatamente o que o servidor disse (ou motivo de rede/CORS)
+      String msg = 'Falha no login';
+      final data = e.response?.data;
+      if (data is Map && data['error'] is Map && data['error']['message'] is String) {
+        msg = data['error']['message'] as String; // ex.: "CPF ou senha inválidos."
+      } else if (e.message != null && e.message!.isNotEmpty) {
+        msg = e.message!;
+      }
+      debugPrint('DioException: ${e.type}  status=${e.response?.statusCode} body=${e.response?.data}');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha no login: $e')));
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e, st) {
+      debugPrint('Login error: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Falha no login')));
     }
+
   }
 
-
   Future<void> _continueAsGuest() async {
-    // Abre o diálogo de consentimento já existente
     final accepted = await ConsentDialog.show(
       context,
       onOpenPrivacy: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const PrivacidadeScreen(minimal: true),
-            fullscreenDialog: true,
-          ),
-        );
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const PrivacidadeScreen(minimal: true),
+          fullscreenDialog: true,
+        ));
       },
       onOpenTerms: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const TermosScreen(minimal: true),
-            fullscreenDialog: true,
-          ),
-        );
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const TermosScreen(minimal: true),
+          fullscreenDialog: true,
+        ));
       },
     );
-
-    // Se o usuário cancelou/fechou sem aceitar, não continua
     if (accepted != true) return;
 
-    // Marca como visitante (sem login) e segue para o app
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(LoginScreen._prefsAuth);
     await prefs.setBool(LoginScreen._prefsLoggedIn, false);
@@ -155,7 +184,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
     FocusScope.of(context).unfocus();
-
     await pushAndRemoveAllSharedAxis(
       context,
       const RootNavShell(),
@@ -236,9 +264,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             label: 'Senha',
                             suffix: IconButton(
                               onPressed: () => setState(() => _obscure = !_obscure),
-                              icon: Icon(_obscure
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined),
+                              icon: Icon(
+                                _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              ),
                               tooltip: _obscure ? 'Mostrar senha' : 'Ocultar senha',
                             ),
                           ),
@@ -250,11 +278,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           children: [
                             Checkbox(
                               value: _rememberCpf,
-                              onChanged: (v) => setState(() => _rememberCpf = v ?? true),
+                              onChanged: (v) => setState(() => _rememberCpf = (v ?? true)),
                             ),
                             const Text('Lembrar CPF'),
                             const Spacer(),
-                            TextButton(onPressed: _openFirstAccess, child: const Text('Primeiro Acesso?')),
+                            TextButton(
+                              onPressed: _openFirstAccess,
+                              child: const Text('Primeiro Acesso?'),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -290,8 +321,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                             onPressed: _loading ? null : _continueAsGuest,
-                            child: const Text('Entrar como Visitante',
-                                style: TextStyle(fontWeight: FontWeight.w700)),
+                            child: const Text(
+                              'Entrar como Visitante',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
                           ),
                         ),
                       ],
