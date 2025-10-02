@@ -45,14 +45,18 @@ class _LoginScreenState extends State<LoginScreen> {
     _c = LoginController(repo: repo, appConfig: AppConfig.maybeOf(context));
     _controllerReady = true;
 
-    // restaura prefs e decide auto-entrada
-    _c.init().then((autoEnter) async {
-      if (!mounted) return;
-      if (_c.savedCpf.isNotEmpty) _cpfCtrl.text = _c.savedCpf;
-      setState(() {}); // reflete checkboxes iniciais
-      if (autoEnter) await _goToApp();
-    });
+    // restaura prefs (NÃO navega)
+    _restoreFromController();
   }
+
+  Future<void> _restoreFromController() async {
+    await _c.init();
+    if (!mounted) return;
+    if (_c.savedCpf.isNotEmpty) _cpfCtrl.text = _c.savedCpf;
+    if (_c.savedPassword.isNotEmpty) _pwdCtrl.text = _c.savedPassword; // aqui!
+    setState(() {});
+  }
+
 
   @override
   void dispose() {
@@ -202,33 +206,57 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 8),
 
-                        // ===== Opções
-                        Row(
-                          children: [
-                            ValueListenableBuilder<bool>(
-                              valueListenable: _c.rememberCpf,
-                              builder: (_, val, __) => Checkbox(
-                                value: val,
-                                onChanged: (v) => _c.rememberCpf.value = v ?? true,
+                        // ===== Opções  (substitua o Row antigo por este)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // área dos checkboxes que pode quebrar de linha
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 12,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        ValueListenableBuilder<bool>(
+                                          valueListenable: _c.rememberCpf,
+                                          builder: (_, val, __) => Checkbox(
+                                            value: val,
+                                            onChanged: (v) => _c.rememberCpf.value = v ?? true,
+                                          ),
+                                        ),
+                                        const Text('Lembrar CPF'),
+                                      ],
+                                    ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        ValueListenableBuilder<bool>(
+                                          valueListenable: _c.staySignedIn,
+                                          builder: (_, val, __) => Checkbox(
+                                            value: val,
+                                            onChanged: (v) => _c.staySignedIn.value = v ?? true,
+                                          ),
+                                        ),
+                                        const Text('Manter Login'),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const Text('Lembrar CPF'),
-                            const SizedBox(width: 12),
-                            ValueListenableBuilder<bool>(
-                              valueListenable: _c.staySignedIn,
-                              builder: (_, val, __) => Checkbox(
-                                value: val,
-                                onChanged: (v) => _c.staySignedIn.value = v ?? true,
+                              // link fica “fixo” à direita, sem forçar overflow
+                              TextButton(
+                                onPressed: _openFirstAccess,
+                                child: const Text('Primeiro Acesso?'),
                               ),
-                            ),
-                            const Text('Continuar logado'),
-                            const Spacer(),
-                            TextButton(
-                              onPressed: _openFirstAccess,
-                              child: const Text('Primeiro Acesso?'),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+
                         const SizedBox(height: 8),
 
                         // ===== Botões

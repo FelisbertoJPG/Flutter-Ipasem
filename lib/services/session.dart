@@ -1,6 +1,11 @@
 // lib/services/session.dart
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/profile.dart';
+// lib/services/session.dart (ou um constants.dart)
+class SessionKeys {
+  static const staySignedIn = 'stay_signed_in';
+  static const isLoggedIn   = 'is_logged_in';
+}
 
 class Session {
   // Chaves únicas em um único lugar
