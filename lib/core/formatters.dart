@@ -1,5 +1,5 @@
 import 'package:intl/intl.dart';
-
+//lib/core/formatters.dart
 String fmtData(DateTime d) {
   // Ajuste locale conforme seu app (ex.: 'pt_BR')
   final f = DateFormat('dd/MM/yyyy');
