@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import '../core/formatters.dart';        // fmtData, fmtCpf
 import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
+import '../services/session.dart';       // Session.getProfile()
+import '../models/profile.dart';
+import '../models/dependent.dart';
+import '../repositories/dependents_repository.dart';
+import '../services/dev_api.dart';
+import '../config/app_config.dart';
+
 import '../theme/colors.dart';
 import '../ui/app_shell.dart';           // AppScaffold
 import '../ui/components/header_card.dart';
@@ -34,6 +41,14 @@ class _HomeScreenState extends State<HomeScreen>
   bool _isLoggedIn = false;
   String? _cpf;
 
+  // novos: perfil + dependentes reais
+  Profile? _profile;
+  List<Dependent> _deps = const [];
+
+  // repos para chamadas (dependentes)
+  late DependentsRepository _depsRepo;
+  bool _depsReady = false;
+
   List<RequerimentoResumo> _reqEmAndamento = const [];
   List<ComunicadoResumo> _comunicados = const [];
 
@@ -46,19 +61,29 @@ class _HomeScreenState extends State<HomeScreen>
     _bootstrap();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsReady) {
+      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
+          ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+      _depsRepo = DependentsRepository(DevApi(baseUrl));
+      _depsReady = true;
+    }
+  }
+
   Future<void> _bootstrap() async {
     setState(() => _loading = true);
 
     final logged = await _session.getIsLoggedIn();
-    final cpf = await _session.getSavedCpf();
+    final cpf    = await _session.getSavedCpf();
 
-    // Stubs — troque por chamadas HTTP
+    // Stubs — (mantidos) para cards de requerimentos/comunicados
     final req = <RequerimentoResumo>[];
     final avisos = <ComunicadoResumo>[
       ComunicadoResumo(
         titulo: 'Manutenção programada',
-        descricao:
-        'Sistema de autorizações ficará indisponível no domingo, 02:00–04:00.',
+        descricao: 'Sistema de autorizações ficará indisponível no domingo, 02:00–04:00.',
         data: DateTime.now(),
       ),
       ComunicadoResumo(
@@ -68,9 +93,29 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     ];
 
+    Profile? prof;
+    List<Dependent> deps = const [];
+
+    if (logged) {
+      // carrega perfil salvo pela tela de login
+      prof = await Session.getProfile();
+      // se tiver perfil, busca dependentes pela matrícula (id)
+      if (prof != null && _depsReady) {
+        try {
+          deps = await _depsRepo.listByMatricula(prof.id);
+        } catch (_) {
+          // silencioso por enquanto; podemos mostrar um toast depois
+          deps = const [];
+        }
+      }
+    }
+
+    if (!mounted) return;
     setState(() {
       _isLoggedIn = logged;
       _cpf = cpf;
+      _profile = prof;
+      _deps = deps;
       _reqEmAndamento = req;
       _comunicados = avisos;
       _loading = false;
@@ -83,7 +128,6 @@ class _HomeScreenState extends State<HomeScreen>
         await ensureVisitorConsent(context);
       });
     }
-
   }
 
   // ---- Navegação ----
@@ -98,9 +142,12 @@ class _HomeScreenState extends State<HomeScreen>
       MaterialPageRoute(builder: (_) => const ProfileScreen()),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    final dependentesCount = _isLoggedIn ? _deps.length : 0;
 
     return AppScaffold(
       title: 'Início',
@@ -113,30 +160,34 @@ class _HomeScreenState extends State<HomeScreen>
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 680),
                 child: ListView(
-                  padding:
-                  EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
+                  padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
                   children: [
 
-
-                    // ===== Cabeçalho Visitante/Logado
-                    if (!_isLoggedIn)
-                      WelcomeCard(
-                        isLoggedIn: _isLoggedIn,
-                        cpf: _cpf == null || _cpf!.isEmpty ? null : fmtCpf(_cpf!),
-                        onLogin: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
-                        ),
+                    // ===== Cabeçalho (sempre mostra; o card decide o layout)
+                    WelcomeCard(
+                      isLoggedIn: _isLoggedIn,
+                      name: _isLoggedIn ? _profile?.nome : null,
+                      cpf: _isLoggedIn
+                          ? (_profile != null && _profile!.cpf.isNotEmpty ? fmtCpf(_profile!.cpf) : null)
+                          : (_cpf == null || _cpf!.isEmpty ? null : fmtCpf(_cpf!)),
+                      // onLogin é required no componente; quando logado, passo no-op.
+                      onLogin: _isLoggedIn
+                          ? () {}
+                          : () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
                       ),
+                    ),
                     const SizedBox(height: 16),
 
 
 
                     // ===== Ações rápidas (leva para Serviços)
                     QuickActions(
-                      onCarteirinha: () => _goToServicos,
-                      onAssistenciaSaude: () => _goToServicos,
-                      onAutorizacoes: () => _goToServicos,
+                      onCarteirinha: _goToServicos,
+                      onAssistenciaSaude: _goToServicos,
+                      onAutorizacoes: _goToServicos,
                     ),
+
                     const SizedBox(height: 16),
 
                     // ===== Minha Situação
@@ -145,19 +196,20 @@ class _HomeScreenState extends State<HomeScreen>
                       child: _loading
                           ? const LoadingPlaceholder(height: 72)
                           : (_isLoggedIn
-                          ? const _MinhaSituacaoResumo(
-                        vinculo: 'Ativo',
-                        plano: 'Plano Saúde IPASEM',
-                        dependentes: 2,
+                          ? _MinhaSituacaoResumo(
+                        vinculo: '—',                // ainda não temos SP pra isso
+                        plano: '—',                  // idem
+                        dependentes: dependentesCount,
                       )
                           : const LockedNotice(
                         message:
                         'Faça login para visualizar seus dados de vínculo, plano e dependentes.',
                       )),
                     ),
+
                     const SizedBox(height: 12),
 
-                    // ===== Requerimentos em andamento
+                    // ===== Requerimentos em andamento (stub mantido)
                     SectionList<RequerimentoResumo>(
                       title: 'Requerimentos em andamento',
                       isLoading: _loading,
@@ -166,8 +218,7 @@ class _HomeScreenState extends State<HomeScreen>
                       skeletonHeight: 100,
                       itemBuilder: (e) => ListTile(
                         dense: true,
-                        leading:
-                        const Icon(Icons.description_outlined),
+                        leading: const Icon(Icons.description_outlined),
                         title: Text(
                           e.titulo,
                           maxLines: 1,
@@ -183,9 +234,10 @@ class _HomeScreenState extends State<HomeScreen>
                       emptySubtitle:
                       'Quando houverem movimentações, elas aparecerão aqui.',
                     ),
+
                     const SizedBox(height: 12),
 
-                    // ===== Comunicados
+                    // ===== Comunicados (stub mantido)
                     SectionList<ComunicadoResumo>(
                       title: 'Comunicados',
                       isLoading: _loading,
@@ -219,7 +271,6 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
     );
-
   }
 }
 
@@ -242,13 +293,15 @@ class _MinhaSituacaoResumo extends StatelessWidget {
       children: [
         ResumoRow(icon: Icons.badge_outlined, label: 'Vínculo', value: vinculo),
         ResumoRow(
-            icon: Icons.medical_services_outlined,
-            label: 'Plano de saúde',
-            value: plano),
+          icon: Icons.medical_services_outlined,
+          label: 'Plano de saúde',
+          value: plano,
+        ),
         ResumoRow(
-            icon: Icons.group_outlined,
-            label: 'Dependentes',
-            value: '$dependentes'),
+          icon: Icons.group_outlined,
+          label: 'Dependentes',
+          value: '$dependentes',
+        ),
       ],
     );
   }

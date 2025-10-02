@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/formatters.dart';
 import '../services/dev_api.dart';
+import '../services/session.dart';
 import '../theme/colors.dart';
 import '../route_transitions.dart';
 import '../root_nav_shell.dart';
@@ -58,12 +60,11 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_repoReady) {
       final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
           ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-      debugPrint('>>> API BASE = $baseUrl'); // veja no console
+      debugPrint('>>> API BASE = $baseUrl');
       _repo = AuthRepository(DevApi(baseUrl));
       _repoReady = true;
     }
   }
-
 
   Future<void> _loadSavedCpf() async {
     final prefs = await SharedPreferences.getInstance();
@@ -109,27 +110,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (!_repoReady) return;
+    if (!_repoReady) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Serviço de login ainda inicializando.')),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     try {
-      final cpfDigits = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
+      final raw = _cpfCtrl.text;
+      final cpfDigits = raw.replaceAll(RegExp(r'\D'), ''); // só dígitos (pra validar/salvar)
+      final cpfToSend = fmtCpf(cpfDigits);                 // formatado XXX.XXX.XXX-XX (pra API)
       final senha = _pwdCtrl.text;
 
       final prefs = await SharedPreferences.getInstance();
       if (_rememberCpf) {
-        await prefs.setString(LoginScreen._prefsKeyCpf, cpfDigits);
+        await prefs.setString(LoginScreen._prefsKeyCpf, cpfDigits); // salva só dígitos
       } else {
         await prefs.remove(LoginScreen._prefsKeyCpf);
       }
 
-      final Profile profile = await _repo.login(cpfDigits, senha);
+      // === LOGIN via API DEV (envia formatado) ===
+      final Profile profile = await _repo.login(cpfToSend, senha);
 
-      await prefs.setString('profile_nome', profile.nome);
-      await prefs.setString('profile_cpf', profile.cpf);
-      await prefs.setInt('profile_id', profile.id);
-      await prefs.setBool(LoginScreen._prefsLoggedIn, true);
-      await prefs.setString(LoginScreen._prefsAuth, 'dev');
+      // Salva sessão/persistência centralizada
+      await Session.saveLogin(profile, token: 'dev');
 
       if (!mounted) return;
       FocusScope.of(context).unfocus();
@@ -139,7 +145,6 @@ class _LoginScreenState extends State<LoginScreen> {
         type: SharedAxisTransitionType.vertical,
       );
     } on DioException catch (e) {
-      // Mostra exatamente o que o servidor disse (ou motivo de rede/CORS)
       String msg = 'Falha no login';
       final data = e.response?.data;
       if (data is Map && data['error'] is Map && data['error']['message'] is String) {
@@ -155,8 +160,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Falha no login')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-
   }
 
   Future<void> _continueAsGuest() async {

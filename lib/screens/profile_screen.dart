@@ -1,14 +1,20 @@
 // lib/screens/profile_screen.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../theme/colors.dart';                    // kBrand, kCardBg, kCardBorder, kPanelBg, kPanelBorder
-import '../ui/app_shell.dart';                    // AppScaffold (AppBar + Drawer padrão)
-import '../ui/components/section_card.dart';      // SectionCard reutilizável
-import '../screens/login_screen.dart';            // fallback no push se rota não existir
+import '../theme/colors.dart';
+import '../ui/app_shell.dart';
+import '../ui/components/section_card.dart';
+import '../screens/login_screen.dart';
 
-// URL "Criar conta" (prestador) — atualizada
+import '../services/session.dart';
+import '../models/profile.dart';
+import '../models/dependent.dart';
+import '../core/formatters.dart'; // fmtCpf, fmtData se quiser
+import '../repositories/dependents_repository.dart';
+import '../services/dev_api.dart';
+import '../config/app_config.dart';
+
 const _createAccountUrl =
     'https://assistweb.ipasemnh.com.br/requerimentos/recuperar-senha-prestador';
 
@@ -24,17 +30,74 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   bool get wantKeepAlive => true;
 
+  Profile? _profile;
+  bool _loading = true;
+
+  // Dependentes (estado)
+  List<Dependent> _deps = const [];
+  bool _depsLoading = false;
+  String? _depsError;
+
+  // Repo de dependentes
+  late DependentsRepository _depsRepo;
+  bool _depsReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSession();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Inicializa o repo uma única vez, lendo a base da AppConfig (ou dart-define)
+    if (!_depsReady) {
+      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
+          ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+      _depsRepo = DependentsRepository(DevApi(baseUrl));
+      _depsReady = true;
+    }
+  }
+
+  Future<void> _loadSession() async {
+    final p = await Session.getProfile();
+    if (!mounted) return;
+    setState(() {
+      _profile = p;
+      _loading = false;
+    });
+    if (p != null) {
+      _fetchDependentes(p.id);
+    }
+  }
+
+  Future<void> _fetchDependentes(int idMatricula) async {
+    setState(() {
+      _depsLoading = true;
+      _depsError = null;
+    });
+    try {
+      final rows = await _depsRepo.listByMatricula(idMatricula);
+      if (!mounted) return;
+      setState(() => _deps = rows);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _depsError = 'Falha ao carregar dependentes');
+    } finally {
+      if (mounted) setState(() => _depsLoading = false);
+    }
+  }
+
   void _fallbackSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // --- Navegação segura para Login (rootNavigator + fallback) ---
   void _goToLogin() {
     FocusScope.of(context).unfocus();
     try {
       Navigator.of(context, rootNavigator: true).pushNamed('/login');
     } catch (_) {
-      // fallback se a rota nomeada não estiver registrada
       Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
@@ -43,21 +106,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Future<void> _logout() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('saved_cpf');
-      await prefs.remove('auth_token');
-      await prefs.setBool('is_logged_in', false);
+      await Session.logout();
       if (!mounted) return;
-
-      // prefira rootNavigator para sair da shell/tab atual
       Navigator.of(context, rootNavigator: true)
           .pushNamedAndRemoveUntil('/login', (route) => false);
-
-      // Fallback (se a rota não existir):
-      // Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-      //   MaterialPageRoute(builder: (_) => const LoginScreen()),
-      //   (route) => false,
-      // );
     } catch (_) {
       if (!mounted) return;
       _fallbackSnack('Não foi possível encerrar a sessão.');
@@ -83,111 +135,37 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     return AppScaffold(
       title: 'Perfil',
-      body: ListView(
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== Cabeçalho (Visitante) =====
-          _HeaderCardVisitor(
-            onLogin: _goToLogin,                // usa rootNavigator + fallback
-            onSignUp: _openCreateAccount,       // abre URL externa
-          ),
-
-          const SizedBox(height: 16),
-
-          // ===== Dados bloqueados (somente após login) =====
-          const SectionCard(
-            title: 'Dados do usuário',
-            child: Column(
-              children: [
-                _LockedInfoRow(label: 'Nome completo'),
-                _LockedInfoRow(label: 'CPF'),
-                _LockedInfoRow(label: 'Matrícula'),
-                _LockedInfoRow(label: 'E-mail'),
-                _LockedInfoRow(label: 'Telefone'),
-                _LockedInfoRow(label: 'Data de nascimento'),
-                _LockedInfoRow(label: 'Vínculo / Situação'),
-              ],
+          if (_profile == null) ...[
+            _HeaderCardVisitor(
+              onLogin: _goToLogin,
+              onSignUp: _openCreateAccount,
             ),
-          ),
-          const SizedBox(height: 12),
-
-          const SectionCard(
-            title: 'Benefícios',
-            child: Column(
-              children: [
-                _LockedInfoRow(label: 'Plano de saúde'),
-                _LockedInfoRow(label: 'Dependentes'),
-                _LockedInfoRow(label: 'Autorizações recentes'),
-              ],
+            const SizedBox(height: 16),
+            const _LockedDataBlocks(),
+            const SizedBox(height: 24),
+            _VisitorHint(),
+          ] else ...[
+            _HeaderCardUser(profile: _profile!, onLogout: _logout),
+            const SizedBox(height: 16),
+            _UserDataBlocks(
+              profile: _profile!,
+              dependentes: _deps,
+              depsLoading: _depsLoading,
+              depsError: _depsError,
             ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // ===== Atalhos informativos / legais =====
-          SectionCard(
-            title: 'Informações',
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.info_outline),
-                  title: const Text('Sobre o aplicativo'),
-                  subtitle: const Text('Versão, mantenedor e informações gerais.'),
-                  onTap: () => Navigator.of(context, rootNavigator: true).pushNamed('/sobre'),
-                  minLeadingWidth: 0,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.privacy_tip_outlined),
-                  title: const Text('Política de Privacidade'),
-                  onTap: () => Navigator.of(context, rootNavigator: true).pushNamed('/privacidade'),
-                  minLeadingWidth: 0,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.description_outlined),
-                  title: const Text('Termos de Uso'),
-                  onTap: () => _fallbackSnack('Termos: implementar rota /termos'),
-                  minLeadingWidth: 0,
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    onPressed: _logout,
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Sair'),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: kBrand, width: 1.4),
-                      foregroundColor: kBrand,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Dica final
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: kPanelBg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: kPanelBorder),
-            ),
-            child: const Text(
-              'Você está logado como Visitante. Faça login para visualizar seus dados '
-                  'pessoais e informações de benefícios.',
-              style: TextStyle(color: Color(0xFF475467)),
-            ),
-          ),
+          ],
         ],
       ),
     );
   }
 }
 
-// ================== Widgets específicos ==================
+// ================== Widgets ==================
 
 class _HeaderCardVisitor extends StatelessWidget {
   final VoidCallback onLogin;
@@ -202,7 +180,6 @@ class _HeaderCardVisitor extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Card principal
         Container(
           decoration: BoxDecoration(
             color: kCardBg,
@@ -219,24 +196,22 @@ class _HeaderCardVisitor extends StatelessWidget {
                 child: Icon(Icons.person_outline, color: Colors.white, size: 28),
               ),
               const SizedBox(width: 12),
-              Expanded(
+              const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Visitante',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
+                    Text('Visitante',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    SizedBox(height: 4),
                     Wrap(
                       spacing: 8,
                       runSpacing: 6,
-                      children: const [
+                      children: [
                         _StatusChip(
                           label: 'Logado como Visitante',
-                          color: Color(0xFFB54708), // âmbar
+                          color: Color(0xFFB54708),
                           bg: Color(0xFFFFF4E5),
                         ),
                         _StatusChip(
@@ -253,7 +228,6 @@ class _HeaderCardVisitor extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        // Ações
         SizedBox(
           width: double.infinity,
           height: 44,
@@ -275,6 +249,233 @@ class _HeaderCardVisitor extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HeaderCardUser extends StatelessWidget {
+  final Profile profile;
+  final VoidCallback onLogout;
+
+  const _HeaderCardUser({required this.profile, required this.onLogout});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kCardBorder, width: 2),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const CircleAvatar(
+            radius: 28,
+            backgroundColor: kBrand,
+            child: Icon(Icons.person, color: Colors.white, size: 28),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(profile.nome,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                const Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _StatusChip(
+                      label: 'Acesso autenticado',
+                      color: Color(0xFF027A48),
+                      bg: Color(0xFFD1FADF),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: onLogout,
+            icon: const Icon(Icons.logout),
+            label: const Text('Sair'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: kBrand, width: 1.4),
+              foregroundColor: kBrand,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserDataBlocks extends StatelessWidget {
+  final Profile profile;
+  final List<Dependent>? dependentes;
+  final bool depsLoading;
+  final String? depsError;
+
+  const _UserDataBlocks({
+    required this.profile,
+    this.dependentes,
+    this.depsLoading = false,
+    this.depsError,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SectionCard(
+          title: 'Dados do usuário',
+          child: Column(
+            children: [
+              _InfoRow(label: 'Nome completo', value: profile.nome),
+              _InfoRow(label: 'CPF', value: fmtCpf(profile.cpf)),
+              _InfoRow(label: 'Matrícula', value: profile.id.toString()),
+              _InfoRow(label: 'E-mail', value: profile.email ?? '—'),
+              _InfoRow(label: 'E-mail 2', value: profile.email2 ?? '—'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SectionCard(
+          title: 'Dependentes',
+          child: _DependentsList(
+            loading: depsLoading,
+            error: depsError,
+            items: dependentes ?? const [],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DependentsList extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final List<Dependent> items;
+
+  const _DependentsList({
+    required this.loading,
+    required this.items,
+    this.error,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(error!, style: const TextStyle(color: Colors.red)),
+      );
+    }
+    if (items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text('Nenhum dependente encontrado.'),
+      );
+    }
+    return Column(
+      children: items.map((d) {
+        final cpfTxt = (d.cpf == null || d.cpf!.isEmpty) ? '—' : fmtCpf(d.cpf!);
+        final idadeTxt = (d.idade != null) ? '${d.idade} anos' : '—';
+        final nascTxt = (d.dtNasc ?? '—'); // se quiser, parse e usar fmtData
+        // Se quiser aplicar sua regra de vínculo, ajuste abaixo:
+        final vinculo = (d.iddependente <= 0)
+            ? 'Dependente'
+            : (d.idmatricula == 0 ? 'Titular' : '—');
+
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.family_restroom_outlined, color: Color(0xFF667085)),
+          title: Text(
+            d.nome,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF101828)),
+          ),
+          subtitle: Text(
+            'CPF: $cpfTxt  •  Idade: $idadeTxt  •  Nasc.: $nascTxt',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFF475467)),
+          ),
+          trailing: Text(vinculo, style: const TextStyle(color: Color(0xFF667085))),
+          minLeadingWidth: 0,
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _LockedDataBlocks extends StatelessWidget {
+  const _LockedDataBlocks();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const [
+        SectionCard(
+          title: 'Dados do usuário',
+          child: Column(
+            children: [
+              _LockedInfoRow(label: 'Nome completo'),
+              _LockedInfoRow(label: 'CPF'),
+              _LockedInfoRow(label: 'Matrícula'),
+              _LockedInfoRow(label: 'E-mail'),
+              _LockedInfoRow(label: 'Telefone'),
+              _LockedInfoRow(label: 'Data de nascimento'),
+              _LockedInfoRow(label: 'Vínculo / Situação'),
+            ],
+          ),
+        ),
+        SizedBox(height: 12),
+        SectionCard(
+          title: 'Benefícios',
+          child: Column(
+            children: [
+              _LockedInfoRow(label: 'Plano de saúde'),
+              _LockedInfoRow(label: 'Dependentes'),
+              _LockedInfoRow(label: 'Autorizações recentes'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VisitorHint extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kPanelBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kPanelBorder),
+      ),
+      child: const Text(
+        'Você está logado como Visitante. Faça login para visualizar seus dados '
+            'pessoais e informações de benefícios.',
+        style: TextStyle(color: Color(0xFF475467)),
+      ),
     );
   }
 }
@@ -333,6 +534,35 @@ class _LockedInfoRow extends StatelessWidget {
         style: TextStyle(color: Color(0xFF667085)),
       ),
       trailing: const Icon(Icons.chevron_right, color: Color(0xFF98A2B3)),
+      minLeadingWidth: 0,
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.person_outline, color: Color(0xFF667085)),
+      title: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF101828)),
+      ),
+      subtitle: Text(
+        value,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Color(0xFF475467)),
+      ),
       minLeadingWidth: 0,
     );
   }
