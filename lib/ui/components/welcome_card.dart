@@ -104,7 +104,7 @@ class _StatusChip extends StatelessWidget {
   final Color color;
   final Color bg;
 
-  // helper para trocar apenas o texto mantendo cores
+  // helper para trocar apenas o texto mantendo cores.
   _StatusChip copyWith({String? label}) =>
       _StatusChip(label: label ?? this.label, color: color, bg: bg);
 
