@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 
 mixin WebViewWarmup<T extends StatefulWidget> on State<T> {
   late final WebViewController warmupCtrl =
@@ -7,7 +9,8 @@ mixin WebViewWarmup<T extends StatefulWidget> on State<T> {
   OverlayEntry? _warmupOverlay;
   bool _usedWarmup = false;
 
-  void warmupInit() {
+  void warmupInit() async{
+    if (kIsWeb) return; // no-op no Web
     warmupCtrl.loadHtmlString(
       '<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body></body></html>',
     );
