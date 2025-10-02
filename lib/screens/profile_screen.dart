@@ -10,10 +10,13 @@ import '../screens/login_screen.dart';
 import '../services/session.dart';
 import '../models/profile.dart';
 import '../models/dependent.dart';
-import '../core/formatters.dart'; // fmtCpf, fmtData se quiser
+import '../core/formatters.dart';
 import '../repositories/dependents_repository.dart';
 import '../services/dev_api.dart';
 import '../config/app_config.dart';
+
+// novo card reutilizável
+import '../ui/components/dependents_card.dart';
 
 const _createAccountUrl =
     'https://assistweb.ipasemnh.com.br/requerimentos/recuperar-senha-prestador';
@@ -346,80 +349,18 @@ class _UserDataBlocks extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        SectionCard(
-          title: 'Dependentes',
-          child: _DependentsList(
-            loading: depsLoading,
-            error: depsError,
-            items: dependentes ?? const [],
-          ),
+
+        /// >>> Usa o card reutilizável
+        DependentsCard(
+          items: dependentes ?? const [],
+          isLoading: depsLoading,
+          error: depsError,
+          compact: true,
+          showDivider: true,
+          showMatricula: true,
+          // onTap: (d) { /* abrir detalhes, se desejar */ },
         ),
       ],
-    );
-  }
-}
-
-class _DependentsList extends StatelessWidget {
-  final bool loading;
-  final String? error;
-  final List<Dependent> items;
-
-  const _DependentsList({
-    required this.loading,
-    required this.items,
-    this.error,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (error != null) {
-      return Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(error!, style: const TextStyle(color: Colors.red)),
-      );
-    }
-    if (items.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: Text('Nenhum dependente encontrado.'),
-      );
-    }
-    return Column(
-      children: items.map((d) {
-        final cpfTxt = (d.cpf == null || d.cpf!.isEmpty) ? '—' : fmtCpf(d.cpf!);
-        final idadeTxt = (d.idade != null) ? '${d.idade} anos' : '—';
-        final nascTxt = (d.dtNasc ?? '—'); // se quiser, parse e usar fmtData
-        // Se quiser aplicar sua regra de vínculo, ajuste abaixo:
-        final vinculo = (d.iddependente <= 0)
-            ? 'Dependente'
-            : (d.idmatricula == 0 ? 'Titular' : '—');
-
-        return ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.family_restroom_outlined, color: Color(0xFF667085)),
-          title: Text(
-            d.nome,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF101828)),
-          ),
-          subtitle: Text(
-            'CPF: $cpfTxt  •  Idade: $idadeTxt  •  Nasc.: $nascTxt',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Color(0xFF475467)),
-          ),
-          trailing: Text(vinculo, style: const TextStyle(color: Color(0xFF667085))),
-          minLeadingWidth: 0,
-        );
-      }).toList(),
     );
   }
 }
