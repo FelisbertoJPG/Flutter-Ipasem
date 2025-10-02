@@ -10,8 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
   animations: 2.0.11
+  webview_flutter: ^4.4.0
+  webview_flutter_web: ^0.2.2+5
+  webview_flutter_android: ^3.16.0
+  webview_flutter_wkwebview: ^3.12.0
   cupertino_icons: ^1.0.8
-  webview_flutter:
   open_filex:
   path_provider:
   shared_preferences: ^2.3.2

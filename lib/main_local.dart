@@ -16,38 +16,32 @@ import 'screens/sobre_screen.dart';
 import 'screens/privacidade_screen.dart';
 import 'screens/termos_screen.dart';
 
+// IMPORT CONDICIONAL (tem que ficar no TOPO, fora de funções!)
+import 'web/webview_initializer_stub.dart'
+if (dart.library.html) 'web/webview_initializer_web.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SharedPreferences.getInstance(); // warm-up
 
-  // Lê overrides por --dart-define (opcional)
-  const baseApi   = String.fromEnvironment('API_BASE',    defaultValue: 'http://192.9.200.98');
-  const adminMail = String.fromEnvironment('ADMIN_EMAIL', defaultValue: 'admin@ipasemnh.com.br');
-  const support   = String.fromEnvironment('SUPPORT_EMAIL', defaultValue: 'suporte@ipasemnh.com.br');
-  const sender    = String.fromEnvironment('SENDER_EMAIL',  defaultValue: 'no-reply@ipasemnh.com.br');
-  const senderNm  = String.fromEnvironment('SENDER_NAME',   defaultValue: 'IpasemNH');
-  final resetTtlM = int.tryParse(const String.fromEnvironment('PWD_RESET_TTL_MIN', defaultValue: '60')) ?? 60;
-  final minPwd    = int.tryParse(const String.fromEnvironment('PASSWORD_MIN', defaultValue: '4')) ?? 4;
+  // Registra implementação da WebView no Web (no-op nas outras plataformas)
+  ensureWebViewRegisteredForWeb();
 
-  final params = AppParams(
-    adminEmail: adminMail,
-    supportEmail: support,
-    senderEmail: sender,
-    senderName: senderNm,
-    passwordResetTokenExpire: Duration(minutes: resetTtlM),
-    passwordMinLength: minPwd,
-    baseApiUrl: baseApi,
-  );
+  // Warm-up do SharedPreferences
+  await SharedPreferences.getInstance();
+
+  // Carrega parâmetros apenas do cliente (sem dados sensíveis)
+  final params = AppParams.fromEnv();
+  // Se preferir fixar localmente, use:
+  // final params = AppParams(baseApiUrl: 'http://192.9.200.98', passwordMinLength: 4);
 
   runApp(
     AppConfig(
       params: params,
-      flavor: '',
+      flavor: 'local',
       child: const MyAppLocal(),
     ),
   );
 }
-
 
 class MyAppLocal extends StatelessWidget {
   const MyAppLocal({super.key});
@@ -64,8 +58,9 @@ class MyAppLocal extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF143C8D)),
         fontFamily: 'Roboto',
       ),
-      // Deixa as primeiras animações suaves
-      builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
+      // Suaviza as primeiras animações
+      builder: (context, child) =>
+          AnimationWarmUp(child: child ?? const SizedBox()),
       initialRoute: '/__splash_login',
       routes: {
         '/__splash_login': (_) => const _SplashRouteWrapper(),
