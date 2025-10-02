@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode, debugPrint;
 import '../models/dependent.dart';
+import 'redacting_log_interceptor.dart';
 
 class DevApi {
   final Dio _dio;
@@ -15,27 +16,26 @@ class DevApi {
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 20),
       responseType: ResponseType.json,
-      headers: {Headers.contentTypeHeader: Headers.formUrlEncodedContentType},
+      headers: {
+        Headers.contentTypeHeader: Headers.formUrlEncodedContentType,
+      },
     ),
   ) {
+    // Em release: sem logs; em debug: logs com mascaramento
+    _dio.interceptors.add(RedactingLogInterceptor());
     if (!kReleaseMode) {
-      _dio.interceptors.add(LogInterceptor(
-        request: true, requestHeader: true, requestBody: true,
-        responseHeader: false, responseBody: true, error: true,
-        logPrint: (obj) => debugPrint(obj.toString()),
-      ));
       debugPrint('>>> DevApi baseUrl = ${_dio.options.baseUrl}');
     }
   }
 
-  // --- Healthchecks úteis ---
+  // --- Healthchecks (opcionais) ---
   Future<Map<String, dynamic>> ping() async {
-    final r = await _dio.get('api-dev.php', queryParameters: {'action': 'ping'});
+    final r = await _dio.get('/api-dev.php', queryParameters: {'action': 'ping'});
     return (r.data as Map).cast<String, dynamic>();
   }
 
   Future<Map<String, dynamic>> diag() async {
-    final r = await _dio.get('api-dev.php', queryParameters: {'action': 'diag'});
+    final r = await _dio.get('/api-dev.php', queryParameters: {'action': 'diag'});
     return (r.data as Map).cast<String, dynamic>();
   }
 
@@ -45,7 +45,7 @@ class DevApi {
     required String senha,
   }) async {
     final res = await _dio.post(
-      '/api-dev.php', // -> preca de /
+      '/api-dev.php',
       queryParameters: {'action': 'login_repo'},
       data: {'cpf': cpf, 'senha': senha},
     );
