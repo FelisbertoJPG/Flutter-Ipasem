@@ -1,34 +1,32 @@
-// lib/config/params.dart
 class AppParams {
   /// URL base da sua API (ex.: http://192.9.200.98)
-  final String baseApiUrl;
 
+  final String baseApiUrl;
   /// Validação de UX no cliente (apenas formulário).
   /// A regra real deve ser validada no servidor.
   final int passwordMinLength;
+  final String firstAccessUrl; // <—
 
   const AppParams({
     required this.baseApiUrl,
-    this.passwordMinLength = 4,
+    required this.passwordMinLength,
+    required this.firstAccessUrl,
   });
-
   /// Lê de --dart-define (com fallback seguro).
   /// Preferimos a chave 'API_BASE' para consistência com o restante do app.
   factory AppParams.fromEnv() {
-    // Compat: lê API_BASE; se não vier, tenta BASE_API_URL
-    const base = String.fromEnvironment(
-      'API_BASE',
-      defaultValue: String.fromEnvironment(
-        'BASE_API_URL',
-        defaultValue: 'http://192.9.200.98', // ajuste seu default local
-      ),
+    const baseApiUrl = String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+    const minLength  = int.fromEnvironment('PASSWORD_MIN', defaultValue: 4);
+    const firstUrl   = String.fromEnvironment(
+      'FIRST_ACCESS_URL',
+      defaultValue: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
     );
-
-    const minPwd = int.fromEnvironment('PASSWORD_MIN', defaultValue: 4);
-
     return AppParams(
-      baseApiUrl: base,
-      passwordMinLength: minPwd,
+      baseApiUrl: baseApiUrl,
+      passwordMinLength: minLength,
+      firstAccessUrl: firstUrl,
     );
   }
 }
+
+
