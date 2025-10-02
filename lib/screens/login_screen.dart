@@ -1,66 +1,62 @@
-// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
-import '../core/formatters.dart';
 import '../core/validators.dart';
-import '../core/app_exception.dart';
-
-import '../models/profile.dart';
 import '../repositories/auth_repository.dart';
+import '../services/dev_api.dart';
+import '../theme/colors.dart';
 import '../route_transitions.dart';
 import '../root_nav_shell.dart';
-import '../services/dev_api.dart';
-import '../services/session.dart';
-import '../theme/colors.dart';
 import '../ui/components/consent_dialog.dart';
 import 'privacidade_screen.dart';
 import 'termos_screen.dart';
 
+import '../controllers/login_controller.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
-
-  static const _kSavedCpf   = 'saved_cpf';
-  static const _kAuthToken  = 'auth_token';
-  static const _kIsLoggedIn = 'is_logged_in';
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey  = GlobalKey<FormState>();
-  final _cpfCtrl  = TextEditingController();
-  final _pwdCtrl  = TextEditingController();
-  final _cpfF     = FocusNode();
-  final _pwdF     = FocusNode();
+  final _formKey = GlobalKey<FormState>();
+  final _cpfCtrl = TextEditingController();
+  final _pwdCtrl = TextEditingController();
+  final _cpfF = FocusNode();
+  final _pwdF = FocusNode();
 
-  bool _rememberCpf = true, _obscure = true, _loading = false;
-
-  late final AuthRepository _repo;
-  bool _repoReady = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _restoreSavedCpf();
-  }
+  late LoginController _c;
+  bool _controllerReady = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_repoReady) return;
+    if (_controllerReady) return;
+
     final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
         ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-    _repo = AuthRepository(DevApi(baseUrl));
-    _repoReady = true;
+
+    final repo = AuthRepository(DevApi(baseUrl));
+    _c = LoginController(repo: repo, appConfig: AppConfig.maybeOf(context));
+    _controllerReady = true;
+
+    // restaura prefs e decide auto-entrada
+    _c.init().then((autoEnter) async {
+      if (!mounted) return;
+      if (_c.savedCpf.isNotEmpty) _cpfCtrl.text = _c.savedCpf;
+      setState(() {}); // reflete checkboxes iniciais
+      if (autoEnter) await _goToApp();
+    });
   }
 
   @override
   void dispose() {
+    _c.dispose();
     _cpfCtrl.dispose();
     _pwdCtrl.dispose();
     _cpfF.dispose();
@@ -68,14 +64,13 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // ------- helpers -------
-  Future<void> _restoreSavedCpf() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(LoginScreen._kSavedCpf) ?? '';
-    if (saved.isNotEmpty) {
-      _cpfCtrl.text = saved;
-      setState(() => _rememberCpf = true);
-    }
+  Future<void> _goToApp() async {
+    FocusScope.of(context).unfocus();
+    await pushAndRemoveAllSharedAxis(
+      context,
+      const RootNavShell(),
+      type: SharedAxisTransitionType.vertical,
+    );
   }
 
   InputDecoration _deco(String label, {String? hint, Widget? suffix}) => InputDecoration(
@@ -94,41 +89,25 @@ class _LoginScreenState extends State<LoginScreen> {
     suffixIcon: suffix,
   );
 
-  void _snack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
-  // ------- actions -------
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (!_repoReady) return _snack('Serviço de login ainda inicializando.');
-
-    setState(() => _loading = true);
-    try {
-      final digits = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
-      final cpfFmt = fmtCpf(digits);
-      final senha  = _pwdCtrl.text;
-
-      final prefs = await SharedPreferences.getInstance();
-      if (_rememberCpf) {
-        await prefs.setString(LoginScreen._kSavedCpf, digits);
-      } else {
-        await prefs.remove(LoginScreen._kSavedCpf);
-      }
-
-      final Profile profile = await _repo.login(cpfFmt, senha);
-      await Session.saveLogin(profile, token: 'dev');
-
-      if (!mounted) return;
-      FocusScope.of(context).unfocus();
-      await pushAndRemoveAllSharedAxis(
-        context, const RootNavShell(), type: SharedAxisTransitionType.vertical,
-      );
-    } on AppException catch (e) {
-      _snack(e.message);
-    } catch (_) {
-      _snack('Falha no login');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    final (outcome, message) = await _c.submit(
+      rawCpfDigits: _cpfCtrl.text.replaceAll(RegExp(r'\D'), ''),
+      password: _pwdCtrl.text,
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case LoginOutcome.success:
+        await _goToApp();
+        break;
+      case LoginOutcome.error:
+        _snack(message ?? 'Falha no login');
+        break;
+      default:
+        break;
     }
   }
 
@@ -144,30 +123,22 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (ok != true) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(LoginScreen._kAuthToken);
-    await prefs.setBool(LoginScreen._kIsLoggedIn, false);
-    await prefs.setBool('visitor_consent_accepted', true);
-
-    if (!mounted) return;
-    FocusScope.of(context).unfocus();
-    await pushAndRemoveAllSharedAxis(
-      context, const RootNavShell(), type: SharedAxisTransitionType.vertical,
-    );
+    final (outcome, _) = await _c.continueAsGuest();
+    if (outcome == LoginOutcome.guest && mounted) await _goToApp();
   }
 
   Future<void> _openFirstAccess() async {
-    final url = AppConfig.maybeOf(context)?.params.firstAccessUrl
-        ?? 'https://assistweb.ipasemnh.com.br/site/recuperar-senha';
     try {
-      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      final ok = await launchUrl(
+        Uri.parse(_c.firstAccessUrl),
+        mode: LaunchMode.externalApplication,
+      );
       if (!ok) throw Exception();
     } catch (_) {
       _snack('Não foi possível abrir o link.');
     }
   }
 
-  // ------- UI -------
   @override
   Widget build(BuildContext context) {
     final maxW = MediaQuery.of(context).size.width > 560 ? 560.0 : double.infinity;
@@ -182,6 +153,8 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 const _LogoBanner(),
                 const SizedBox(height: 16),
+
+                // ===== Card do formulário
                 Container(
                   decoration: BoxDecoration(
                     color: kCardBg,
@@ -208,38 +181,47 @@ class _LoginScreenState extends State<LoginScreen> {
                           onFieldSubmitted: (_) => _pwdF.requestFocus(),
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _pwdCtrl,
-                          focusNode: _pwdF,
-                          textInputAction: TextInputAction.done,
-                          autofillHints: const [AutofillHints.password],
-                          obscureText: _obscure,
-                          decoration: _deco(
-                            'Senha',
-                            suffix: IconButton(
-                              tooltip: _obscure ? 'Mostrar senha' : 'Ocultar senha',
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
+                        ValueListenableBuilder(
+                          valueListenable: _c.loading,
+                          builder: (_, __, ___) {
+                            return TextFormField(
+                              controller: _pwdCtrl,
+                              focusNode: _pwdF,
+                              textInputAction: TextInputAction.done,
+                              autofillHints: const [AutofillHints.password],
+                              obscureText: true,
+                              decoration: _deco('Senha'),
+                              validator: (v) => validatePassword(
+                                v,
+                                minLen: AppConfig.maybeOf(context)?.params.passwordMinLength ?? 4,
                               ),
-                              onPressed: () => setState(() => _obscure = !_obscure),
-                            ),
-                          ),
-                          validator: (v) => validatePassword(
-                            v,
-                            minLen: AppConfig.maybeOf(context)?.params.passwordMinLength ?? 4,
-                          ),
-                          onFieldSubmitted: (_) => _submit(),
+                              onFieldSubmitted: (_) => _submit(),
+                              enabled: !_c.loading.value,
+                            );
+                          },
                         ),
                         const SizedBox(height: 8),
+
+                        // ===== Opções
                         Row(
                           children: [
-                            Checkbox(
-                              value: _rememberCpf,
-                              onChanged: (v) => setState(() => _rememberCpf = v ?? true),
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _c.rememberCpf,
+                              builder: (_, val, __) => Checkbox(
+                                value: val,
+                                onChanged: (v) => _c.rememberCpf.value = v ?? true,
+                              ),
                             ),
                             const Text('Lembrar CPF'),
+                            const SizedBox(width: 12),
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _c.staySignedIn,
+                              builder: (_, val, __) => Checkbox(
+                                value: val,
+                                onChanged: (v) => _c.staySignedIn.value = v ?? true,
+                              ),
+                            ),
+                            const Text('Continuar logado'),
                             const Spacer(),
                             TextButton(
                               onPressed: _openFirstAccess,
@@ -248,50 +230,61 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: kBrand,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+
+                        // ===== Botões
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _c.loading,
+                          builder: (_, busy, __) => Column(
+                            children: [
+                              SizedBox(
+                                width: double.infinity, height: 48,
+                                child: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: kBrand,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: busy ? null : _submit,
+                                  child: busy
+                                      ? const SizedBox(
+                                    width: 22, height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor:
+                                      AlwaysStoppedAnimation(Colors.white),
+                                    ),
+                                  )
+                                      : const Text('Logar',
+                                      style: TextStyle(fontWeight: FontWeight.w700)),
+                                ),
                               ),
-                            ),
-                            onPressed: _loading ? null : _submit,
-                            child: _loading
-                                ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(Colors.white),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity, height: 48,
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: kBrand, width: 1.5),
+                                    foregroundColor: kBrand,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: busy ? null : _continueAsGuest,
+                                  child: const Text(
+                                    'Entrar como Visitante',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
                               ),
-                            )
-                                : const Text('Logar', style: TextStyle(fontWeight: FontWeight.w700)),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: kBrand, width: 1.5),
-                              foregroundColor: kBrand,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: _loading ? null : _continueAsGuest,
-                            child: const Text('Entrar como Visitante',
-                                style: TextStyle(fontWeight: FontWeight.w700)),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
