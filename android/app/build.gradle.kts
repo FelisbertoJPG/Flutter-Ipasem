@@ -6,11 +6,10 @@ plugins {
 }
 
 android {
-    namespace = "com.ipapp.ipasem_dart_project"
+    namespace = "br.gov.ipasemnhdigital"
+    compileSdk = 34
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
-    //ndkVersion = "27.0.12077973"
-
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -23,13 +22,13 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.ipapp.ipasem_dart_project"
+        applicationId = "br.gov.ipasemnhdigital"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 34
         versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionName = "1.0"
     }
 
     buildTypes {

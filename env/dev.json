@@ -1,0 +1,7 @@
+{
+  "FB_HOST": "200.200.200.10",
+  "FB_PORT": "3050",
+  "FB_DB": "IPASEMDB",
+  "FB_USER": "SYSDBA",
+  "FB_PASSWORD": "coloque_sua_senha"
+}

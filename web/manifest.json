@@ -1,11 +1,11 @@
 {
-    "name": "ipasem_dart_project",
-    "short_name": "ipasem_dart_project",
+    "name": "ipa_app_flutter",
+    "short_name": "ipa_app_flutter",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Ipasem App Multi Plataform",
+    "description": "A new Flutter project.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

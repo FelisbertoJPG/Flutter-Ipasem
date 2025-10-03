@@ -1,4 +1,4 @@
-name: ipasem_dart_project
+name: ipasemnhdigital
 description: "Ipasem App Multi Plataform"
 publish_to: 'none'
 version: 1.0.0+1
@@ -9,36 +9,58 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  animations: 2.0.11
+  flutter_secure_storage: ^9.2.2
+  webview_flutter: ^4.4.0
+  webview_flutter_web: ^0.2.2+5
+  webview_flutter_android: ^3.16.0
+  webview_flutter_wkwebview: ^3.12.0
   cupertino_icons: ^1.0.8
+  open_filex:
+  path_provider:
+  shared_preferences: ^2.3.2
+  http: ^1.2.2
+  package_info_plus: ^8.0.0
+  in_app_update: ^4.2.3
+  url_launcher:
+  file_picker: ^8.0.0
+  font_awesome_flutter:
+  fbdb: ^1.5.1
+  dio: 5.9.0
+  intl: ^0.19.0
+
+
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
-  flutter_native_splash: ^2.4.0
+  flutter_native_splash: ^2.4.6
 
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
-    - assets/json/
+    - assets/
+    - assets/images/icons/
 
 
 flutter_launcher_icons:
-  image_path: assets/icons/logo_ipasem.png
-  android: true
+  android: "launcher_icon"
   ios: true
-  adaptive_icon_foreground: assets/icons/logo_ipasem.png
+  image_path_ios: assets/images/icons/appicon_ios_1024.png
+  image_path_android: assets/images/icons/appicon_foreground.png
+  adaptive_icon_foreground: assets/images/icons/appicon_foreground.png
   adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_monochrome: assets/images/icons/appicon_monochrome.png
   remove_alpha_ios: true
 
 flutter_native_splash:
   color: "#FFFFFF"
-  image: assets/icons/logo_ipasem.png
+  image: assets/images/icons/splash_logo.png
   android: true
   ios: true
   web: true
   android_12:
     color: "#FFFFFF"
-    image: assets/icons/logo_ipasem.png
+    image: assets/images/icons/splash_logo_android12.png
