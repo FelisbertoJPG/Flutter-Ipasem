@@ -10,6 +10,10 @@ import 'screens/profile_screen.dart';  // ProfileScreen (Visitante)
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});
 
+  /// Permite que filhos acessem o escopo para trocar de aba.
+  static RootNavScope? maybeOf(BuildContext context) =>
+      RootNavScope.maybeOf(context);
+
   @override
   State<RootNavShell> createState() => _RootNavShellState();
 }
@@ -45,15 +49,18 @@ class _RootNavShellState extends State<RootNavShell> {
     super.dispose();
   }
 
-  Future<void> _goTo(int index) async {
+  /// Troca de aba SEM perder a hotbar (sincrono).
+  void _setTab(int index) {
     if (index == _tabContatos) {
-      await _showContactsSheet(context);
+      // Não muda _currentIndex nem anima PageView; apenas abre o sheet.
+      _showContactsSheet(context);
       return;
     }
     if (_currentIndex == index) return;
 
     setState(() => _currentIndex = index);
 
+    // Anima o PageView após o frame para evitar jank.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _pageController.animateToPage(
@@ -81,7 +88,7 @@ class _RootNavShellState extends State<RootNavShell> {
         surfaceTintColor: Colors.white,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         selectedIndex: _currentIndex,
-        onDestinationSelected: _goTo,
+        onDestinationSelected: _setTab, // <<< usa o setTab sincrono
         destinations: [
           NavigationDestination(
             tooltip: 'Início',
@@ -111,19 +118,23 @@ class _RootNavShellState extends State<RootNavShell> {
       ),
     );
 
-    return Scaffold(
-      // Sem AppBar
-      body: PageView(
-        controller: _pageController,
-        // Remova para permitir swipe entre páginas
-        physics: const NeverScrollableScrollPhysics(),
-        onPageChanged: (i) {
-          // Mantém a NavigationBar sincronizada (também cobre swipe se habilitar)
-          setState(() => _currentIndex = i);
-        },
-        children: _pages,
+    return RootNavScope( // <<< expõe setTab/currentIndex para os filhos
+      setTab: _setTab,
+      currentIndex: _currentIndex,
+      child: Scaffold(
+        // Sem AppBar
+        body: PageView(
+          controller: _pageController,
+          // Remova para permitir swipe entre páginas
+          physics: const NeverScrollableScrollPhysics(),
+          onPageChanged: (i) {
+            // Mantém a NavigationBar sincronizada (também cobre swipe se habilitar)
+            setState(() => _currentIndex = i);
+          },
+          children: _pages,
+        ),
+        bottomNavigationBar: bottomBar,
       ),
-      bottomNavigationBar: bottomBar,
     );
   }
 
@@ -246,4 +257,29 @@ class _KeepAliveState extends State<_KeepAlive>
     super.build(context);
     return widget.child;
   }
+}
+
+/// Escopo para expor navegação por abas aos filhos (Home/Serviços/Perfil).
+class RootNavScope extends InheritedWidget {
+  const RootNavScope({
+    super.key,
+    required this.setTab,
+    required this.currentIndex,
+    required super.child,
+  });
+
+  /// Altera a aba atual (0=Home, 1=Serviços, 2=Perfil).
+  final void Function(int index) setTab;
+
+  /// Índice atual (útil se quiser decidir algo baseado na aba).
+  final int currentIndex;
+
+  static RootNavScope? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<RootNavScope>();
+    // Use `RootNavShell.maybeOf(context)` para não depender do nome interno.
+  }
+
+  @override
+  bool updateShouldNotify(RootNavScope oldWidget) =>
+      oldWidget.currentIndex != currentIndex;
 }
