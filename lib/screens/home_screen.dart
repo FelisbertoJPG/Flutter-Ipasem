@@ -1,10 +1,10 @@
-// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 
 import '../core/formatters.dart';        // fmtData, fmtCpf
 import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
 import '../repositories/dependents_repository.dart';
+import '../repositories/comunicados_repository.dart';
 import '../services/dev_api.dart';
 import '../config/app_config.dart';
 
@@ -16,15 +16,16 @@ import '../ui/components/loading_placeholder.dart';
 import '../ui/components/locked_notice.dart';
 import '../ui/components/resumo_row.dart';
 import '../ui/components/welcome_card.dart';
+import '../ui/components/minha_situacao_card.dart'; // <<< novo card
 import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
 
 import '../flows/visitor_consent.dart';
 
-// CORRIGIR IMPORTS AQUI:
+// ===== CORRIGIDO =====
 import '../controllers/home_controller.dart';
-import '../controllers/home_state.dart'; // <- este é o certo
+import '../controllers/home_state_controller.dart'; // reexporta HomeState (evita importar home_state.dart direto)
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -56,9 +57,12 @@ class _HomeScreenState extends State<HomeScreen>
           );
 
       final depsRepo = DependentsRepository(DevApi(baseUrl));
+      final comRepo  = const ComunicadosRepository();
+
       _ctrl = HomeController(
         session: SessionStore(),
         depsRepo: depsRepo,
+        comRepo: comRepo,                      // comunicados via repositório
       )..load();
 
       _ctrlReady = true;
@@ -92,7 +96,6 @@ class _HomeScreenState extends State<HomeScreen>
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, _) {
-        // sem cast – use o getter tipado do controller
         final s = _ctrl.state;
 
         // dispara o consent para visitante (uma única vez)
@@ -146,21 +149,13 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 16),
 
-                        // ===== Minha Situação
-                        SectionCard(
-                          title: 'Minha Situação',
-                          child: s.loading
-                              ? const LoadingPlaceholder(height: 72)
-                              : (s.isLoggedIn
-                              ? _MinhaSituacaoResumo(
-                            vinculo: '—', // ainda não temos SP pra isso
-                            plano: '—',   // idem
-                            dependentes: dependentesCount,
-                          )
-                              : const LockedNotice(
-                            message:
-                            'Faça login para visualizar seus dados de vínculo, plano e dependentes.',
-                          )),
+                        // ===== Minha Situação (agora componente dedicado)
+                        MinhaSituacaoCard(
+                          isLoading: s.loading,
+                          isLoggedIn: s.isLoggedIn,
+                          situacao: s.isLoggedIn ? 'Ativo' : null, // padrão quando logado
+                          plano: s.isLoggedIn ? '—' : null,        // placeholder até SP
+                          dependentes: dependentesCount,
                         ),
 
                         const SizedBox(height: 12),
@@ -193,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 12),
 
-                        // ===== Comunicados (stub mantido)
+                        // ===== Comunicados (vêm do repositório via controller.state)
                         SectionList<ComunicadoResumo>(
                           title: 'Comunicados',
                           isLoading: s.loading,
@@ -215,9 +210,9 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           emptyIcon: Icons.campaign_outlined,
-                          emptyTitle: 'Sem comunicados no momento',
+                          emptyTitle: 'Sem comunicados Publicados',
                           emptySubtitle:
-                          'Novos avisos oficiais do IPASEM aparecerão aqui.',
+                          'Novos avisos oficiais aparecerão aqui.',
                         ),
                       ],
                     ),
@@ -228,39 +223,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
       },
-    );
-  }
-}
-
-// ====== Pequeno widget específico, mas fino o suficiente para ficar aqui ======
-
-class _MinhaSituacaoResumo extends StatelessWidget {
-  const _MinhaSituacaoResumo({
-    required this.vinculo,
-    required this.plano,
-    required this.dependentes,
-  });
-
-  final String vinculo;
-  final String plano;
-  final int dependentes;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        ResumoRow(icon: Icons.badge_outlined, label: 'Vínculo', value: vinculo),
-        ResumoRow(
-          icon: Icons.medical_services_outlined,
-          label: 'Plano de saúde',
-          value: plano,
-        ),
-        ResumoRow(
-          icon: Icons.group_outlined,
-          label: 'Dependentes',
-          value: '$dependentes',
-        ),
-      ],
     );
   }
 }
