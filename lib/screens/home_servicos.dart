@@ -1,21 +1,26 @@
-// lib/screens/home_servicos.dart (versão curta)
+// lib/screens/home_servicos.dart
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../ui/app_shell.dart';
 import '../ui/components/section_card.dart';
-import '../theme/colors.dart';
+import '../ui/components/quick_actions.dart'; // grid com lock padrão (para versão logado)
+import '../ui/components/services_visitor.dart';
+import '../ui/widgets/history_list.dart';
 import '../ui/utils/webview_warmup.dart';
 import '../ui/utils/service_launcher.dart';
-import '../ui/widgets/action_grid.dart';
-import '../ui/widgets/history_list.dart';
+import 'login_screen.dart';
+import '../ui/components/services_visitor.dart'; //
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
+
   static const String _prefsKeyCpf = 'saved_cpf';
-  static const String _loginUrl    = 'https://assistweb.ipasemnh.com.br/site/login';
-  static const String _siteUrl     = 'https://www.ipasemnh.com.br/home';
+
+  // URLs (placeholders): troque pelos endpoints reais quando integrar
+  static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
+  static const String _siteUrl  = 'https://www.ipasemnh.com.br/home';
 
   @override
   State<HomeServicos> createState() => _HomeServicosState();
@@ -51,65 +56,145 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     if (mounted) setState(() => _loading = false);
   }
 
+  // ====== Ações (logado) ======
+  List<QuickActionItem> _loggedActions() {
+    return [
+      QuickActionItem(
+        id: 'aut_med',
+        label: 'Autorização Médica',
+        icon: FontAwesomeIcons.stethoscope,
+        onTap: () => launcher.openWithCpfPrompt(
+          HomeServicos._loginUrl, // TODO: trocar pelo endpoint real
+          'Autorização de Consulta Médica',
+          prefsKeyCpf: HomeServicos._prefsKeyCpf,
+        ),
+        audience: QaAudience.loggedIn,
+        requiresLogin: false,
+      ),
+      QuickActionItem(
+        id: 'aut_odo',
+        label: 'Autorização Odontológica',
+        icon: FontAwesomeIcons.tooth,
+        onTap: () => launcher.openWithCpfPrompt(
+          HomeServicos._loginUrl, // TODO: trocar pelo endpoint real
+          'Autorização de Consulta Odontológica',
+          prefsKeyCpf: HomeServicos._prefsKeyCpf,
+        ),
+        audience: QaAudience.loggedIn,
+        requiresLogin: false,
+      ),
+      QuickActionItem(
+        id: 'reimpressao',
+        label: 'Reimpressão de Autorizações',
+        icon: FontAwesomeIcons.print,
+        onTap: () => launcher.openWithCpfPrompt(
+          HomeServicos._loginUrl, // TODO: trocar pelo endpoint real
+          'Reimpressão de Autorizações',
+          prefsKeyCpf: HomeServicos._prefsKeyCpf,
+        ),
+        audience: QaAudience.loggedIn,
+        requiresLogin: false,
+      ),
+      QuickActionItem(
+        id: 'carteirinha',
+        label: 'Carteirinha Digital',
+        icon: FontAwesomeIcons.idCard,
+        onTap: () => launcher.openUrl(
+          HomeServicos._loginUrl, // TODO: trocar pelo endpoint real
+          'Carteirinha Digital',
+        ),
+        audience: QaAudience.loggedIn,
+        requiresLogin: false,
+      ),
+      QuickActionItem(
+        id: 'site',
+        label: 'Site',
+        icon: FontAwesomeIcons.globe,
+        onTap: () => launcher.openUrl(HomeServicos._siteUrl, 'Site'),
+        audience: QaAudience.all,
+        requiresLogin: false,
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final body = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : (_isLoggedIn ? _buildMemberView() : _buildVisitorView());
+
     return AppScaffold(
       title: 'Serviços',
       body: RefreshIndicator(
         onRefresh: _bootstrap,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          children: [
-            SectionCard(
-              title: 'Serviços em destaque',
-              child: ActionGrid(
-                items: [
-                  ActionItem(
-                    title: 'Autorização de Consulta Médica',
-                    icon: FontAwesomeIcons.stethoscope,
-                    onTap: () => launcher.openWithCpfPrompt(HomeServicos._loginUrl, 'Autorização de Consulta Médica', prefsKeyCpf: HomeServicos._prefsKeyCpf),
-                  ),
-                  ActionItem(
-                    title: 'Autorização de Consulta Odontológica',
-                    icon: FontAwesomeIcons.tooth,
-                    onTap: () => launcher.openWithCpfPrompt(HomeServicos._loginUrl, 'Autorização de Consulta Odontológica', prefsKeyCpf: HomeServicos._prefsKeyCpf),
-                  ),
-                  ActionItem(
-                    title: 'Reimpressão de Autorizações',
-                    icon: FontAwesomeIcons.print,
-                    onTap: () => launcher.openWithCpfPrompt(HomeServicos._loginUrl, 'Reimpressão de Autorizações', prefsKeyCpf: HomeServicos._prefsKeyCpf),
-                  ),
-                  ActionItem(
-                    title: 'Carteirinha Digital',
-                    icon: FontAwesomeIcons.idCard,
-                    onTap: () => launcher.openUrl(HomeServicos._loginUrl, 'Carteirinha Digital'),
-                  ),
-                  ActionItem(
-                    title: 'Site',
-                    icon: FontAwesomeIcons.globe,
-                    onTap: () => launcher.openUrl(HomeServicos._siteUrl, 'Site'),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            SectionCard(
-              title: 'Histórico de Autorizações',
-              child: HistoryList(
-                loading: _loading,
-                isLoggedIn: _isLoggedIn,
-                items: _historico,
-                onSeeAll: () {
-                  // TODO: navegar para tela de histórico completo
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Implementar tela de histórico completo.')),
-                  );
-                },
-              ),
-            ),
-          ],
+          children: [body],
         ),
       ),
+    );
+  }
+
+  // ====== VISITOR VIEW ======
+  Widget _buildVisitorView() {
+    return Column(
+      children: [
+        // 1) Card "Serviços" bloqueado (visual idêntico ao do histórico)
+        ServicesVisitors(
+          onLoginTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        // 2) Card "Histórico de Autorizações" bloqueado
+        SectionCard(
+          title: 'Histórico de Autorizações',
+          child: HistoryList(
+            loading: _loading,
+            isLoggedIn: false, // mantém bloqueado para visitante
+            items: const [],
+            onSeeAll: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Faça login para acessar o histórico.')),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ====== MEMBER VIEW ======
+  Widget _buildMemberView() {
+    return Column(
+      children: [
+        SectionCard(
+          title: 'Serviços em destaque',
+          child: QuickActions(
+            title: null,
+            items: _loggedActions(),
+            isLoggedIn: true,
+            onRequireLogin: null, // não necessário para logado
+          ),
+        ),
+        const SizedBox(height: 12),
+        SectionCard(
+          title: 'Histórico de Autorizações',
+          child: HistoryList(
+            loading: _loading,
+            isLoggedIn: true,
+            items: _historico,
+            onSeeAll: () {
+              // TODO: navegar para tela de histórico completo
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Implementar tela de histórico completo.')),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
