@@ -160,31 +160,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 12),
 
-                        // ===== Requerimentos em andamento (stub mantido)
-                        SectionList<RequerimentoResumo>(
-                          title: 'Requerimentos em andamento',
-                          isLoading: s.loading,
-                          items: s.reqs,
-                          take: 3,
-                          skeletonHeight: 100,
-                          itemBuilder: (e) => ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.description_outlined),
-                            title: Text(
-                              e.titulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              'Status: ${e.status} • Atualizado: ${fmtData(e.atualizadoEm)}',
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                          ),
-                          emptyIcon: Icons.assignment_outlined,
-                          emptyTitle: 'Nenhum requerimento em andamento',
-                          emptySubtitle:
-                          'Quando houverem movimentações, elas aparecerão aqui.',
-                        ),
+
 
                         const SizedBox(height: 12),
 
