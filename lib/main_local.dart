@@ -20,6 +20,14 @@ import 'screens/termos_screen.dart';
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
 
+// Base local: por padrão .18; pode sobrescrever com --dart-define=API_BASE=http://host
+const String kLocalBase =
+String.fromEnvironment(
+  'API_BASE',
+  defaultValue: 'https://assistweb.ipasemnh.com.br',
+);
+//String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -29,10 +37,12 @@ void main() async {
   // Warm-up do SharedPreferences
   await SharedPreferences.getInstance();
 
-  // Carrega parâmetros apenas do cliente (sem dados sensíveis)
-  final params = AppParams.fromEnv();
-  // Se preferir fixar localmente, use:
-  // final params = AppParams(baseApiUrl: 'http://192.9.200.98', passwordMinLength: 4);
+  // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
+  final params = AppParams(
+    baseApiUrl: kLocalBase, // <- Só o 18 por padrão
+    passwordMinLength: 4,
+    firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
+  );
 
   runApp(
     AppConfig(

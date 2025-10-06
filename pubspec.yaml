@@ -28,6 +28,10 @@ dependencies:
   fbdb: ^1.5.1
   dio: 5.9.0
   intl: ^0.19.0
+  uuid: ^4.5.0
+  crypto: ^3.0.3
+
+
 
 
 

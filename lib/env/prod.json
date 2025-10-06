@@ -1,8 +1,0 @@
-{
-  "APP_FLAVOR": "prod",
-  "BASE_API_URL": "http://192.9.200.98/api",
-  "SUPPORT_EMAIL": "suporte@ipasemnh.com.br",
-  "SENDER_EMAIL": "naoresponder@ipasemnh.com.br",
-  "USER_PASSWORD_RESET_TOKEN_EXPIRE": 3600,
-  "USER_PASSWORD_MIN_LENGTH": 8
-}
