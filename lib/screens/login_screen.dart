@@ -223,19 +223,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         ValueListenableBuilder<bool>(
-                                          valueListenable: _c.rememberCpf,
-                                          builder: (_, val, __) => Checkbox(
-                                            value: val,
-                                            onChanged: (v) => _c.rememberCpf.value = v ?? true,
-                                          ),
-                                        ),
-                                        const Text('Lembrar CPF'),
-                                      ],
-                                    ),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        ValueListenableBuilder<bool>(
                                           valueListenable: _c.staySignedIn,
                                           builder: (_, val, __) => Checkbox(
                                             value: val,
