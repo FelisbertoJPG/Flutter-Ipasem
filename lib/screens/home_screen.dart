@@ -3,28 +3,32 @@ import 'package:flutter/material.dart';
 import '../core/formatters.dart';        // fmtData, fmtCpf
 import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
-import '../services/session.dart';       // Session.getProfile()
-import '../models/profile.dart';
-import '../models/dependent.dart';
 import '../repositories/dependents_repository.dart';
+import '../repositories/comunicados_repository.dart';
 import '../services/dev_api.dart';
 import '../config/app_config.dart';
 
-import '../theme/colors.dart';
 import '../ui/app_shell.dart';           // AppScaffold
-import '../ui/components/header_card.dart';
-import '../ui/components/quick_actions.dart';
+import '../ui/components/quick_actions.dart'; // << novo flexível
 import '../ui/components/section_card.dart';
 import '../ui/components/section_list.dart';
 import '../ui/components/loading_placeholder.dart';
 import '../ui/components/locked_notice.dart';
 import '../ui/components/resumo_row.dart';
 import '../ui/components/welcome_card.dart';
+import '../ui/components/minha_situacao_card.dart'; // card "Minha Situação"
 import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
 
 import '../flows/visitor_consent.dart';
+
+// Navegação via Shell (para manter hotbar)
+import '../root_nav_shell.dart';
+
+// ===== Controller/State =====
+import '../controllers/home_controller.dart';
+import '../controllers/home_state_controller.dart'; // reexporta HomeState
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -35,111 +39,134 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with AutomaticKeepAliveClientMixin {
-  final _session = SessionStore();
+  // Índices de abas na RootNavShell
+  static const int _TAB_HOME     = 0;
+  static const int _TAB_SERVICOS = 1;
+  static const int _TAB_PERFIL   = 2;
 
-  bool _loading = true;
-  bool _isLoggedIn = false;
-  String? _cpf;
+  late HomeController _ctrl;
+  bool _ctrlReady = false;
 
-  // novos: perfil + dependentes reais
-  Profile? _profile;
-  List<Dependent> _deps = const [];
-
-  // repos para chamadas (dependentes)
-  late DependentsRepository _depsRepo;
-  bool _depsReady = false;
-
-  List<RequerimentoResumo> _reqEmAndamento = const [];
-  List<ComunicadoResumo> _comunicados = const [];
+  // Para exibir o consent uma única vez
+  bool _didPromptConsent = false;
 
   @override
   bool get wantKeepAlive => true;
 
   @override
-  void initState() {
-    super.initState();
-    _bootstrap();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_depsReady) {
+    if (!_ctrlReady) {
       final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-          ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-      _depsRepo = DependentsRepository(DevApi(baseUrl));
-      _depsReady = true;
+          ?? const String.fromEnvironment(
+            'API_BASE',
+            defaultValue: 'https://assistweb.ipasemnh.com.br',
+          );
+
+      final depsRepo = DependentsRepository(DevApi(baseUrl));
+      final comRepo  = const ComunicadosRepository();
+
+      _ctrl = HomeController(
+        session: SessionStore(),
+        depsRepo: depsRepo,
+        comRepo: comRepo, // comunicados via repositório
+      )..load();
+
+      _ctrlReady = true;
     }
   }
 
-  Future<void> _bootstrap() async {
-    setState(() => _loading = true);
-
-    final logged = await _session.getIsLoggedIn();
-    final cpf    = await _session.getSavedCpf();
-
-    // Stubs — (mantidos) para cards de requerimentos/comunicados
-    final req = <RequerimentoResumo>[];
-    final avisos = <ComunicadoResumo>[
-      ComunicadoResumo(
-        titulo: 'Manutenção programada',
-        descricao: 'Sistema de autorizações ficará indisponível no domingo, 02:00–04:00.',
-        data: DateTime.now(),
-      ),
-      ComunicadoResumo(
-        titulo: 'Novo canal de atendimento',
-        descricao: 'WhatsApp do setor de benefícios atualizado.',
-        data: DateTime.now().subtract(const Duration(days: 2)),
-      ),
-    ];
-
-    Profile? prof;
-    List<Dependent> deps = const [];
-
-    if (logged) {
-      // carrega perfil salvo pela tela de login
-      prof = await Session.getProfile();
-      // se tiver perfil, busca dependentes pela matrícula (id)
-      if (prof != null && _depsReady) {
-        try {
-          deps = await _depsRepo.listByMatricula(prof.id);
-        } catch (_) {
-          // silencioso por enquanto; podemos mostrar um toast depois
-          deps = const [];
-        }
-      }
+  // ====== Navegação mantendo hotbar ======
+  bool _switchTab(int index) {
+    final scope = RootNavShell.maybeOf(context);
+    if (scope != null) {
+      scope.setTab(index);
+      return true;
     }
-
-    if (!mounted) return;
-    setState(() {
-      _isLoggedIn = logged;
-      _cpf = cpf;
-      _profile = prof;
-      _deps = deps;
-      _reqEmAndamento = req;
-      _comunicados = avisos;
-      _loading = false;
-    });
-
-    // Se visitante e ainda não aceitou, mostra o diálogo após o primeiro frame
-    if (!_isLoggedIn) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted) return;
-        await ensureVisitorConsent(context);
-      });
-    }
+    return false;
   }
 
-  // ---- Navegação ----
   void _goToServicos() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HomeServicos()),
-    );
+    if (_switchTab(_TAB_SERVICOS)) return;
+    // Fallback (evite no dia a dia)
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HomeServicos()));
   }
 
   void _goToPerfil() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    if (_switchTab(_TAB_PERFIL)) return;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
+  }
+
+  // ====== NOVA ROTINA: monta as ações por tipo de login ======
+  Widget _quickActionsFor(HomeState s) {
+    final isLogged = s.isLoggedIn;
+
+    final items = <QuickActionItem>[
+      // Disponível para todos, mas exige login para funcionar
+      QuickActionItem(
+        id: 'carteirinha',
+        label: 'Carteirinha',
+        icon: Icons.badge_outlined,
+        onTap: _goToServicos,
+        audience: QaAudience.all,
+        requiresLogin: true,
+      ),
+      // Disponível para todos, sem exigir login (pode abrir serviços/infos públicas)
+      QuickActionItem(
+        id: 'assistencia',
+        label: 'Serviços',
+        icon: Icons.local_hospital_outlined,
+        onTap: _goToServicos,
+        audience: QaAudience.all,
+        requiresLogin: false,
+      ),
+      // Exige login
+      QuickActionItem(
+        id: 'autorizacoes',
+        label: 'Autoriz\u00E7\u00F5es', // evita problemas de encoding
+        icon: Icons.assignment_turned_in_outlined,
+        onTap: _goToServicos,
+        audience: QaAudience.all,
+        requiresLogin: true,
+      ),
+
+      // Exemplo de item só para visitante (se quiser estimular login)
+      if (!isLogged)
+        QuickActionItem(
+          id: 'login',
+          label: 'Fazer login',
+          icon: Icons.login_outlined,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          },
+          audience: QaAudience.visitor,
+          requiresLogin: false,
+        ),
+
+      // Exemplo de item só para logado (se quiser atalho ao Perfil)
+      if (isLogged)
+        QuickActionItem(
+          id: 'perfil',
+          label: 'Meu Perfil',
+          icon: Icons.person_outline,
+          onTap: _goToPerfil,
+          audience: QaAudience.loggedIn,
+          requiresLogin: false,
+        ),
+    ];
+
+    return QuickActions(
+      title: 'Ações rápidas',
+      items: items,
+      isLoggedIn: isLogged,
+      onRequireLogin: () {
+        // Comportamento padrão ao tocar em item bloqueado quando visitante:
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      },
     );
   }
 
@@ -147,162 +174,139 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     super.build(context);
 
-    final dependentesCount = _isLoggedIn ? _deps.length : 0;
+    if (!_ctrlReady) {
+      // proteção rápida (primeiro build antes do didChangeDependencies)
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-    return AppScaffold(
-      title: 'Início',
-      body: RefreshIndicator(
-        onRefresh: _bootstrap,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
-                child: ListView(
-                  padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
-                  children: [
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) {
+        final s = _ctrl.state;
 
-                    // ===== Cabeçalho (sempre mostra; o card decide o layout)
-                    WelcomeCard(
-                      isLoggedIn: _isLoggedIn,
-                      name: _isLoggedIn ? _profile?.nome : null,
-                      cpf: _isLoggedIn
-                          ? (_profile != null && _profile!.cpf.isNotEmpty ? fmtCpf(_profile!.cpf) : null)
-                          : (_cpf == null || _cpf!.isEmpty ? null : fmtCpf(_cpf!)),
-                      // onLogin é required no componente; quando logado, passo no-op.
-                      onLogin: _isLoggedIn
-                          ? () {}
-                          : () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+        // dispara o consent para visitante (uma única vez)
+        if (!s.loading && !s.isLoggedIn && !_didPromptConsent) {
+          _didPromptConsent = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) return;
+            await ensureVisitorConsent(context);
+          });
+        }
 
+        final dependentesCount = s.isLoggedIn ? s.dependents.length : 0;
 
-
-                    // ===== Ações rápidas (leva para Serviços)
-                    QuickActions(
-                      onCarteirinha: _goToServicos,
-                      onAssistenciaSaude: _goToServicos,
-                      onAutorizacoes: _goToServicos,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // ===== Minha Situação
-                    SectionCard(
-                      title: 'Minha Situação',
-                      child: _loading
-                          ? const LoadingPlaceholder(height: 72)
-                          : (_isLoggedIn
-                          ? _MinhaSituacaoResumo(
-                        vinculo: '—',                // ainda não temos SP pra isso
-                        plano: '—',                  // idem
-                        dependentes: dependentesCount,
-                      )
-                          : const LockedNotice(
-                        message:
-                        'Faça login para visualizar seus dados de vínculo, plano e dependentes.',
-                      )),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // ===== Requerimentos em andamento (stub mantido)
-                    SectionList<RequerimentoResumo>(
-                      title: 'Requerimentos em andamento',
-                      isLoading: _loading,
-                      items: _reqEmAndamento,
-                      take: 3,
-                      skeletonHeight: 100,
-                      itemBuilder: (e) => ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.description_outlined),
-                        title: Text(
-                          e.titulo,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+        return AppScaffold(
+          title: 'Início',
+          body: RefreshIndicator(
+            onRefresh: _ctrl.load,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: ListView(
+                      padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
+                      children: [
+                        // ===== Cabeçalho (sempre mostra; o card decide o layout)
+                        WelcomeCard(
+                          isLoggedIn: s.isLoggedIn,
+                          name: s.isLoggedIn ? s.profile?.nome : null,
+                          cpf: s.isLoggedIn
+                              ? (s.profile != null && (s.profile!.cpf).isNotEmpty
+                              ? fmtCpf(s.profile!.cpf)
+                              : null)
+                              : (s.cpf == null || s.cpf!.isEmpty ? null : fmtCpf(s.cpf!)),
+                          // onLogin é required; quando logado, passo no-op.
+                          onLogin: s.isLoggedIn
+                              ? () {}
+                              : () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          ),
                         ),
-                        subtitle: Text(
-                          'Status: ${e.status} • Atualizado: ${fmtData(e.atualizadoEm)}',
+                        const SizedBox(height: 16),
+
+                        // ===== Ações rápidas (controladas por rotina)
+                        _quickActionsFor(s),
+
+                        const SizedBox(height: 16),
+
+                        // ===== Minha Situação
+                        MinhaSituacaoCard(
+                          isLoading: s.loading,
+                          isLoggedIn: s.isLoggedIn,
+                          situacao: s.isLoggedIn ? 'Ativo' : null, // padrão quando logado
+                          plano: s.isLoggedIn ? '—' : null,        // placeholder até SP
+                          dependentes: dependentesCount,
                         ),
-                        trailing: const Icon(Icons.chevron_right),
-                      ),
-                      emptyIcon: Icons.assignment_outlined,
-                      emptyTitle: 'Nenhum requerimento em andamento',
-                      emptySubtitle:
-                      'Quando houverem movimentações, elas aparecerão aqui.',
+
+                        const SizedBox(height: 12),
+
+                        // ===== Requerimentos em andamento (stub mantido)
+                        SectionList<RequerimentoResumo>(
+                          title: 'Requerimentos em andamento',
+                          isLoading: s.loading,
+                          items: s.reqs,
+                          take: 3,
+                          skeletonHeight: 100,
+                          itemBuilder: (e) => ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.description_outlined),
+                            title: Text(
+                              e.titulo,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              'Status: ${e.status} • Atualizado: ${fmtData(e.atualizadoEm)}',
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                          ),
+                          emptyIcon: Icons.assignment_outlined,
+                          emptyTitle: 'Nenhum requerimento em andamento',
+                          emptySubtitle:
+                          'Quando houverem movimentações, elas aparecerão aqui.',
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // ===== Comunicados (via repo/controller.state)
+                        SectionList<ComunicadoResumo>(
+                          title: 'Comunicados',
+                          isLoading: s.loading,
+                          items: s.comunicados,
+                          take: 3,
+                          skeletonHeight: 100,
+                          itemBuilder: (c) => ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.campaign_outlined),
+                            title: Text(
+                              c.titulo,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              '${fmtData(c.data)} • ${c.descricao}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          emptyIcon: Icons.campaign_outlined,
+                          emptyTitle: 'Sem comunicados Publicados',
+                          emptySubtitle:
+                          'Novos avisos oficiais aparecerão aqui.',
+                        ),
+                      ],
                     ),
-
-                    const SizedBox(height: 12),
-
-                    // ===== Comunicados (stub mantido)
-                    SectionList<ComunicadoResumo>(
-                      title: 'Comunicados',
-                      isLoading: _loading,
-                      items: _comunicados,
-                      take: 3,
-                      skeletonHeight: 100,
-                      itemBuilder: (c) => ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.campaign_outlined),
-                        title: Text(
-                          c.titulo,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${fmtData(c.data)} • ${c.descricao}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      emptyIcon: Icons.campaign_outlined,
-                      emptyTitle: 'Sem comunicados no momento',
-                      emptySubtitle:
-                      'Novos avisos oficiais do IPASEM aparecerão aqui.',
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-// ====== Pequeno widget específico, mas fino o suficiente para ficar aqui ======
-
-class _MinhaSituacaoResumo extends StatelessWidget {
-  const _MinhaSituacaoResumo({
-    required this.vinculo,
-    required this.plano,
-    required this.dependentes,
-  });
-
-  final String vinculo;
-  final String plano;
-  final int dependentes;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        ResumoRow(icon: Icons.badge_outlined, label: 'Vínculo', value: vinculo),
-        ResumoRow(
-          icon: Icons.medical_services_outlined,
-          label: 'Plano de saúde',
-          value: plano,
-        ),
-        ResumoRow(
-          icon: Icons.group_outlined,
-          label: 'Dependentes',
-          value: '$dependentes',
-        ),
-      ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }

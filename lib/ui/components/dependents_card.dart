@@ -28,6 +28,8 @@ class DependentsCard extends StatelessWidget {
   bool _isTitular(Dependent d) => d.iddependente == 0;
 
   String _matriculaComposta(Dependent d) {
+    // evita "-0" para titular
+    if (_isTitular(d)) return '${d.idmatricula}';
     final depSuf = d.iddependente.abs(); // cobre -1, -2...
     return '${d.idmatricula}-$depSuf';
   }
@@ -78,42 +80,59 @@ class DependentsCard extends StatelessWidget {
       final isTitular = _isTitular(d);
       final cpfTxt = (d.cpf == null || d.cpf!.isEmpty) ? '—' : fmtCpf(d.cpf!);
       final idadeTxt = (d.idade != null) ? '${d.idade} anos' : '—';
-      final nascTxt = d.dtNasc == null || d.dtNasc!.isEmpty ? '—' : d.dtNasc!;
-      final trailingTxt = isTitular ? 'Titular' : 'Dependente';
+      final nascRaw = d.dtNasc == null || d.dtNasc!.isEmpty ? '—' : d.dtNasc!;
+      final nascFmt = _fmtDataBr(nascRaw);
       final matriculaTxt = showMatricula ? _matriculaComposta(d) : null;
+      final roleTxt = isTitular ? 'Titular' : 'Dependente';
 
       rows.add(
         ListTile(
+          isThreeLine: true, // dá espaço vertical ao subtitle (Wrap)
           dense: true,
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.family_restroom_outlined, color: Color(0xFF667085)),
-          title: Text(
-            d.nome,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF101828)),
-          ),
-          subtitle: Column(
+          // title vira um Row com o nome + badge (no lugar do trailing)
+          title: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'CPF: $cpfTxt  •  Idade: $idadeTxt',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Color(0xFF475467)),
+              Expanded(
+                child: Text(
+                  d.nome,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF101828),
+                  ),
+                ),
               ),
-              Text(
-                '• Nasc.: ${_fmtDataBr(nascTxt)}'
-                    '${matriculaTxt != null ? '  •  Matr.: $matriculaTxt' : ''}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Color(0xFF475467)),
-              ),
+              const SizedBox(width: 8),
+              _Badge(text: roleTxt),
             ],
           ),
-          trailing: Text(trailingTxt, style: const TextStyle(color: Color(0xFF667085))),
+          // subtitle responsivo com Wrap (quebra quando faltar espaço)
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('CPF: $cpfTxt', style: const TextStyle(color: Color(0xFF475467))),
+                const _Dot(),
+                Text('Idade: $idadeTxt', style: const TextStyle(color: Color(0xFF475467))),
+                const _Dot(),
+                Text('Nasc.: $nascFmt', style: const TextStyle(color: Color(0xFF475467))),
+                if (matriculaTxt != null) ...[
+                  const _Dot(),
+                  Text('Matr.: $matriculaTxt', style: const TextStyle(color: Color(0xFF475467))),
+                ],
+              ],
+            ),
+          ),
           minLeadingWidth: 0,
           onTap: onTap == null ? null : () => onTap!(d),
+          // sem `trailing` para não comprimir o conteúdo
         ),
       );
 
@@ -125,7 +144,8 @@ class DependentsCard extends StatelessWidget {
   }
 
   String _fmtDataBr(String ymd) {
-    // espera "yyyy-MM-dd" do backend; se vier outro formato, só retorna original
+    // aceita "yyyy-MM-dd" e "dd/MM/yyyy"; senão retorna original
+    if (ymd.contains('/')) return ymd;
     final parts = ymd.split('-');
     if (parts.length == 3) {
       return '${parts[2].padLeft(2, '0')}/${parts[1].padLeft(2, '0')}/${parts[0]}';
@@ -151,5 +171,35 @@ class _Title extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F4F7),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 11, color: Color(0xFF667085)),
+      ),
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text('•', style: TextStyle(color: Color(0xFF98A2B3)));
   }
 }
