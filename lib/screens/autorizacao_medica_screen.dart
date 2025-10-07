@@ -1,4 +1,5 @@
 // lib/screens/autorizacao_medica_screen.dart
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -12,6 +13,7 @@ import '../services/dev_api.dart';
 import '../repositories/dependents_repository.dart';
 import '../repositories/especialidades_repository.dart';
 import '../repositories/prestadores_repository.dart';
+import '../repositories/autorizacoes_repository.dart';
 import '../services/session.dart';
 import '../models/dependent.dart';
 import '../models/especialidade.dart';
@@ -27,6 +29,7 @@ class AutorizacaoMedicaScreen extends StatefulWidget {
 class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   bool _loading = true;
   String? _error;
+  bool _saving = false; // trava o botão durante a gravação
 
   bool _loadingCidades = false;
   bool _loadingPrestadores = false;
@@ -49,6 +52,16 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   late DependentsRepository _depsRepo;
   late EspecialidadesRepository _espRepo;
   late PrestadoresRepository _prestRepo;
+  late AutorizacoesRepository _autRepo;
+
+  // ---- helpers ----
+  int _toInt(dynamic v) {
+    if (v is int) return v;
+    final s = v?.toString().trim() ?? '';
+    final n = int.tryParse(s);
+    if (n == null) throw const FormatException('valor inválido');
+    return n;
+  }
 
   @override
   void didChangeDependencies() {
@@ -58,10 +71,11 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
         ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
 
-    _api = DevApi(baseUrl);
-    _depsRepo = DependentsRepository(_api);
-    _espRepo  = EspecialidadesRepository(_api);
+    _api       = DevApi(baseUrl);
+    _depsRepo  = DependentsRepository(_api);
+    _espRepo   = EspecialidadesRepository(_api);
     _prestRepo = PrestadoresRepository(_api);
+    _autRepo   = AutorizacoesRepository(_api);
 
     _reposReady = true;
     _bootstrap();
@@ -118,6 +132,32 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     }
   }
 
+  Future<void> _showAlert({
+    required String title,
+    required String message,
+    IconData icon = Icons.info_outline,
+    Color? iconColor,
+  }) async {
+    iconColor ??= Theme.of(context).colorScheme.primary;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(icon, size: 24, color: iconColor),
+            const SizedBox(width: 8),
+            Flexible(child: Text(title)),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _loadCidades() async {
     if (_selEsp == null) return;
     setState(() { _loadingCidades = true; _cidades = const []; _selCidade = null; _prestadores = const []; _selPrest = null; });
@@ -129,6 +169,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       });
     } catch (e) {
       setState(() { _loadingCidades = false; _cidades = const []; });
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(kDebugMode ? 'Falha ao carregar cidades. ($e)' : 'Falha ao carregar cidades.')),
       );
@@ -147,26 +188,88 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       });
     } catch (e) {
       setState(() { _loadingPrestadores = false; _prestadores = const []; });
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(kDebugMode ? 'Falha ao carregar prestadores. ($e)' : 'Falha ao carregar prestadores.')),
       );
     }
   }
 
-  bool get _formOk => _selBenef != null && _selEsp != null && _selCidade != null && _selPrest != null;
+  bool get _formOk =>
+      _selBenef != null && _selEsp != null && _selCidade != null && _selPrest != null;
 
-  void _onSubmit() {
-    if (!_formOk) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-        'OK!\nPaciente: ${_selBenef!.nome}\n'
-            'Especialidade: ${_selEsp!.nome}\n'
-            'Cidade: ${_selCidade!}\n'
-            'Prestador: ${_selPrest!.nome}\n'
-            '(gravação virá via repo)',
-      ),
-    ));
+  // ===== GRAVA AUTORIZAÇÃO =====
+  Future<void> _onSubmit() async {
+    if (!_formOk || _saving) return;
+
+    setState(() => _saving = true);
+    try {
+      final numero = await _autRepo.gravar(
+        idMatricula:     _selBenef!.idMat,
+        idDependente:    _selBenef!.idDep,
+        idEspecialidade: _toInt(_selEsp!.id),
+        idPrestador:     _toInt(_selPrest!.registro),
+        tipoPrestador:   _selPrest!.tipoPrestador,
+      );
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Autorização emitida'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Número da autorização:'),
+              const SizedBox(height: 8),
+              SelectableText(
+                '$numero',
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
+          ],
+        ),
+      );
+    } on FormatException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dados inválidos para emissão.')),
+      );
+    } on DioException catch (e) {
+      final msg = (e.response?.data is Map && (e.response!.data['error']?['message'] is String))
+          ? e.response!.data['error']['message'] as String
+          : 'Falha ao gravar autorização';
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Atenção'),
+          content: Text(msg),
+          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Erro'),
+          content: Text(e.toString()),
+          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -279,8 +382,13 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                     backgroundColor: kBrand,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  onPressed: _formOk ? _onSubmit : null,
-                  child: const Text('Continuar', style: TextStyle(fontWeight: FontWeight.w700)),
+                  onPressed: _formOk && !_saving ? _onSubmit : null,
+                  child: _saving
+                      ? const SizedBox(
+                    height: 22, width: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                  )
+                      : const Text('Continuar', style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ),
             ],
@@ -306,4 +414,5 @@ class _Beneficiario {
   final int idMat; final int idDep; final String nome;
   const _Beneficiario({required this.idMat, required this.idDep, required this.nome});
 }
+
 extension<T> on List<T> { T? get firstOrNull => isEmpty ? null : first; }
