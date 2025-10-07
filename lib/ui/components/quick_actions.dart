@@ -44,34 +44,42 @@ class QuickActions extends StatelessWidget {
   final bool isLoggedIn;
   final VoidCallback? onRequireLogin;
   final String? title;
-
   @override
   Widget build(BuildContext context) {
     final visible = items.where((it) {
       switch (it.audience) {
-        case QaAudience.all:
-          return true;
-        case QaAudience.loggedIn:
-          return isLoggedIn;
-        case QaAudience.visitor:
-          return !isLoggedIn;
+        case QaAudience.all:      return true;
+        case QaAudience.loggedIn: return isLoggedIn;
+        case QaAudience.visitor:  return !isLoggedIn;
       }
     }).toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 3 colunas no padrão, 4 em telas mais largas
+        // 3 colunas padrão, 4 em telas largas
         final cols = constraints.maxWidth >= 560 ? 4 : 3;
+
+        // cálculo robusto de altura do tile (base + ajuste por acessibilidade)
+        final textScale = MediaQuery.textScaleFactorOf(context);
+        final baseH = 96.0; // altura confortável p/ ícone + 2 linhas
+        final tileH = baseH + (textScale - 1.0) * 28.0; // cresce com fonte maior
+
+        // largura de cada célula (considera espaçamento)
+        const spacing = 12.0;
+        final itemW = (constraints.maxWidth - spacing * (cols - 1)) / cols;
+
+        // usamos ratio = largura/altura para dar a altura desejada
+        final ratio = itemW / tileH;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (title != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 8),
+              const Padding(
+                padding: EdgeInsets.only(left: 4, bottom: 8),
                 child: Text(
-                  title!,
-                  style: const TextStyle(
+                  'Serviços em destaque', // ou use title!
+                  style: TextStyle(
                     fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF344054),
                   ),
                 ),
@@ -82,9 +90,9 @@ class QuickActions extends StatelessWidget {
               itemCount: visible.length,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: cols,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.15,
+                crossAxisSpacing: spacing,
+                mainAxisSpacing: spacing,
+                childAspectRatio: ratio, // <<< evita overflow
               ),
               itemBuilder: (context, i) {
                 final it = visible[i];
@@ -132,60 +140,61 @@ class _QaTile extends StatelessWidget {
   final bool locked;
   final VoidCallback onTap;
 
+
   @override
   Widget build(BuildContext context) {
-    final base = Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7FAFC),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      child: Stack(
-        children: [
-          // Conteúdo
-          Align(
-            alignment: Alignment.center,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 26, color: const Color(0xFF143C8D)),
-                const SizedBox(height: 8),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF101828),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Cadeado (quando bloqueado)
-          if (locked)
-            const Positioned(
-              top: 6,
-              right: 6,
-              child: Icon(Icons.lock_outline, size: 16, color: Color(0xFF98A2B3)),
-            ),
-        ],
-      ),
-    );
+  final base = Container(
+  decoration: BoxDecoration(
+  color: const Color(0xFFF7FAFC),
+  borderRadius: BorderRadius.circular(16),
+  border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
+  ),
+  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), // 12->10
+  child: Stack(
+  children: [
+  Align(
+  alignment: Alignment.center,
+  child: Column(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+  const Icon(Icons.circle, size: 0), // nada; só se quiser equalizar baseline
+  Icon(icon, size: 24, color: const Color(0xFF143C8D)), // 26->24
+  const SizedBox(height: 6), // 8->6
+  Text(
+  label,
+  textAlign: TextAlign.center,
+  maxLines: 2,
+  overflow: TextOverflow.ellipsis,
+  style: const TextStyle(
+  fontSize: 12.5,              // 13 -> 12.5
+  height: 1.1,                 // ajuda a caber 2 linhas
+  fontWeight: FontWeight.w600,
+  color: Color(0xFF101828),
+  ),
+  ),
+  ],
+  ),
+  ),
+  if (locked)
+  const Positioned(
+  top: 6,
+  right: 6,
+  child: Icon(Icons.lock_outline, size: 16, color: Color(0xFF98A2B3)),
+  ),
+  ],
+  ),
+  );
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Opacity(
-          opacity: locked ? 0.6 : 1.0,
-          child: base,
-        ),
-      ),
-    );
+  return Material(
+  color: Colors.transparent,
+  child: InkWell(
+  borderRadius: BorderRadius.circular(16),
+  onTap: onTap,
+  child: Opacity(
+  opacity: locked ? 0.6 : 1.0,
+  child: base,
+  ),
+  ),
+  );
   }
-}
+  }
