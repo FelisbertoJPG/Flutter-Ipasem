@@ -11,7 +11,7 @@ import '../ui/widgets/history_list.dart';
 import '../ui/utils/webview_warmup.dart';
 import '../ui/utils/service_launcher.dart';
 import 'login_screen.dart';
-import '../ui/components/services_visitor.dart'; //
+import 'autorizacao_medica_screen.dart'; // <<< nova tela
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
@@ -63,11 +63,12 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         id: 'aut_med',
         label: 'Autorização Médica',
         icon: FontAwesomeIcons.stethoscope,
-        onTap: () => launcher.openWithCpfPrompt(
-          HomeServicos._loginUrl, // TODO: trocar pelo endpoint real
-          'Autorização de Consulta Médica',
-          prefsKeyCpf: HomeServicos._prefsKeyCpf,
-        ),
+        onTap: () {
+          // >>> abre a tela nativa de autorização médica
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AutorizacaoMedicaScreen()),
+          );
+        },
         audience: QaAudience.loggedIn,
         requiresLogin: false,
       ),

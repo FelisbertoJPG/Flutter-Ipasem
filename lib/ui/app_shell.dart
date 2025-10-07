@@ -2,8 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Se você tem seu arquivo de cores centralizado, mantenha este import:
-import '../theme/colors.dart'; // exporta kBrand, kCardBg, kCardBorder, kPanelBg, kPanelBorder
+// cores do app
+import '../theme/colors.dart';
+
+// >>> importa a shell para acessar RootNavShell.maybeOf(context)
+import '../root_nav_shell.dart';
 
 /// Scaffold padrão com AppBar + Drawer reaproveitáveis.
 /// - Use `minimal: true` para esconder AppBar e Drawer (ex.: Termos/Privacidade abrindo do diálogo)
@@ -11,20 +14,19 @@ class AppScaffold extends StatelessWidget {
   final String title;
   final Widget body;
   final List<Widget>? actions;
-  final bool minimal; // <— NOVO
+  final bool minimal;
 
   const AppScaffold({
     super.key,
     required this.title,
     required this.body,
     this.actions,
-    this.minimal = false, // <— NOVO
+    this.minimal = false,
   });
 
   @override
   Widget build(BuildContext context) {
     if (minimal) {
-      // Sem AppBar, sem Drawer, só o body!
       return Scaffold(body: body);
     }
 
@@ -54,7 +56,8 @@ class AppScaffold extends StatelessWidget {
   }
 }
 
-/// Drawer único para o app inteiro (usa rotas nomeadas)
+/// Drawer único para o app inteiro.
+/// IMPORTANTE: usa RootNavShell.setTab() para trocar de aba sem perder a hotbar.
 class _AppDrawer extends StatelessWidget {
   const _AppDrawer();
 
@@ -66,6 +69,7 @@ class _AppDrawer extends StatelessWidget {
       await prefs.setBool('is_logged_in', false);
 
       if (!context.mounted) return;
+      // aqui você deve ter sua rota nomeada de login registrada
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (_) {
       if (!context.mounted) return;
@@ -75,8 +79,25 @@ class _AppDrawer extends StatelessWidget {
     }
   }
 
-  void _go(BuildContext context, String routeName) {
-    Navigator.of(context).pop(); // fecha o drawer
+  /// Troca a aba da shell (0=Início, 1=Serviços, 2=Perfil).
+  void _goTab(BuildContext context, int index) {
+    Navigator.of(context).pop(); // fecha o drawer primeiro
+    final shell = RootNavShell.maybeOf(context);
+    if (shell != null) {
+      shell.setTab(index);       // troca a aba sem empilhar rotas
+    } else {
+      // Fallback (caso esteja fora da shell por algum motivo)
+      switch (index) {
+        case 0: Navigator.of(context).pushNamed('/'); break;
+        case 1: Navigator.of(context).pushNamed('/servicos'); break;
+        case 2: Navigator.of(context).pushNamed('/perfil'); break;
+      }
+    }
+  }
+
+  /// Para telas que não são abas (Sobre/Privacidade), podemos continuar usando pushNamed.
+  void _goRoute(BuildContext context, String routeName) {
+    Navigator.of(context).pop();
     if (ModalRoute.of(context)?.settings.name != routeName) {
       Navigator.of(context).pushNamed(routeName);
     }
@@ -98,28 +119,28 @@ class _AppDrawer extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.home_outlined),
               title: const Text('Início'),
-              onTap: () => _go(context, '/'),
+              onTap: () => _goTab(context, 0),
             ),
             ListTile(
               leading: const Icon(Icons.grid_view_rounded),
               title: const Text('Serviços'),
-              onTap: () => _go(context, '/servicos'),
+              onTap: () => _goTab(context, 1),
             ),
             ListTile(
               leading: const Icon(Icons.person_outline),
               title: const Text('Perfil'),
-              onTap: () => _go(context, '/perfil'),
+              onTap: () => _goTab(context, 2),
             ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('Sobre'),
-              onTap: () => _go(context, '/sobre'),
+              onTap: () => _goRoute(context, '/sobre'),
             ),
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
               title: const Text('Privacidade'),
-              onTap: () => _go(context, '/privacidade'),
+              onTap: () => _goRoute(context, '/privacidade'),
             ),
             const Divider(height: 1),
             ListTile(
@@ -137,7 +158,6 @@ class _AppDrawer extends StatelessWidget {
   }
 }
 
-/// Logo da AppBar
 class _LogoAction extends StatelessWidget {
   final String imagePath;
   final double size;

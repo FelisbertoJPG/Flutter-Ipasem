@@ -206,7 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 8),
 
-                        // ===== Opções  (substitua o Row antigo por este)
+
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Row(
@@ -223,23 +223,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         ValueListenableBuilder<bool>(
-                                          valueListenable: _c.rememberCpf,
-                                          builder: (_, val, __) => Checkbox(
-                                            value: val,
-                                            onChanged: (v) => _c.rememberCpf.value = v ?? true,
-                                          ),
-                                        ),
-                                        const Text('Lembrar CPF'),
-                                      ],
-                                    ),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        ValueListenableBuilder<bool>(
                                           valueListenable: _c.staySignedIn,
                                           builder: (_, val, __) => Checkbox(
                                             value: val,
-                                            onChanged: (v) => _c.staySignedIn.value = v ?? true,
+                                            onChanged: (v) async {
+                                              final b = v ?? false;
+                                              await _c.setStaySignedIn(b);  // salva staySignedIn e limpa senha se desmarcar
+                                              await _c.setRememberCpf(b);   // sincroniza CPF com a intenção do usuário
+                                              setState(() {});
+                                            },
                                           ),
                                         ),
                                         const Text('Manter Login'),

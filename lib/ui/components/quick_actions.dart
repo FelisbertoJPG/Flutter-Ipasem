@@ -49,19 +49,28 @@ class QuickActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final visible = items.where((it) {
       switch (it.audience) {
-        case QaAudience.all:
-          return true;
-        case QaAudience.loggedIn:
-          return isLoggedIn;
-        case QaAudience.visitor:
-          return !isLoggedIn;
+        case QaAudience.all:      return true;
+        case QaAudience.loggedIn: return isLoggedIn;
+        case QaAudience.visitor:  return !isLoggedIn;
       }
     }).toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 3 colunas no padrão, 4 em telas mais largas
+        // 3 colunas padrão, 4 em telas largas
         final cols = constraints.maxWidth >= 560 ? 4 : 3;
+
+        // cálculo robusto de altura do tile (base + ajuste por acessibilidade)
+        final textScale = MediaQuery.textScaleFactorOf(context);
+        final baseH = 96.0; // altura confortável p/ ícone + 2 linhas
+        final tileH = baseH + (textScale - 1.0) * 28.0; // cresce com fonte maior
+
+        // largura de cada célula (considera espaçamento)
+        const spacing = 12.0;
+        final itemW = (constraints.maxWidth - spacing * (cols - 1)) / cols;
+
+        // usamos ratio = largura/altura para dar a altura desejada
+        final ratio = itemW / tileH;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -72,7 +81,9 @@ class QuickActions extends StatelessWidget {
                 child: Text(
                   title!,
                   style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF344054),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF344054),
                   ),
                 ),
               ),
@@ -82,9 +93,9 @@ class QuickActions extends StatelessWidget {
               itemCount: visible.length,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: cols,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.15,
+                crossAxisSpacing: spacing,
+                mainAxisSpacing: spacing,
+                childAspectRatio: ratio, // <<< evita overflow
               ),
               itemBuilder: (context, i) {
                 final it = visible[i];
@@ -140,24 +151,24 @@ class _QaTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Stack(
         children: [
-          // Conteúdo
           Align(
             alignment: Alignment.center,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 26, color: const Color(0xFF143C8D)),
-                const SizedBox(height: 8),
+                Icon(icon, size: 24, color: const Color(0xFF143C8D)),
+                const SizedBox(height: 6),
                 Text(
                   label,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 12.5,
+                    height: 1.1,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF101828),
                   ),
@@ -165,7 +176,6 @@ class _QaTile extends StatelessWidget {
               ],
             ),
           ),
-          // Cadeado (quando bloqueado)
           if (locked)
             const Positioned(
               top: 6,
