@@ -44,6 +44,7 @@ class QuickActions extends StatelessWidget {
   final bool isLoggedIn;
   final VoidCallback? onRequireLogin;
   final String? title;
+
   @override
   Widget build(BuildContext context) {
     final visible = items.where((it) {
@@ -75,12 +76,14 @@ class QuickActions extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (title != null)
-              const Padding(
-                padding: EdgeInsets.only(left: 4, bottom: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
                 child: Text(
-                  'Serviços em destaque', // ou use title!
-                  style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF344054),
+                  title!,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF344054),
                   ),
                 ),
               ),
@@ -140,61 +143,59 @@ class _QaTile extends StatelessWidget {
   final bool locked;
   final VoidCallback onTap;
 
-
   @override
   Widget build(BuildContext context) {
-  final base = Container(
-  decoration: BoxDecoration(
-  color: const Color(0xFFF7FAFC),
-  borderRadius: BorderRadius.circular(16),
-  border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
-  ),
-  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), // 12->10
-  child: Stack(
-  children: [
-  Align(
-  alignment: Alignment.center,
-  child: Column(
-  mainAxisAlignment: MainAxisAlignment.center,
-  children: [
-  const Icon(Icons.circle, size: 0), // nada; só se quiser equalizar baseline
-  Icon(icon, size: 24, color: const Color(0xFF143C8D)), // 26->24
-  const SizedBox(height: 6), // 8->6
-  Text(
-  label,
-  textAlign: TextAlign.center,
-  maxLines: 2,
-  overflow: TextOverflow.ellipsis,
-  style: const TextStyle(
-  fontSize: 12.5,              // 13 -> 12.5
-  height: 1.1,                 // ajuda a caber 2 linhas
-  fontWeight: FontWeight.w600,
-  color: Color(0xFF101828),
-  ),
-  ),
-  ],
-  ),
-  ),
-  if (locked)
-  const Positioned(
-  top: 6,
-  right: 6,
-  child: Icon(Icons.lock_outline, size: 16, color: Color(0xFF98A2B3)),
-  ),
-  ],
-  ),
-  );
+    final base = Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Stack(
+        children: [
+          Align(
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 24, color: const Color(0xFF143C8D)),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.1,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF101828),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (locked)
+            const Positioned(
+              top: 6,
+              right: 6,
+              child: Icon(Icons.lock_outline, size: 16, color: Color(0xFF98A2B3)),
+            ),
+        ],
+      ),
+    );
 
-  return Material(
-  color: Colors.transparent,
-  child: InkWell(
-  borderRadius: BorderRadius.circular(16),
-  onTap: onTap,
-  child: Opacity(
-  opacity: locked ? 0.6 : 1.0,
-  child: base,
-  ),
-  ),
-  );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Opacity(
+          opacity: locked ? 0.6 : 1.0,
+          child: base,
+        ),
+      ),
+    );
   }
-  }
+}
