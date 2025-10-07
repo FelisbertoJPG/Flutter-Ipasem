@@ -24,9 +24,9 @@ if (dart.library.html) 'web/webview_initializer_web.dart';
 const String kLocalBase =
 String.fromEnvironment(
   'API_BASE',
-  defaultValue: 'https://assistweb.ipasemnh.com.br',
+  defaultValue: 'http://192.9.200.98',
 );
-//String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
+//String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');https://assistweb.ipasemnh.com.br
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
