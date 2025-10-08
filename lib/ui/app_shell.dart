@@ -1,15 +1,8 @@
-// lib/ui/app_shell.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-// cores do app
 import '../theme/colors.dart';
-
-// >>> importa a shell para acessar RootNavShell.maybeOf(context)
 import '../root_nav_shell.dart';
 
-/// Scaffold padrão com AppBar + Drawer reaproveitáveis.
-/// - Use `minimal: true` para esconder AppBar e Drawer (ex.: Termos/Privacidade abrindo do diálogo)
 class AppScaffold extends StatelessWidget {
   final String title;
   final Widget body;
@@ -30,10 +23,31 @@ class AppScaffold extends StatelessWidget {
       return Scaffold(body: body);
     }
 
+    // Estamos dentro da RootNavShell?
+    final inShell = RootNavShell.maybeOf(context) != null;
+
+    // Nome da rota atual (definido pela shell para as abas raiz)
+    final routeName = ModalRoute.of(context)?.settings.name ?? '';
+
+    // Conjunto de rotas RAIZ das abas (nessas, queremos SEMPRE hambúrguer)
+    const tabRoots = {'home-root', 'servicos-root', 'perfil-root'};
+    final isTabRoot = inShell && tabRoots.contains(routeName);
+
+    // Pode dar pop neste Navigator local?
+    final canPopHere = Navigator.of(context).canPop();
+
+    // Regra final: mostra voltar somente se NÃO for raiz de aba
+    // - fora da shell: seta
+    // - dentro da shell: seta só se não for root da aba
+    final showBack = !inShell || (!isTabRoot && canPopHere);
+
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false, // evita seta automática
         title: Text(title),
-        leading: Builder(
+        leading: showBack
+            ? BackButton(onPressed: () => Navigator.of(context).maybePop())
+            : Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu),
             tooltip: 'Menu',
@@ -50,14 +64,13 @@ class AppScaffold extends StatelessWidget {
           if (actions != null) ...actions!,
         ],
       ),
-      drawer: const _AppDrawer(),
+      // Drawer só aparece no root das abas
+      drawer: isTabRoot ? const _AppDrawer() : null,
       body: body,
     );
   }
 }
 
-/// Drawer único para o app inteiro.
-/// IMPORTANTE: usa RootNavShell.setTab() para trocar de aba sem perder a hotbar.
 class _AppDrawer extends StatelessWidget {
   const _AppDrawer();
 
@@ -69,7 +82,6 @@ class _AppDrawer extends StatelessWidget {
       await prefs.setBool('is_logged_in', false);
 
       if (!context.mounted) return;
-      // aqui você deve ter sua rota nomeada de login registrada
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (_) {
       if (!context.mounted) return;
@@ -79,23 +91,18 @@ class _AppDrawer extends StatelessWidget {
     }
   }
 
-  /// Troca a aba da shell (0=Início, 1=Serviços, 2=Perfil).
   void _goTab(BuildContext context, int index) {
-    Navigator.of(context).pop(); // fecha o drawer primeiro
+    Navigator.of(context).pop(); // fecha o drawer
     final shell = RootNavShell.maybeOf(context);
     if (shell != null) {
-      shell.setTab(index);       // troca a aba sem empilhar rotas
+      shell.setTab(index);
     } else {
-      // Fallback (caso esteja fora da shell por algum motivo)
-      switch (index) {
-        case 0: Navigator.of(context).pushNamed('/'); break;
-        case 1: Navigator.of(context).pushNamed('/servicos'); break;
-        case 2: Navigator.of(context).pushNamed('/perfil'); break;
-      }
+      // Fallback: reabre a shell já na aba solicitada
+      Navigator.of(context, rootNavigator: true)
+          .pushNamedAndRemoveUntil('/', (r) => false, arguments: {'tab': index});
     }
   }
 
-  /// Para telas que não são abas (Sobre/Privacidade), podemos continuar usando pushNamed.
   void _goRoute(BuildContext context, String routeName) {
     Navigator.of(context).pop();
     if (ModalRoute.of(context)?.settings.name != routeName) {
@@ -111,10 +118,7 @@ class _AppDrawer extends StatelessWidget {
           padding: EdgeInsets.zero,
           children: [
             const DrawerHeader(
-              child: Text(
-                'Menu',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
+              child: Text('Menu', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
             ),
             ListTile(
               leading: const Icon(Icons.home_outlined),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../root_nav_shell.dart'; // <<< para pushInServicos e setTab
 import '../ui/app_shell.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/quick_actions.dart'; // grid com lock padrão (para versão logado)
@@ -10,8 +11,9 @@ import '../ui/components/services_visitor.dart';
 import '../ui/widgets/history_list.dart';
 import '../ui/utils/webview_warmup.dart';
 import '../ui/utils/service_launcher.dart';
+
 import 'login_screen.dart';
-import 'autorizacao_medica_screen.dart'; // <<< nova tela
+import 'autorizacao_medica_screen.dart'; // fallback opcional (se shell não estiver acessível)
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
@@ -64,10 +66,16 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         label: 'Autorização Médica',
         icon: FontAwesomeIcons.stethoscope,
         onTap: () {
-          // >>> abre a tela nativa de autorização médica
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AutorizacaoMedicaScreen()),
-          );
+          // Abra SEMPRE dentro do Navigator da aba Serviços
+          final scope = RootNavShell.maybeOf(context);
+          if (scope != null) {
+            scope.pushInServicos('autorizacao-medica');
+          } else {
+            // Fallback (raro): empilha direto pra não travar o usuário
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AutorizacaoMedicaScreen()),
+            );
+          }
         },
         audience: QaAudience.loggedIn,
         requiresLogin: false,
@@ -140,7 +148,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   Widget _buildVisitorView() {
     return Column(
       children: [
-        // 1) Card "Serviços" bloqueado (visual idêntico ao do histórico)
+        // 1) Card "Serviços" bloqueado
         ServicesVisitors(
           onLoginTap: () {
             Navigator.of(context).push(
@@ -154,7 +162,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
           title: 'Histórico de Autorizações',
           child: HistoryList(
             loading: _loading,
-            isLoggedIn: false, // mantém bloqueado para visitante
+            isLoggedIn: false, // bloqueado para visitante
             items: const [],
             onSeeAll: () {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -177,7 +185,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             title: null,
             items: _loggedActions(),
             isLoggedIn: true,
-            onRequireLogin: null, // não necessário para logado
+            onRequireLogin: null,
           ),
         ),
         const SizedBox(height: 12),
