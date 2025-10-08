@@ -1,15 +1,8 @@
-// lib/ui/app_shell.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-// cores do app
 import '../theme/colors.dart';
-
-// >>> importa a shell para acessar RootNavShell.maybeOf(context)
 import '../root_nav_shell.dart';
 
-/// Scaffold padrão com AppBar + Drawer reaproveitáveis.
-/// - Use `minimal: true` para esconder AppBar e Drawer (ex.: Termos/Privacidade abrindo do diálogo)
 class AppScaffold extends StatelessWidget {
   final String title;
   final Widget body;
@@ -30,16 +23,23 @@ class AppScaffold extends StatelessWidget {
       return Scaffold(body: body);
     }
 
+    final inShell = RootNavShell.maybeOf(context) != null;
+    final canPopHere = Navigator.of(context).canPop();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        leading: Builder(
+        leading: inShell
+            ? (canPopHere
+            ? BackButton(onPressed: () => Navigator.of(context).maybePop())
+            : Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu),
             tooltip: 'Menu',
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
-        ),
+        ))
+            : BackButton(onPressed: () => Navigator.of(context).maybePop()),
         actions: [
           const _LogoAction(
             imagePath: 'assets/images/icons/logo_ipasem.png',
@@ -50,14 +50,13 @@ class AppScaffold extends StatelessWidget {
           if (actions != null) ...actions!,
         ],
       ),
-      drawer: const _AppDrawer(),
+      // Drawer só no root da shell; em telas empilhadas mostramos "voltar"
+      drawer: inShell && !canPopHere ? const _AppDrawer() : null,
       body: body,
     );
   }
 }
 
-/// Drawer único para o app inteiro.
-/// IMPORTANTE: usa RootNavShell.setTab() para trocar de aba sem perder a hotbar.
 class _AppDrawer extends StatelessWidget {
   const _AppDrawer();
 
@@ -69,7 +68,6 @@ class _AppDrawer extends StatelessWidget {
       await prefs.setBool('is_logged_in', false);
 
       if (!context.mounted) return;
-      // aqui você deve ter sua rota nomeada de login registrada
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (_) {
       if (!context.mounted) return;
@@ -79,23 +77,18 @@ class _AppDrawer extends StatelessWidget {
     }
   }
 
-  /// Troca a aba da shell (0=Início, 1=Serviços, 2=Perfil).
   void _goTab(BuildContext context, int index) {
-    Navigator.of(context).pop(); // fecha o drawer primeiro
+    Navigator.of(context).pop(); // fecha o drawer
     final shell = RootNavShell.maybeOf(context);
     if (shell != null) {
-      shell.setTab(index);       // troca a aba sem empilhar rotas
+      shell.setTab(index);
     } else {
-      // Fallback (caso esteja fora da shell por algum motivo)
-      switch (index) {
-        case 0: Navigator.of(context).pushNamed('/'); break;
-        case 1: Navigator.of(context).pushNamed('/servicos'); break;
-        case 2: Navigator.of(context).pushNamed('/perfil'); break;
-      }
+      // Fallback: sempre reabre a shell com a aba pedida
+      Navigator.of(context, rootNavigator: true)
+          .pushNamedAndRemoveUntil('/', (r) => false, arguments: {'tab': index});
     }
   }
 
-  /// Para telas que não são abas (Sobre/Privacidade), podemos continuar usando pushNamed.
   void _goRoute(BuildContext context, String routeName) {
     Navigator.of(context).pop();
     if (ModalRoute.of(context)?.settings.name != routeName) {
@@ -111,10 +104,7 @@ class _AppDrawer extends StatelessWidget {
           padding: EdgeInsets.zero,
           children: [
             const DrawerHeader(
-              child: Text(
-                'Menu',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
+              child: Text('Menu', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
             ),
             ListTile(
               leading: const Icon(Icons.home_outlined),

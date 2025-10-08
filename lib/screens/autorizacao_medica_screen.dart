@@ -1,4 +1,3 @@
-// lib/screens/autorizacao_medica_screen.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import '../theme/colors.dart';
 import '../ui/app_shell.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/loading_placeholder.dart';
+import '../ui/components/app_alert.dart';
 
 import '../config/app_config.dart';
 import '../services/dev_api.dart';
@@ -27,26 +27,25 @@ class AutorizacaoMedicaScreen extends StatefulWidget {
 }
 
 class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
+  static const String _version = 'AutorizacaoMedicaScreen v1.3.4';
+
   bool _loading = true;
   String? _error;
-  bool _saving = false; // trava o botão durante a gravação
+  bool _saving = false;
 
   bool _loadingCidades = false;
   bool _loadingPrestadores = false;
 
-  // ---- Seleções ----
   _Beneficiario? _selBenef;
   Especialidade? _selEsp;
   String? _selCidade;
   PrestadorRow? _selPrest;
 
-  // ---- Dados ----
   List<_Beneficiario> _beneficiarios = const [];
   List<Especialidade> _especialidades = const [];
   List<String> _cidades = const [];
   List<PrestadorRow> _prestadores = const [];
 
-  // ---- Repos/API ----
   bool _reposReady = false;
   late DevApi _api;
   late DependentsRepository _depsRepo;
@@ -54,7 +53,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   late PrestadoresRepository _prestRepo;
   late AutorizacoesRepository _autRepo;
 
-  // ---- helpers ----
   int _toInt(dynamic v) {
     if (v is int) return v;
     final s = v?.toString().trim() ?? '';
@@ -78,6 +76,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     _autRepo   = AutorizacoesRepository(_api);
 
     _reposReady = true;
+    if (kDebugMode) debugPrint(_version);
     _bootstrap();
   }
 
@@ -85,7 +84,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     setState(() { _loading = true; _error = null; });
 
     try {
-      // 1) Beneficiário (titular + dependentes)
       final profile = await Session.getProfile();
       if (profile == null) {
         _error = 'Faça login para solicitar autorização.';
@@ -103,15 +101,14 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
         _beneficiarios = rows
             .map((d) => _Beneficiario(idMat: d.idmatricula, idDep: d.iddependente, nome: d.nome))
             .toList()
-          ..sort((a,b){
-            if (a.idDep==0 && b.idDep!=0) return -1;
-            if (a.idDep!=0 && b.idDep==0) return 1;
+          ..sort((a, b) {
+            if (a.idDep == 0 && b.idDep != 0) return -1;
+            if (a.idDep != 0 && b.idDep == 0) return 1;
             return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
           });
         _selBenef = _beneficiarios.firstOrNull;
       }
 
-      // 2) Especialidades reais
       try {
         _especialidades = await _espRepo.listar();
       } catch (e) {
@@ -119,7 +116,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
         _especialidades = const [];
       }
 
-      // limpa filtros dependentes
       _selEsp = null;
       _cidades = const [];
       _selCidade = null;
@@ -132,35 +128,15 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     }
   }
 
-  Future<void> _showAlert({
-    required String title,
-    required String message,
-    IconData icon = Icons.info_outline,
-    Color? iconColor,
-  }) async {
-    iconColor ??= Theme.of(context).colorScheme.primary;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(icon, size: 24, color: iconColor),
-            const SizedBox(width: 8),
-            Flexible(child: Text(title)),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
-        ],
-      ),
-    );
-  }
-
   Future<void> _loadCidades() async {
     if (_selEsp == null) return;
-    setState(() { _loadingCidades = true; _cidades = const []; _selCidade = null; _prestadores = const []; _selPrest = null; });
+    setState(() {
+      _loadingCidades = true;
+      _cidades = const [];
+      _selCidade = null;
+      _prestadores = const [];
+      _selPrest = null;
+    });
     try {
       final rows = await _prestRepo.cidadesDisponiveis(_selEsp!.id);
       setState(() {
@@ -170,15 +146,17 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     } catch (e) {
       setState(() { _loadingCidades = false; _cidades = const []; });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(kDebugMode ? 'Falha ao carregar cidades. ($e)' : 'Falha ao carregar cidades.')),
-      );
+      AppAlert.toast(context, kDebugMode ? 'Falha ao carregar cidades. ($e)' : 'Falha ao carregar cidades.');
     }
   }
 
   Future<void> _loadPrestadores() async {
     if (_selEsp == null) return;
-    setState(() { _loadingPrestadores = true; _prestadores = const []; _selPrest = null; });
+    setState(() {
+      _loadingPrestadores = true;
+      _prestadores = const [];
+      _selPrest = null;
+    });
     try {
       final cidade = (_selCidade == null || _selCidade == 'TODAS AS CIDADES') ? null : _selCidade;
       final rows = await _prestRepo.porEspecialidade(_selEsp!.id, cidade: cidade);
@@ -188,9 +166,9 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       });
     } catch (e) {
       setState(() { _loadingPrestadores = false; _prestadores = const []; });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(kDebugMode ? 'Falha ao carregar prestadores. ($e)' : 'Falha ao carregar prestadores.')),
+      AppAlert.toast(
+        context,
+        kDebugMode ? 'Falha ao carregar prestadores. ($e)' : 'Falha ao carregar prestadores.',
       );
     }
   }
@@ -198,7 +176,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   bool get _formOk =>
       _selBenef != null && _selEsp != null && _selCidade != null && _selPrest != null;
 
-  // ===== GRAVA AUTORIZAÇÃO =====
   Future<void> _onSubmit() async {
     if (!_formOk || _saving) return;
 
@@ -212,64 +189,69 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
         tipoPrestador:   _selPrest!.tipoPrestador,
       );
 
+      // limpa seleção para um novo fluxo
+      setState(() {
+        _selEsp = null;
+        _selCidade = null;
+        _selPrest = null;
+        _cidades = const [];
+        _prestadores = const [];
+      });
+
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Autorização emitida'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Número da autorização:'),
-              const SizedBox(height: 8),
-              SelectableText(
-                '$numero',
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
-          ],
-        ),
+
+      await AppAlert.showAuthNumber(
+        context,
+        numero: numero,
+        useRootNavigator: false, // dialog dentro do navigator da aba
+        onOk: _goBackToServicos,
       );
     } on FormatException {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Dados inválidos para emissão.')),
+      await AppAlert.show(
+        context,
+        title: 'Dados inválidos',
+        message: 'Dados inválidos para emissão.',
+        type: AppAlertType.error,
+        useRootNavigator: false,
       );
     } on DioException catch (e) {
       final msg = (e.response?.data is Map && (e.response!.data['error']?['message'] is String))
           ? e.response!.data['error']['message'] as String
           : 'Falha ao gravar autorização';
+
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Atenção'),
-          content: Text(msg),
-          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))],
-        ),
+      final isBusiness = (e.response?.data is Map) &&
+          ((e.response!.data['error']?['code'] ?? '') == 'BUSINESS_RULE');
+      await AppAlert.show(
+        context,
+        title: isBusiness ? 'Atenção' : 'Erro',
+        message: msg,
+        type: isBusiness ? AppAlertType.warning : AppAlertType.error,
+        useRootNavigator: false,
       );
     } catch (e) {
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Erro'),
-          content: Text(e.toString()),
-          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))],
-        ),
+      await AppAlert.show(
+        context,
+        title: 'Erro',
+        message: e.toString(),
+        type: AppAlertType.error,
+        useRootNavigator: false,
       );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  // volta para HomeServicos dentro da aba (mantém hotbar)
+  void _goBackToServicos() {
+    if (!mounted) return;
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -282,10 +264,15 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
           children: [
             if (_loading) const SectionCard(title: ' ', child: LoadingPlaceholder(height: 120)),
             if (!_loading && _error != null)
-              SectionCard(title: ' ', child: Padding(padding: const EdgeInsets.all(12), child: Text(_error!, style: const TextStyle(color: Colors.red)))),
+              SectionCard(
+                title: ' ',
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                ),
+              ),
 
             if (!_loading && _error == null) ...[
-              // Paciente
               SectionCard(
                 title: 'Paciente',
                 child: DropdownButtonFormField<_Beneficiario>(
@@ -301,7 +288,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Especialidade
               SectionCard(
                 title: 'Especialidade',
                 child: DropdownButtonFormField<Especialidade>(
@@ -323,7 +309,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Cidade
               SectionCard(
                 title: 'Cidade',
                 child: Column(
@@ -349,7 +334,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Prestador
               SectionCard(
                 title: 'Prestador',
                 child: Column(
@@ -409,10 +393,8 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   );
 }
 
-// Tipos internos simples
 class _Beneficiario {
   final int idMat; final int idDep; final String nome;
   const _Beneficiario({required this.idMat, required this.idDep, required this.nome});
 }
-
 extension<T> on List<T> { T? get firstOrNull => isEmpty ? null : first; }
