@@ -1,4 +1,3 @@
-// lib/root_nav_shell.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -61,7 +60,11 @@ class _RootNavShellState extends State<RootNavShell> {
   }
 
   /// Empilha uma rota DENTRO da aba Serviços (mantém a hotbar)
-  Future<T?> _pushInServicos<T>(String name, {Object? arguments, bool switchTab = true}) {
+  Future<T?> _pushInServicos<T>(
+      String name, {
+        Object? arguments,
+        bool switchTab = true,
+      }) {
     if (switchTab && _currentIndex != 1) {
       setState(() => _currentIndex = 1);
     }
@@ -73,7 +76,7 @@ class _RootNavShellState extends State<RootNavShell> {
   Route<dynamic> _routeHome(RouteSettings settings) {
     return MaterialPageRoute(
       builder: (_) => const HomeScreen(),
-      settings: const RouteSettings(name: 'home-root'),
+      settings: const RouteSettings(name: 'home-root'), // <- nome raiz
     );
   }
 
@@ -83,7 +86,7 @@ class _RootNavShellState extends State<RootNavShell> {
       case 'servicos-root':
         return MaterialPageRoute(
           builder: (_) => const HomeServicos(),
-          settings: const RouteSettings(name: 'servicos-root'),
+          settings: const RouteSettings(name: 'servicos-root'), // <- nome raiz
         );
       case 'autorizacao-medica':
         return MaterialPageRoute(
@@ -91,7 +94,6 @@ class _RootNavShellState extends State<RootNavShell> {
           settings: const RouteSettings(name: 'autorizacao-medica'),
         );
       default:
-      // fallback para a raiz da aba
         return MaterialPageRoute(
           builder: (_) => const HomeServicos(),
           settings: const RouteSettings(name: 'servicos-root'),
@@ -102,7 +104,7 @@ class _RootNavShellState extends State<RootNavShell> {
   Route<dynamic> _routePerfil(RouteSettings settings) {
     return MaterialPageRoute(
       builder: (_) => const ProfileScreen(),
-      settings: const RouteSettings(name: 'perfil-root'),
+      settings: const RouteSettings(name: 'perfil-root'), // <- nome raiz
     );
   }
 
@@ -118,7 +120,6 @@ class _RootNavShellState extends State<RootNavShell> {
 
   @override
   Widget build(BuildContext context) {
-    // Bottom bar
     const double _iconSize = 22;
     final iconTheme = const IconThemeData(size: _iconSize);
 
@@ -296,7 +297,11 @@ class RootNavScope extends InheritedWidget {
   final int currentIndex;
 
   /// Empilha rotas dentro da aba Serviços
-  final Future<T?> Function<T>(String routeName, {Object? arguments, bool switchTab}) pushInServicos;
+  final Future<T?> Function<T>(
+      String routeName, {
+      Object? arguments,
+      bool switchTab,
+      }) pushInServicos;
 
   static RootNavScope? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<RootNavScope>();

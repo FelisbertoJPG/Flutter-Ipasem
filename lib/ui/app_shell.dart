@@ -23,14 +23,29 @@ class AppScaffold extends StatelessWidget {
       return Scaffold(body: body);
     }
 
+    // Estamos dentro da RootNavShell?
     final inShell = RootNavShell.maybeOf(context) != null;
+
+    // Nome da rota atual (definido pela shell para as abas raiz)
+    final routeName = ModalRoute.of(context)?.settings.name ?? '';
+
+    // Conjunto de rotas RAIZ das abas (nessas, queremos SEMPRE hambúrguer)
+    const tabRoots = {'home-root', 'servicos-root', 'perfil-root'};
+    final isTabRoot = inShell && tabRoots.contains(routeName);
+
+    // Pode dar pop neste Navigator local?
     final canPopHere = Navigator.of(context).canPop();
+
+    // Regra final: mostra voltar somente se NÃO for raiz de aba
+    // - fora da shell: seta
+    // - dentro da shell: seta só se não for root da aba
+    final showBack = !inShell || (!isTabRoot && canPopHere);
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false, // evita seta automática
         title: Text(title),
-        leading: inShell
-            ? (canPopHere
+        leading: showBack
             ? BackButton(onPressed: () => Navigator.of(context).maybePop())
             : Builder(
           builder: (ctx) => IconButton(
@@ -38,8 +53,7 @@ class AppScaffold extends StatelessWidget {
             tooltip: 'Menu',
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
-        ))
-            : BackButton(onPressed: () => Navigator.of(context).maybePop()),
+        ),
         actions: [
           const _LogoAction(
             imagePath: 'assets/images/icons/logo_ipasem.png',
@@ -50,8 +64,8 @@ class AppScaffold extends StatelessWidget {
           if (actions != null) ...actions!,
         ],
       ),
-      // Drawer só no root da shell; em telas empilhadas mostramos "voltar"
-      drawer: inShell && !canPopHere ? const _AppDrawer() : null,
+      // Drawer só aparece no root das abas
+      drawer: isTabRoot ? const _AppDrawer() : null,
       body: body,
     );
   }
@@ -83,7 +97,7 @@ class _AppDrawer extends StatelessWidget {
     if (shell != null) {
       shell.setTab(index);
     } else {
-      // Fallback: sempre reabre a shell com a aba pedida
+      // Fallback: reabre a shell já na aba solicitada
       Navigator.of(context, rootNavigator: true)
           .pushNamedAndRemoveUntil('/', (r) => false, arguments: {'tab': index});
     }
