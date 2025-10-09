@@ -77,13 +77,24 @@ class _AppDrawer extends StatelessWidget {
   Future<void> _logout(BuildContext context) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('saved_cpf');
-      await prefs.remove('auth_token');
+
+      // Lê a flag do “manter login”
+      final remember = prefs.getBool('remember_login') ?? true;
+      // ^ se ainda não usa a flag, deixar default = true mantém comportamento “lembrar”
+
+      // Sempre encerra a sessão
       await prefs.setBool('is_logged_in', false);
+      await prefs.remove('auth_token');
+
+      // Só limpa credenciais se NÃO quiser manter login
+      if (!remember) {
+        await prefs.remove('saved_cpf');
+        await prefs.remove('saved_pwd');        // ajuste se usa outro nome
+        await prefs.remove('saved_password');   // alternativa comum
+      }
 
       if (!context.mounted) return;
-
-      // >>> use o ROOT navigator e limpe a pilha:
+      // Volta para o login limpando a pilha, via ROOT navigator (sem hotbar)
       Navigator.of(context, rootNavigator: true)
           .pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (_) {
@@ -93,6 +104,8 @@ class _AppDrawer extends StatelessWidget {
       );
     }
   }
+
+
 
   void _goTab(BuildContext context, int index) {
     Navigator.of(context).pop(); // fecha o drawer
