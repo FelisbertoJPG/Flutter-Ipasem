@@ -1,3 +1,4 @@
+// lib/screens/autorizacao_odontologica_screen.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,15 +20,15 @@ import '../models/dependent.dart';
 import '../models/especialidade.dart';
 import '../models/prestador.dart';
 
-class AutorizacaoMedicaScreen extends StatefulWidget {
-  const AutorizacaoMedicaScreen({super.key});
+class AutorizacaoOdontologicaScreen extends StatefulWidget {
+  const AutorizacaoOdontologicaScreen({super.key});
 
   @override
-  State<AutorizacaoMedicaScreen> createState() => _AutorizacaoMedicaScreenState();
+  State<AutorizacaoOdontologicaScreen> createState() => _AutorizacaoOdontologicaScreenState();
 }
 
-class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
-  static const String _version = 'AutorizacaoMedicaScreen v1.3.5';
+class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaScreen> {
+  static const String _version = 'AutorizacaoOdontologicaScreen v1.0.2';
 
   bool _loading = true;
   String? _error;
@@ -59,6 +60,12 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     final n = int.tryParse(s);
     if (n == null) throw const FormatException('valor inválido');
     return n;
+  }
+
+  // Heurística simples para filtrar só especialidades odontológicas por nome
+  bool _isOdonto(Especialidade e) {
+    final n = (e.nome ?? '').toUpperCase();
+    return n.contains('ODONTO'); // ex.: ODONTOLOGIA, ODONTOLÓGICA etc.
   }
 
   @override
@@ -110,7 +117,12 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       }
 
       try {
-        _especialidades = await _espRepo.listar();
+        final todas = await _espRepo.listar();
+        // >>> Diferença: só especialidades de Odonto.
+        _especialidades = (todas ?? const [])
+            .where(_isOdonto)
+            .toList()
+          ..sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
       } catch (e) {
         if (kDebugMode) print('especialidades erro: $e');
         _especialidades = const [];
@@ -306,7 +318,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Autorização Médica',
+      title: 'Autorização Odontológica',
       body: RefreshIndicator(
         onRefresh: _bootstrap,
         child: ListView(
@@ -354,7 +366,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                     });
                     if (v!=null) _loadCidades();
                   },
-                  decoration: _inputDeco('Escolha a especialidade'),
+                  decoration: _inputDeco('Escolha a especialidade (Odonto)'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -446,6 +458,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   );
 }
 
+// Tipos internos
 class _Beneficiario {
   final int idMat; final int idDep; final String nome;
   const _Beneficiario({required this.idMat, required this.idDep, required this.nome});

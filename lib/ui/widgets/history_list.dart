@@ -1,77 +1,73 @@
+//C:\Users\suporteti2\StudioProjects\ipa_app_flutter\lib\ui\widgets\history_list.dart
 import 'package:flutter/material.dart';
-import '../components/loading_placeholder.dart';
-import '../components/locked_notice.dart';
-import '../../theme/colors.dart';
 
 class HistoryItem {
   final String title;
-  final String subtitle; // ex: "10/09/2025 • Autorizada"
-  const HistoryItem({required this.title, required this.subtitle});
+  final String subtitle;
+  final VoidCallback? onTap;
+  const HistoryItem({required this.title, required this.subtitle, this.onTap});
 }
 
 class HistoryList extends StatelessWidget {
+  final bool loading;
+  final bool isLoggedIn;
+  final List<HistoryItem> items;
+  final VoidCallback? onSeeAll;
+
   const HistoryList({
     super.key,
     required this.loading,
     required this.isLoggedIn,
     required this.items,
     this.onSeeAll,
-    this.emptyLabel = 'Nenhum item no histórico.',
-    this.icon = Icons.history,
   });
-
-  final bool loading;
-  final bool isLoggedIn;
-  final List<HistoryItem> items;
-  final VoidCallback? onSeeAll;
-  final String emptyLabel;
-  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const LoadingPlaceholder(height: 100);
-    if (!isLoggedIn) {
-      return const LockedNotice(message: 'Faça login para visualizar seu histórico.');
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
-    if (items.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        child: Row(
-          children: const [
-            Icon(Icons.history, color: Color(0xFF98A2B3)),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Nenhum item no histórico.',
-                style: TextStyle(color: kTextSecondary, fontWeight: FontWeight.w600),
-              ),
+
+    if (!isLoggedIn) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          const Text('Faça login para ver seu histórico.'),
+          const SizedBox(height: 8),
+          if (onSeeAll != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: onSeeAll, child: const Text('Ver tudo')),
             ),
-          ],
-        ),
+        ],
+      );
+    }
+
+    if (items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Text('Sem autorizações recentes.'),
       );
     }
 
     return Column(
       children: [
-        ...items.map((e) => ListTile(
-          dense: true,
-          leading: Icon(icon, color: kIconMuted),
-          title: Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(e.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: const Icon(Icons.chevron_right, color: kBrand),
+        ...items.map((it) => ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+          title: Text(it.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(it.subtitle),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: it.onTap,
         )),
-        if (onSeeAll != null) ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            height: 40,
-            child: OutlinedButton.icon(
-              onPressed: onSeeAll,
-              icon: const Icon(Icons.list_alt_outlined),
-              label: const Text('Ver histórico completo'),
-            ),
+        if (onSeeAll != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(onPressed: onSeeAll, child: const Text('Ver tudo')),
           ),
-        ]
       ],
     );
   }

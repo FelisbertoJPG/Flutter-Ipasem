@@ -82,7 +82,10 @@ class _AppDrawer extends StatelessWidget {
       await prefs.setBool('is_logged_in', false);
 
       if (!context.mounted) return;
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+
+      // >>> use o ROOT navigator e limpe a pilha:
+      Navigator.of(context, rootNavigator: true)
+          .pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

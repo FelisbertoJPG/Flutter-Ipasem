@@ -6,6 +6,7 @@ import 'screens/home_screen.dart';
 import 'screens/home_servicos.dart';
 import 'screens/profile_screen.dart';
 import 'screens/autorizacao_medica_screen.dart';
+import 'screens/autorizacao_odontologica_screen.dart'; // <- NOVO
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});
@@ -18,7 +19,6 @@ class RootNavShell extends StatefulWidget {
 }
 
 class _RootNavShellState extends State<RootNavShell> {
-  // Um Navigator por aba
   final _tabKeys = <int, GlobalKey<NavigatorState>>{
     0: GlobalKey<NavigatorState>(),
     1: GlobalKey<NavigatorState>(),
@@ -43,23 +43,19 @@ class _RootNavShellState extends State<RootNavShell> {
     _handledArgs = true;
   }
 
-  // Contatos (sheet)
   static const String _tel = 'tel:5135949162';
   static const String _email = 'contato@ipasemnh.com.br';
   static const String _emailSubject = 'Atendimento IPASEM';
   static const String _emailBody = 'Olá, preciso de ajuda no app.';
 
-  // Troca de aba (mantém hotbar)
   void _setTab(int i) {
     if (_currentIndex == i) {
-      // Tocou na mesma aba? Volta à raiz da pilha dessa aba.
       _tabKeys[i]?.currentState?.popUntil((r) => r.isFirst);
       return;
     }
     setState(() => _currentIndex = i);
   }
 
-  /// Empilha uma rota DENTRO da aba Serviços (mantém a hotbar)
   Future<T?> _pushInServicos<T>(
       String name, {
         Object? arguments,
@@ -72,26 +68,30 @@ class _RootNavShellState extends State<RootNavShell> {
     return nav.pushNamed<T>(name, arguments: arguments);
   }
 
-  // Geradores de rota para cada aba
   Route<dynamic> _routeHome(RouteSettings settings) {
     return MaterialPageRoute(
       builder: (_) => const HomeScreen(),
-      settings: const RouteSettings(name: 'home-root'), // <- nome raiz
+      settings: const RouteSettings(name: 'home-root'),
     );
   }
 
   Route<dynamic> _routeServicos(RouteSettings settings) {
     switch (settings.name) {
-      case '/': // rota inicial do Navigator da aba
+      case '/':
       case 'servicos-root':
         return MaterialPageRoute(
           builder: (_) => const HomeServicos(),
-          settings: const RouteSettings(name: 'servicos-root'), // <- nome raiz
+          settings: const RouteSettings(name: 'servicos-root'),
         );
       case 'autorizacao-medica':
         return MaterialPageRoute(
           builder: (_) => const AutorizacaoMedicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-medica'),
+        );
+      case 'autorizacao-odontologica': // <- NOVO
+        return MaterialPageRoute(
+          builder: (_) => const AutorizacaoOdontologicaScreen(),
+          settings: const RouteSettings(name: 'autorizacao-odontologica'),
         );
       default:
         return MaterialPageRoute(
@@ -104,7 +104,7 @@ class _RootNavShellState extends State<RootNavShell> {
   Route<dynamic> _routePerfil(RouteSettings settings) {
     return MaterialPageRoute(
       builder: (_) => const ProfileScreen(),
-      settings: const RouteSettings(name: 'perfil-root'), // <- nome raiz
+      settings: const RouteSettings(name: 'perfil-root'),
     );
   }
 
@@ -135,7 +135,6 @@ class _RootNavShellState extends State<RootNavShell> {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) {
-          // “Contatos” abre sheet; não muda de aba
           if (i == 3) {
             _showContactsSheet(context);
             return;
@@ -189,7 +188,6 @@ class _RootNavShellState extends State<RootNavShell> {
     );
   }
 
-  // ===== Bottom sheet de contatos =====
   Future<void> _showContactsSheet(BuildContext context) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -244,7 +242,6 @@ class _RootNavShellState extends State<RootNavShell> {
     );
   }
 
-  // ===== Helpers =====
   Future<void> _launchTel(String raw, BuildContext context) async {
     final uri = Uri.parse(raw);
     try {
@@ -283,7 +280,6 @@ class _RootNavShellState extends State<RootNavShell> {
   }
 }
 
-/// Escopo para expor setTab() e pushInServicos() aos filhos
 class RootNavScope extends InheritedWidget {
   const RootNavScope({
     super.key,
@@ -296,7 +292,6 @@ class RootNavScope extends InheritedWidget {
   final void Function(int index) setTab;
   final int currentIndex;
 
-  /// Empilha rotas dentro da aba Serviços
   final Future<T?> Function<T>(
       String routeName, {
       Object? arguments,
