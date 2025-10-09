@@ -1,6 +1,7 @@
 // lib/services/dev_api.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode, debugPrint;
+// REMOVER: import 'package:http/http.dart' as dio;
 
 import 'redacting_log_interceptor.dart';
 import '../models/dependent.dart';
@@ -15,6 +16,8 @@ class DevApi {
   String? _sessionToken;         // token em memória
   final TokenProvider? _tokenProvider;
   final bool _formUrlEncoded;    // se false, envia JSON
+
+  String get endpoint => '$_base$_apiPath';
 
   static String _normalizeBase(String raw) =>
       raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
@@ -32,7 +35,7 @@ class DevApi {
   void setSessionToken(String? token) => _sessionToken = token;
 
   Dio _dio() {
-    final dio = Dio(
+    final d = Dio(
       BaseOptions(
         baseUrl: _base,
         connectTimeout: const Duration(seconds: 8),
@@ -45,9 +48,9 @@ class DevApi {
       ),
     );
     // logs (com redaction)
-    try { dio.interceptors.add(RedactingLogInterceptor()); } catch (_) {}
+    try { d.interceptors.add(RedactingLogInterceptor()); } catch (_) {}
     // injeta X-Session
-    dio.interceptors.add(
+    d.interceptors.add(
       InterceptorsWrapper(onRequest: (opt, h) {
         final t = _sessionToken ?? _tokenProvider?.call();
         if (t != null && t.isNotEmpty) opt.headers['X-Session'] = t;
@@ -55,7 +58,31 @@ class DevApi {
       }),
     );
     if (!kReleaseMode) debugPrint('>>> DevApi base = $_base$_apiPath');
-    return dio;
+    return d;
+  }
+
+  // ====== conveniências ======
+  Future<Response<T>> post<T>(
+      String path, {
+        Object? data,
+        Map<String, dynamic>? queryParameters,
+        Options? options,
+      }) {
+    return _dio().post<T>(path, data: data, queryParameters: queryParameters, options: options);
+  }
+
+  /// Helper para rotas do api-dev.php com ?action=...
+  Future<Response<T>> postAction<T>(
+      String action, {
+        Object? data,
+        Options? options,
+      }) {
+    return _dio().post<T>(
+      _apiPath,
+      queryParameters: {'action': action},
+      data: data,
+      options: options,
+    );
   }
 
   // ========== MÉTODOS ANTIGOS (restaurados) ==========
@@ -131,10 +158,7 @@ class DevApi {
     }
   }
 
-  Future<Response> post(String path, {Object? data}) => _dio().post(path, data: data);
-
   // ========== NOVOS ==========
-
   Future<List<Especialidade>> fetchEspecialidades() async {
     final r = await _dio().post(
       _apiPath,
