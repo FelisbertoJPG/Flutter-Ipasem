@@ -14,6 +14,12 @@ import '../repositories/dependents_repository.dart';
 import '../repositories/especialidades_repository.dart';
 import '../repositories/prestadores_repository.dart';
 import '../repositories/autorizacoes_repository.dart';
+// >>> IMPORTS adicionados para abrir o preview a partir do número
+import '../repositories/reimpressao_repository.dart';
+import '../pdf/pdf_mappers.dart';
+import '../pdf/autorizacao_pdf_data.dart';
+import 'pdf_preview_screen.dart';
+
 import '../services/session.dart';
 import '../models/dependent.dart';
 import '../models/especialidade.dart';
@@ -200,10 +206,12 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
 
       if (!mounted) return;
 
+      // >>> Card com número + atalho "Abrir impressão" (preview no app)
       await AppAlert.showAuthNumber(
         context,
         numero: numero,
         useRootNavigator: false, // dialog dentro do navigator da aba
+        onOpenPreview: () => _openPreviewFromNumero(numero),
         onOk: _goBackToServicos,
       );
     } on FormatException {
@@ -241,6 +249,51 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       );
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // Abre a tela de preview/impressão a partir do número recém-emitido
+  Future<void> _openPreviewFromNumero(int numero) async {
+    try {
+      final profile = await Session.getProfile();
+      if (profile == null) {
+        if (!mounted) return;
+        AppAlert.toast(context, 'Não foi possível obter o perfil do usuário.');
+        return;
+      }
+
+      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
+          ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+
+      final reimpRepo = ReimpressaoRepository(DevApi(baseUrl));
+      final det = await reimpRepo.detalhe(numero, idMatricula: profile.id);
+      if (det == null) {
+        if (!mounted) return;
+        AppAlert.toast(context, 'Não foi possível carregar os detalhes desta ordem.');
+        return;
+      }
+
+      final AutorizacaoPdfData data = mapDetalheToPdfData(
+        det: det,
+        idMatricula: profile.id,
+        nomeTitular: profile.nome,
+        procedimentos: const [],
+      );
+
+      final fileName = 'ordem_${det.numero}.pdf';
+      if (!mounted) return;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PdfPreviewScreen(
+            data: data,
+            fileName: fileName,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppAlert.toast(context, 'Falha ao abrir impressão: $e');
     }
   }
 
