@@ -1,7 +1,14 @@
 // lib/screens/home_servicos.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// NOVO: geração de PDF local
+import 'package:printing/printing.dart';
+import '../pdf/pdf_autorizacao.dart'; // buildAutorizacaoPdf
+import '../pdf/pdf_autorizacao_builder.dart';
+import '../pdf/pdf_mappers.dart';     // mapDetalheToPdfData
 
 import '../root_nav_shell.dart'; // pushInServicos / setTab
 import '../ui/app_shell.dart';
@@ -14,7 +21,7 @@ import '../ui/utils/service_launcher.dart';
 
 import '../config/app_config.dart';
 import '../services/dev_api.dart';
-import '../services/session.dart';                   // <<< ADICIONADO
+import '../services/session.dart';
 import '../repositories/reimpressao_repository.dart';
 import '../models/reimpressao.dart';
 
@@ -26,7 +33,6 @@ class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
   static const String _prefsKeyCpf = 'saved_cpf';
-
   static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
   static const String _siteUrl  = 'https://www.ipasemnh.com.br/home';
 
@@ -40,7 +46,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
   // histórico exibido no card (HistoryList usa HistoryItem)
   List<HistoryItem> _historico = const [];
-
   // dados crus vindos da API (para usar no onTap -> detalhe)
   List<ReimpressaoResumo> _histRows = const [];
 
@@ -53,6 +58,26 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     warmupInit();
     _bootstrap();
   }
+
+  // ---------- HELPERS DE DEBUG ----------
+  String _appendDebugQuery(String url) {
+    final u = Uri.parse(url);
+    final qp = Map<String, String>.from(u.queryParameters);
+    qp['debug'] = '1';
+    return u.replace(queryParameters: qp).toString();
+  }
+
+  void _logPdfCall({
+    required String where, // "open" | "download" | "local"
+    required int numero,
+    required int idMatricula,
+    required String nomeTitular,
+    String? url,
+  }) {
+    debugPrint('[PDF][$where] numero=$numero idmatricula=$idMatricula '
+        'nome_titular="$nomeTitular"${url != null ? ' url=$url' : ''}');
+  }
+  // --------------------------------------
 
   Future<void> _bootstrap() async {
     setState(() => _loading = true);
@@ -70,9 +95,9 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         final api  = DevApi(baseUrl);
         _reimpRepo = ReimpressaoRepository(api);
 
-        final profile = await Session.getProfile();          // pega id
+        final profile = await Session.getProfile(); // pega id e nome
         if (profile != null) {
-          _histRows = await _reimpRepo!.historico(idMatricula: profile.id); // envia id
+          _histRows = await _reimpRepo!.historico(idMatricula: profile.id);
           _historico = _histRows.map((h) {
             final titulo = h.prestadorExec.isNotEmpty ? h.prestadorExec : 'Autorização ${h.numero}';
             final sub = [
@@ -85,9 +110,14 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             return HistoryItem(title: titulo, subtitle: sub, onTap: () => _onTapHistorico(h));
           }).toList();
         }
-      } catch (_) {
+      } catch (e) {
         _historico = const [];
         _histRows  = const [];
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Falha ao carregar histórico: $e')),
+          );
+        }
       }
     }
 
@@ -186,27 +216,133 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             },
             child: const Text('Ver detalhes'),
           ),
-          FilledButton(
-            onPressed: () {
+          TextButton( // abrir inline (WebView servidor)
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              launcher.openUrl(HomeServicos._loginUrl, 'Reimpressão de Autorizações');
+              final profile = await Session.getProfile();
+              if (profile == null || _reimpRepo == null) return;
+
+              var url = _reimpRepo!.pdfUrl(
+                numero: a.numero,
+                idMatricula: profile.id,
+                nomeTitular: profile.nome,
+                download: false,
+              );
+
+              if (!kReleaseMode) {
+                url = _appendDebugQuery(url);
+              }
+
+              _logPdfCall(
+                where: 'open',
+                numero: a.numero,
+                idMatricula: profile.id,
+                nomeTitular: profile.nome,
+                url: url,
+              );
+
+              launcher.openUrl(url, 'Ordem ${a.numero}');
             },
-            child: const Text('Imprimir (site)'),
+            child: const Text('Abrir PDF'),
+          ),
+          FilledButton( // baixar (servidor)
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final profile = await Session.getProfile();
+              if (profile == null || _reimpRepo == null) return;
+
+              var url = _reimpRepo!.pdfUrl(
+                numero: a.numero,
+                idMatricula: profile.id,
+                nomeTitular: profile.nome,
+                download: true,
+              );
+
+              if (!kReleaseMode) {
+                url = _appendDebugQuery(url);
+              }
+
+              _logPdfCall(
+                where: 'download',
+                numero: a.numero,
+                idMatricula: profile.id,
+                nomeTitular: profile.nome,
+                url: url,
+              );
+
+              launcher.openUrl(url, 'Baixar Ordem ${a.numero}');
+            },
+            child: const Text('Baixar PDF'),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon( // NOVO: gerar PDF localmente (no app)
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await _generateLocalPdf(numero: a.numero);
+            },
+            label: const Text('PDF no app'),
           ),
         ],
       ),
     );
   }
 
-  // bottom sheet de detalhes (APENAS UMA VERSÃO)
+  // Gera PDF localmente usando o pacote `pdf` + `printing`
+  Future<void> _generateLocalPdf({required int numero}) async {
+    try {
+      if (_reimpRepo == null) return;
+      final profile = await Session.getProfile();
+      if (profile == null) return;
+
+      // busca detalhes para preencher o PDF
+      final det = await _reimpRepo!.detalhe(numero, idMatricula: profile.id);
+      if (det == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível carregar os detalhes desta ordem.')),
+        );
+        return;
+      }
+
+      _logPdfCall(where: 'local', numero: numero, idMatricula: profile.id, nomeTitular: profile.nome);
+
+      // mapeia para o modelo de PDF local
+      final data = mapDetalheToPdfData(
+        det: det,
+        idMatricula: profile.id,
+        nomeTitular: profile.nome,
+        // se tiver campo de percentual/procedimentos na sua API, pre encha aqui:
+        // percentual: det.percentual,
+        procedimentos: const [],
+      );
+
+      // cria PDF e abre o diálogo nativo de impressão/compartilhamento
+      final bytes = await buildAutorizacaoPdf(data);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao gerar PDF no app: $e')),
+      );
+    }
+  }
+
+  // bottom sheet de detalhes
   Future<void> _showDetalhes(int numero) async {
     if (_reimpRepo == null) return;
-    final profile = await Session.getProfile();
+    final profile = await Session.getProfile(); // id + nome
 
     ReimpressaoDetalhe? det;
     try {
-      det = await _reimpRepo!.detalhe(numero, idMatricula: profile?.id); // envia id opcional
-    } catch (_) {}
+      det = await _reimpRepo!.detalhe(numero, idMatricula: profile?.id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao carregar detalhes: $e')),
+        );
+      }
+    }
 
     if (!mounted) return;
 
@@ -353,7 +489,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             isLoggedIn: true,
             items: _historico,
             onSeeAll: () {
-              // ponto de expansão futuro (tela de histórico completo)
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Implementar tela de histórico completo.')),
               );
