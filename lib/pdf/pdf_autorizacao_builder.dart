@@ -42,6 +42,19 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
     return '* AUTORIZAÇÃO VÁLIDA POR 3 MESES PARA UMA CONSULTA!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
   }
 
+  // Badge de origem (sem preenchimento, só borda)
+  pw.Widget etiquetaOrigem() => pw.Container(
+    padding: const pw.EdgeInsets.symmetric(vertical: 2, horizontal: 6),
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: PdfColors.grey700, width: 0.8),
+      borderRadius: pw.BorderRadius.circular(3),
+    ),
+    child: pw.Text(
+      'Emitido pelo App IPASEMNH',
+      style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+    ),
+  );
+
   pw.Widget header() => pw.Row(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
     children: [
@@ -58,6 +71,8 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
             ),
             pw.SizedBox(height: 4),
             pw.Text('Emissão: ${d.dataEmissao}  |  Impressão: $nowStr', style: _small),
+            pw.SizedBox(height: 4),
+            pw.Align(alignment: pw.Alignment.centerRight, child: etiquetaOrigem()),
           ],
         ),
       ),
@@ -139,7 +154,9 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
         pw.Text('Observações ', style: _bold),
         pw.Expanded(
           child: pw.Text(
-            d.observacoes.isNotEmpty ? d.observacoes : 'AUTORIZAÇÃO EMITIDA PELO SISTEMA ASSISTWEB',
+            d.observacoes.isNotEmpty
+                ? d.observacoes
+                : 'AUTORIZAÇÃO EMITIDA PELO SISTEMA ASSISTWEB',
             style: _small,
           ),
         ),
@@ -147,6 +164,7 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
     ],
   );
 
+  // Procedimentos: sem fundo cinza e sem “1” padrão
   pw.Widget procedimentos() => pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.stretch,
     children: [
@@ -157,7 +175,7 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
       ),
       pw.SizedBox(height: 6),
       pw.Container(
-        color: PdfColors.grey300,
+        // Removido o 'color: PdfColors.grey300' para economizar toner
         padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
         child: pw.Row(children: [
           pw.Expanded(
@@ -171,23 +189,29 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
               style: _small,
             ),
           ),
+          // Quantidade: só exibe se houver exatamente 1 procedimento e quantidade > 0
           pw.Expanded(
             flex: 10,
             child: pw.Center(
               child: pw.Text(
-                (d.procedimentos.length == 1)
-                    ? d.procedimentos.first.quantidade.toString()
-                    : '1',
+                (d.procedimentos.length == 1 &&
+                    (d.procedimentos.first.quantidade != null) &&
+                    d.procedimentos.first.quantidade! > 0)
+                    ? d.procedimentos.first.quantidade!.toString()
+                    : '',
                 style: _small,
               ),
             ),
           ),
+          // Coparticipação (se existir)
           pw.Expanded(
             flex: 15,
             child: pw.Align(
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
-                (d.percentual != null && d.percentual!.isNotEmpty) ? '${d.percentual} % Copart' : '',
+                (d.percentual != null && d.percentual!.isNotEmpty)
+                    ? '${d.percentual} % Copart'
+                    : '',
                 style: _small,
               ),
             ),

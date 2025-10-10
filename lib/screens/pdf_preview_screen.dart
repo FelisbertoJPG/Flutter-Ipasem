@@ -7,6 +7,7 @@ import 'package:file_saver/file_saver.dart';
 import 'package:pdf/pdf.dart';
 
 import '../pdf/autorizacao_pdf_data.dart';
+import '../pdf/pdf_autorizacao.dart';
 import '../pdf/pdf_autorizacao_builder.dart';
 
 class PdfPreviewScreen extends StatelessWidget {
