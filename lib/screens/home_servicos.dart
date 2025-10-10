@@ -4,13 +4,10 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// NOVO: geração de PDF local
-import 'package:printing/printing.dart';
-import '../pdf/pdf_autorizacao.dart'; // buildAutorizacaoPdf
-import '../pdf/pdf_autorizacao_builder.dart';
-import '../pdf/pdf_mappers.dart';     // mapDetalheToPdfData
+import 'pdf_preview_screen.dart';           // abre o PDF dentro do app
+import '../pdf/pdf_mappers.dart';           // mapDetalheToPdfData
 
-import '../root_nav_shell.dart'; // pushInServicos / setTab
+import '../root_nav_shell.dart';            // pushInServicos / setTab
 import '../ui/app_shell.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/quick_actions.dart';
@@ -275,7 +272,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             child: const Text('Baixar PDF'),
           ),
           const SizedBox(width: 8),
-          OutlinedButton.icon( // NOVO: gerar PDF localmente (no app)
+          OutlinedButton.icon( // NOVO: gerar e visualizar PDF no próprio app
             icon: const Icon(Icons.picture_as_pdf_outlined),
             onPressed: () async {
               Navigator.of(ctx).pop();
@@ -288,14 +285,14 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     );
   }
 
-  // Gera PDF localmente usando o pacote `pdf` + `printing`
+  // Gera PDF localmente e abre a tela interna de pré-visualização (PdfPreviewScreen)
   Future<void> _generateLocalPdf({required int numero}) async {
     try {
       if (_reimpRepo == null) return;
       final profile = await Session.getProfile();
       if (profile == null) return;
 
-      // busca detalhes para preencher o PDF
+      // Detalhes para preencher o PDF
       final det = await _reimpRepo!.detalhe(numero, idMatricula: profile.id);
       if (det == null) {
         if (!mounted) return;
@@ -307,19 +304,25 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
       _logPdfCall(where: 'local', numero: numero, idMatricula: profile.id, nomeTitular: profile.nome);
 
-      // mapeia para o modelo de PDF local
+      // Mapper -> modelo do PDF (garanta que seu mapper aceite idMatricula e nomeTitular)
       final data = mapDetalheToPdfData(
         det: det,
         idMatricula: profile.id,
         nomeTitular: profile.nome,
-        // se tiver campo de percentual/procedimentos na sua API, pre encha aqui:
-        // percentual: det.percentual,
-        procedimentos: const [],
+        procedimentos: const [], // preencha caso tenha lista de procedimentos
       );
 
-      // cria PDF e abre o diálogo nativo de impressão/compartilhamento
-      final bytes = await buildAutorizacaoPdf(data);
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
+      final fileName = 'ordem_${det.numero}.pdf';
+
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PdfPreviewScreen(
+            data: data,
+            fileName: fileName,
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
