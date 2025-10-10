@@ -44,9 +44,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   bool _loading = true;
   bool _isLoggedIn = false;
 
-  // histórico exibido no card (HistoryList usa HistoryItem)
   List<HistoryItem> _historico = const [];
-  // dados crus vindos da API (para usar no onTap -> detalhe)
   List<ReimpressaoResumo> _histRows = const [];
 
   late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
@@ -95,7 +93,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         final api  = DevApi(baseUrl);
         _reimpRepo = ReimpressaoRepository(api);
 
-        final profile = await Session.getProfile(); // pega id e nome
+        final profile = await Session.getProfile();
         if (profile != null) {
           _histRows = await _reimpRepo!.historico(idMatricula: profile.id);
           _historico = _histRows.map((h) {
@@ -195,12 +193,12 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     ];
   }
 
-  // ====== ACTION SHEET ======
+  // ====== ACTION SHEET (responsivo/rolável) ======
   Future<_ReimpAction?> _showReimpActionSheet(ReimpressaoResumo a) {
     return showModalBottomSheet<_ReimpAction>(
       context: context,
+      isScrollControlled: true,
       useSafeArea: true,
-      isScrollControlled: false,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -221,72 +219,69 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             subtitle: subtitle != null ? Text(subtitle, style: muted) : null,
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(ctx).pop<_ReimpAction>(action),
+            visualDensity: VisualDensity.compact,
           );
         }
 
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Reimpressão da Ordem',
-                style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text('Deseja imprimir a ordem ${a.numero}?', style: muted),
-              const SizedBox(height: 12),
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.40,
+          minChildSize: 0.30,
+          maxChildSize: 0.90,
+          builder: (_, controller) {
+            return SafeArea(
+              top: false,
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                children: [
+                  Text(
+                    'Reimpressão da Ordem',
+                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('Deseja imprimir a ordem ${a.numero}?', style: muted),
+                  const SizedBox(height: 12),
 
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Color(0xFFE6E9ED)),
-                ),
-                child: Column(
-                  children: [
-                    item(
-                      icon: Icons.info_outline,
-                      title: 'Ver detalhes',
-                      subtitle: (a.prestadorExec.isNotEmpty || a.paciente.isNotEmpty)
-                          ? [a.prestadorExec, a.paciente].where((s) => s.isNotEmpty).join(' • ')
-                          : null,
-                      action: _ReimpAction.detalhes,
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Color(0xFFE6E9ED)),
                     ),
-                    const Divider(height: 1),
-                    item(
-                      icon: Icons.open_in_new,
-                      title: 'Abrir PDF',
-                      subtitle: 'Visualizar pelo site',
-                      action: _ReimpAction.abrirServidor,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        item(
+                          icon: Icons.info_outline,
+                          title: 'Ver detalhes',
+                          subtitle: (a.prestadorExec.isNotEmpty || a.paciente.isNotEmpty)
+                              ? [a.prestadorExec, a.paciente]
+                              .where((s) => s.isNotEmpty)
+                              .join(' • ')
+                              : null,
+                          action: _ReimpAction.detalhes,
+                        ),
+                        const Divider(height: 1),
+                        item(
+                          icon: Icons.picture_as_pdf_outlined,
+                          title: 'PDF no app',
+                          subtitle: 'Pré-visualizar e imprimir no aplicativo',
+                          action: _ReimpAction.pdfLocal,
+                        ),
+                      ],
                     ),
-                    const Divider(height: 1),
-                    item(
-                      icon: Icons.download_outlined,
-                      title: 'Baixar PDF',
-                      subtitle: 'Download via navegador',
-                      action: _ReimpAction.baixarServidor,
-                    ),
-                    const Divider(height: 1),
-                    item(
-                      icon: Icons.picture_as_pdf_outlined,
-                      title: 'PDF no app',
-                      subtitle: 'Pré-visualizar e imprimir no aplicativo',
-                      action: _ReimpAction.pdfLocal,
-                    ),
-                  ],
-                ),
-              ),
+                  ),
 
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancelar'),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancelar'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -352,7 +347,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       final profile = await Session.getProfile();
       if (profile == null) return;
 
-      // Detalhes para preencher o PDF
       final det = await _reimpRepo!.detalhe(numero, idMatricula: profile.id);
       if (det == null) {
         if (!mounted) return;
@@ -364,12 +358,11 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
       _logPdfCall(where: 'local', numero: numero, idMatricula: profile.id, nomeTitular: profile.nome);
 
-      // Mapper -> modelo do PDF
       final data = mapDetalheToPdfData(
         det: det,
         idMatricula: profile.id,
         nomeTitular: profile.nome,
-        procedimentos: const [], // preencha caso tenha lista de procedimentos
+        procedimentos: const [],
       );
 
       final fileName = 'ordem_${det.numero}.pdf';
@@ -391,10 +384,10 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     }
   }
 
-  // ====== DETALHES (scrollável + paciente com fallback, sem nullability warnings) ======
+  // ====== DETALHES (scrollável + paciente com fallback) ======
   Future<void> _showDetalhes(int numero, {String? pacienteFallback}) async {
     if (_reimpRepo == null) return;
-    final profile = await Session.getProfile(); // id + nome
+    final profile = await Session.getProfile();
 
     ReimpressaoDetalhe? det;
     try {
@@ -409,7 +402,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     if (!mounted) return;
 
     if (det == null) {
-      // feedback simples quando não há detalhes
       await showModalBottomSheet<void>(
         context: context,
         builder: (_) => const Padding(
@@ -420,10 +412,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       return;
     }
 
-    // A PARTIR DAQUI, det NÃO É NULO
     final d = det;
-
-    // Nome do paciente com fallback: detalhe -> item do histórico -> titular
     final paciente = (d.nomePaciente.trim().isNotEmpty)
         ? d.nomePaciente
         : (pacienteFallback?.trim().isNotEmpty ?? false)
@@ -432,7 +421,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
     await showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: true, // permite altura maior + scroll
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
@@ -440,7 +429,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       builder: (_) {
         return DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.7,
+          initialChildSize: 0.72,
           minChildSize: 0.4,
           maxChildSize: 0.95,
           builder: (ctx, controller) {
@@ -478,10 +467,13 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
                     const Divider(height: 24),
 
                     _kv('Endereço', d.enderecoComl),
-                    _kv('Bairro/Cidade', [
-                      if (d.bairroComl.isNotEmpty) d.bairroComl,
-                      if (d.cidadeComl.isNotEmpty) d.cidadeComl,
-                    ].where((s) => s.isNotEmpty).join(' - ')),
+                    _kv(
+                      'Bairro/Cidade',
+                      [
+                        if (d.bairroComl.isNotEmpty) d.bairroComl,
+                        if (d.cidadeComl.isNotEmpty) d.cidadeComl,
+                      ].where((s) => s.isNotEmpty).join(' - '),
+                    ),
                     if (d.telefoneComl.trim().isNotEmpty) _kv('Telefone', d.telefoneComl),
 
                     if (d.observacoes.trim().isNotEmpty) ...[
@@ -509,22 +501,35 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     );
   }
 
-  Widget _kv(String k, String v) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 140, child: Text(k, style: const TextStyle(color: Colors.black54))),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            v,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-            softWrap: true,
-          ),
+  // Linha chave/valor responsiva: a largura do rótulo se adapta ao espaço.
+  Widget _kv(String k, String v) => LayoutBuilder(
+    builder: (context, constraints) {
+      final total = constraints.maxWidth;
+      // 34% do espaço para o rótulo, mas com limites.
+      final labelW = total.clamp(280, 9999) == total
+          ? 120.0
+          : (total * 0.34).clamp(110.0, 160.0);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: labelW,
+              child: Text(k, style: const TextStyle(color: Colors.black54)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                v,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+                softWrap: true,
+              ),
+            ),
+          ],
         ),
-      ],
-    ),
+      );
+    },
   );
 
   @override
