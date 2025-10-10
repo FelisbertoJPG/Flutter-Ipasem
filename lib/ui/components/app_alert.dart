@@ -6,19 +6,27 @@ class AppAlert {
   static Color _color(BuildContext ctx, AppAlertType t) {
     final cs = Theme.of(ctx).colorScheme;
     switch (t) {
-      case AppAlertType.success: return cs.secondary;
-      case AppAlertType.warning: return Colors.amber.shade700;
-      case AppAlertType.error:   return cs.error;
-      case AppAlertType.info:    return cs.primary;
+      case AppAlertType.success:
+        return cs.secondary;
+      case AppAlertType.warning:
+        return Colors.amber.shade700;
+      case AppAlertType.error:
+        return cs.error;
+      case AppAlertType.info:
+        return cs.primary;
     }
   }
 
   static IconData _icon(AppAlertType t) {
     switch (t) {
-      case AppAlertType.success: return Icons.check_circle_outline;
-      case AppAlertType.warning: return Icons.warning_amber_outlined;
-      case AppAlertType.error:   return Icons.error_outline;
-      case AppAlertType.info:    return Icons.info_outline;
+      case AppAlertType.success:
+        return Icons.check_circle_outline;
+      case AppAlertType.warning:
+        return Icons.warning_amber_outlined;
+      case AppAlertType.error:
+        return Icons.error_outline;
+      case AppAlertType.info:
+        return Icons.info_outline;
     }
   }
 
@@ -33,7 +41,7 @@ class AppAlert {
         bool useRootNavigator = false, // <<< importante p/ nested nav
       }) {
     final color = _color(context, type);
-    final icon  = _icon(type);
+    final icon = _icon(type);
 
     return showDialog<void>(
       context: context,
@@ -62,11 +70,14 @@ class AppAlert {
     );
   }
 
+  /// Mostra o número da autorização e (opcionalmente) um botão para ir direto
+  /// à tela de impressão/preview (PdfPreviewScreen), via [onOpenPreview].
   static Future<void> showAuthNumber(
       BuildContext context, {
         required int numero,
         String title = 'Autorização emitida',
         VoidCallback? onOk,
+        VoidCallback? onOpenPreview, // <<< NOVO: navega para a tela de impressão
         bool barrierDismissible = false,
         bool useRootNavigator = false, // <<< importante p/ nested nav
       }) {
@@ -98,6 +109,15 @@ class AppAlert {
           ],
         ),
         actions: [
+          if (onOpenPreview != null)
+            TextButton.icon(
+              icon: const Icon(Icons.print_outlined),
+              label: const Text('Abrir impressão'),
+              onPressed: () {
+                Navigator.of(ctx).pop(); // fecha o diálogo
+                onOpenPreview(); // navega para o preview/print
+              },
+            ),
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
