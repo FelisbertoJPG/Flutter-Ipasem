@@ -50,7 +50,7 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
       borderRadius: pw.BorderRadius.circular(3),
     ),
     child: pw.Text(
-      'Emitido pelo App IPASEMNH',
+      'Emitido pelo Aplicativo IPASEMNH Digital',
       style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
     ),
   );
