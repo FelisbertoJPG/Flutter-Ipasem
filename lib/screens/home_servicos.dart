@@ -26,6 +26,9 @@ import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
 import 'autorizacao_odontologica_screen.dart';
 
+/// Ações do action sheet
+enum _ReimpAction { detalhes, abrirServidor, baixarServidor, pdfLocal }
+
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
@@ -192,97 +195,154 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     ];
   }
 
-  // tap em um item do histórico -> dialog com opções
+  // ====== ACTION SHEET ======
+  Future<_ReimpAction?> _showReimpActionSheet(ReimpressaoResumo a) {
+    return showModalBottomSheet<_ReimpAction>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: false,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final textTheme = Theme.of(ctx).textTheme;
+        final muted = textTheme.bodySmall?.copyWith(color: Colors.black54);
+
+        Widget item({
+          required IconData icon,
+          required String title,
+          String? subtitle,
+          required _ReimpAction action,
+        }) {
+          return ListTile(
+            leading: Icon(icon),
+            title: Text(title, style: textTheme.bodyLarge),
+            subtitle: subtitle != null ? Text(subtitle, style: muted) : null,
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(ctx).pop<_ReimpAction>(action),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Reimpressão da Ordem',
+                style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text('Deseja imprimir a ordem ${a.numero}?', style: muted),
+              const SizedBox(height: 12),
+
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Color(0xFFE6E9ED)),
+                ),
+                child: Column(
+                  children: [
+                    item(
+                      icon: Icons.info_outline,
+                      title: 'Ver detalhes',
+                      subtitle: (a.prestadorExec.isNotEmpty || a.paciente.isNotEmpty)
+                          ? [a.prestadorExec, a.paciente].where((s) => s.isNotEmpty).join(' • ')
+                          : null,
+                      action: _ReimpAction.detalhes,
+                    ),
+                    const Divider(height: 1),
+                    item(
+                      icon: Icons.open_in_new,
+                      title: 'Abrir PDF',
+                      subtitle: 'Visualizar pelo site',
+                      action: _ReimpAction.abrirServidor,
+                    ),
+                    const Divider(height: 1),
+                    item(
+                      icon: Icons.download_outlined,
+                      title: 'Baixar PDF',
+                      subtitle: 'Download via navegador',
+                      action: _ReimpAction.baixarServidor,
+                    ),
+                    const Divider(height: 1),
+                    item(
+                      icon: Icons.picture_as_pdf_outlined,
+                      title: 'PDF no app',
+                      subtitle: 'Pré-visualizar e imprimir no aplicativo',
+                      action: _ReimpAction.pdfLocal,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // tap em um item do histórico -> abre action sheet e executa ação escolhida
   Future<void> _onTapHistorico(ReimpressaoResumo a) async {
     if (!mounted) return;
 
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reimpressão da Ordem'),
-        content: Text('Deseja imprimir a ordem ${a.numero}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await _showDetalhes(a.numero);
-            },
-            child: const Text('Ver detalhes'),
-          ),
-          TextButton( // abrir inline (WebView servidor)
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final profile = await Session.getProfile();
-              if (profile == null || _reimpRepo == null) return;
+    final action = await _showReimpActionSheet(a);
+    if (action == null) return;
 
-              var url = _reimpRepo!.pdfUrl(
-                numero: a.numero,
-                idMatricula: profile.id,
-                nomeTitular: profile.nome,
-                download: false,
-              );
+    final profile = await Session.getProfile();
+    if (profile == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível obter o perfil do usuário.')),
+      );
+      return;
+    }
 
-              if (!kReleaseMode) {
-                url = _appendDebugQuery(url);
-              }
+    switch (action) {
+      case _ReimpAction.detalhes:
+        await _showDetalhes(a.numero, pacienteFallback: a.paciente.isNotEmpty ? a.paciente : null);
+        break;
 
-              _logPdfCall(
-                where: 'open',
-                numero: a.numero,
-                idMatricula: profile.id,
-                nomeTitular: profile.nome,
-                url: url,
-              );
+      case _ReimpAction.abrirServidor:
+        if (_reimpRepo == null) return;
+        var url = _reimpRepo!.pdfUrl(
+          numero: a.numero,
+          idMatricula: profile.id,
+          nomeTitular: profile.nome,
+          download: false,
+        );
+        if (!kReleaseMode) url = _appendDebugQuery(url);
+        _logPdfCall(where: 'open', numero: a.numero, idMatricula: profile.id, nomeTitular: profile.nome, url: url);
+        launcher.openUrl(url, 'Ordem ${a.numero}');
+        break;
 
-              launcher.openUrl(url, 'Ordem ${a.numero}');
-            },
-            child: const Text('Abrir PDF'),
-          ),
-          FilledButton( // baixar (servidor)
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final profile = await Session.getProfile();
-              if (profile == null || _reimpRepo == null) return;
+      case _ReimpAction.baixarServidor:
+        if (_reimpRepo == null) return;
+        var url = _reimpRepo!.pdfUrl(
+          numero: a.numero,
+          idMatricula: profile.id,
+          nomeTitular: profile.nome,
+          download: true,
+        );
+        if (!kReleaseMode) url = _appendDebugQuery(url);
+        _logPdfCall(where: 'download', numero: a.numero, idMatricula: profile.id, nomeTitular: profile.nome, url: url);
+        launcher.openUrl(url, 'Baixar Ordem ${a.numero}');
+        break;
 
-              var url = _reimpRepo!.pdfUrl(
-                numero: a.numero,
-                idMatricula: profile.id,
-                nomeTitular: profile.nome,
-                download: true,
-              );
-
-              if (!kReleaseMode) {
-                url = _appendDebugQuery(url);
-              }
-
-              _logPdfCall(
-                where: 'download',
-                numero: a.numero,
-                idMatricula: profile.id,
-                nomeTitular: profile.nome,
-                url: url,
-              );
-
-              launcher.openUrl(url, 'Baixar Ordem ${a.numero}');
-            },
-            child: const Text('Baixar PDF'),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon( // NOVO: gerar e visualizar PDF no próprio app
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await _generateLocalPdf(numero: a.numero);
-            },
-            label: const Text('PDF no app'),
-          ),
-        ],
-      ),
-    );
+      case _ReimpAction.pdfLocal:
+        await _generateLocalPdf(numero: a.numero);
+        break;
+    }
   }
 
   // Gera PDF localmente e abre a tela interna de pré-visualização (PdfPreviewScreen)
@@ -304,7 +364,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
       _logPdfCall(where: 'local', numero: numero, idMatricula: profile.id, nomeTitular: profile.nome);
 
-      // Mapper -> modelo do PDF (garanta que seu mapper aceite idMatricula e nomeTitular)
+      // Mapper -> modelo do PDF
       final data = mapDetalheToPdfData(
         det: det,
         idMatricula: profile.id,
@@ -331,8 +391,8 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     }
   }
 
-  // bottom sheet de detalhes
-  Future<void> _showDetalhes(int numero) async {
+  // ====== DETALHES (scrollável + paciente com fallback, sem nullability warnings) ======
+  Future<void> _showDetalhes(int numero, {String? pacienteFallback}) async {
     if (_reimpRepo == null) return;
     final profile = await Session.getProfile(); // id + nome
 
@@ -346,80 +406,123 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         );
       }
     }
-
     if (!mounted) return;
+
+    if (det == null) {
+      // feedback simples quando não há detalhes
+      await showModalBottomSheet<void>(
+        context: context,
+        builder: (_) => const Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Não foi possível carregar os detalhes.'),
+        ),
+      );
+      return;
+    }
+
+    // A PARTIR DAQUI, det NÃO É NULO
+    final d = det;
+
+    // Nome do paciente com fallback: detalhe -> item do histórico -> titular
+    final paciente = (d.nomePaciente.trim().isNotEmpty)
+        ? d.nomePaciente
+        : (pacienteFallback?.trim().isNotEmpty ?? false)
+        ? pacienteFallback!.trim()
+        : (profile?.nome ?? '');
 
     await showModalBottomSheet<void>(
       context: context,
-      useSafeArea: true,
-      isScrollControlled: false,
+      isScrollControlled: true, // permite altura maior + scroll
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (_) {
-        if (det == null) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Text('Não foi possível carregar os detalhes.'),
-          );
-        }
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                width: 40, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCE5EE),
-                  borderRadius: BorderRadius.circular(2),
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (ctx, controller) {
+            final theme = Theme.of(ctx);
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: ListView(
+                  controller: controller,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCE5EE),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Dados da Autorização',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 12),
+
+                    _kv('Número', '${d.numero}'),
+                    _kv('Paciente', paciente),
+                    _kv('Prestador', d.nomePrestadorExec),
+                    _kv('Especialidade', d.nomeEspecialidade),
+                    _kv('Data de Emissão', d.dataEmissao),
+
+                    const Divider(height: 24),
+
+                    _kv('Endereço', d.enderecoComl),
+                    _kv('Bairro/Cidade', [
+                      if (d.bairroComl.isNotEmpty) d.bairroComl,
+                      if (d.cidadeComl.isNotEmpty) d.cidadeComl,
+                    ].where((s) => s.isNotEmpty).join(' - ')),
+                    if (d.telefoneComl.trim().isNotEmpty) _kv('Telefone', d.telefoneComl),
+
+                    if (d.observacoes.trim().isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _kv('Observações', d.observacoes),
+                    ],
+
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.print),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        launcher.openUrl(HomeServicos._loginUrl, 'Reimpressão de Autorizações');
+                      },
+                      label: const Text('Imprimir via site'),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                 ),
               ),
-              Text(
-                'Dados da Autorização',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 12),
-              _kv('Número', '${det!.numero}'),
-              _kv('Paciente', det.nomePaciente),
-              _kv('Prestador', det.nomePrestadorExec),
-              _kv('Especialidade', det.nomeEspecialidade),
-              _kv('Data de Emissão', det.dataEmissao),
-              const Divider(height: 24),
-              _kv('Endereço', det.enderecoComl),
-              _kv('Bairro/Cidade', '${det.bairroComl} - ${det.cidadeComl}'),
-              if (det.telefoneComl.trim().isNotEmpty) _kv('Telefone', det.telefoneComl),
-              if (det.observacoes.trim().isNotEmpty) ...[
-                const Divider(height: 24),
-                _kv('Observações', det.observacoes),
-              ],
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                icon: const Icon(Icons.print),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  launcher.openUrl(HomeServicos._loginUrl, 'Reimpressão de Autorizações');
-                },
-                label: const Text('Imprimir via site'),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
 
   Widget _kv(String k, String v) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
+    padding: const EdgeInsets.only(bottom: 8),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(width: 140, child: Text(k, style: const TextStyle(color: Colors.black54))),
         const SizedBox(width: 8),
-        Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w600))),
+        Expanded(
+          child: Text(
+            v,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+            softWrap: true,
+          ),
+        ),
       ],
     ),
   );

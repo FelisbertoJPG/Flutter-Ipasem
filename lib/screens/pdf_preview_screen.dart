@@ -1,21 +1,12 @@
-import 'dart:io';
+// lib/screens/pdf_preview_screen.dart
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:pdf/pdf.dart' as pdf;
-
-
-// Android: para salvar em /Download
-// ignore: depend_on_referenced_packages
-import 'package:downloads_path_provider_28/downloads_path_provider_28.dart';
+import 'package:file_saver/file_saver.dart';
+import 'package:pdf/pdf.dart';
 
 import '../pdf/autorizacao_pdf_data.dart';
-import '../pdf/pdf_autorizacao.dart';
 import '../pdf/pdf_autorizacao_builder.dart';
 
 class PdfPreviewScreen extends StatelessWidget {
@@ -55,9 +46,9 @@ class PdfPreviewScreen extends StatelessWidget {
             icon: const Icon(Icons.download_outlined),
             onPressed: () async {
               final bytes = await buildAutorizacaoPdf(data);
-              final savedPath = await _saveWithBestEffort(bytes, fileName);
+              final savedPath = await _saveWithSystemPicker(bytes, fileName);
               if (context.mounted) {
-                if (savedPath != null) {
+                if (savedPath != null && savedPath.isNotEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Arquivo salvo em: $savedPath')),
                   );
@@ -73,11 +64,11 @@ class PdfPreviewScreen extends StatelessWidget {
       ),
       body: PdfPreview(
         build: (format) => buildAutorizacaoPdf(data),
-        allowSharing: false, // já colocamos nosso botão de compartilhar no AppBar
-        allowPrinting: false, // idem
+        allowSharing: false,
+        allowPrinting: false,
         canChangePageFormat: false,
         canChangeOrientation: false,
-        initialPageFormat: pdf.PdfPageFormat.a4,//erro aqui
+        initialPageFormat: PdfPageFormat.a4,
         pdfFileName: fileName,
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -85,81 +76,26 @@ class PdfPreviewScreen extends StatelessWidget {
         label: const Text('Abrir arquivo…'),
         onPressed: () async {
           final bytes = await buildAutorizacaoPdf(data);
-          final tmp = await _saveTemp(bytes, fileName);
-          await OpenFilex.open(tmp);
+          final path = await _saveWithSystemPicker(bytes, fileName);
+          if (path != null && path.isNotEmpty) {
+            await OpenFilex.open(path);
+          }
         },
       ),
     );
   }
 
-  // Salva em local “bonito” (Downloads/…) quando possível; senão cai para Documents do app
-  Future<String?> _saveWithBestEffort(Uint8List bytes, String name) async {
+  /// Abre o seletor nativo (SAF no Android) para o usuário escolher onde salvar.
+  /// Retorna o caminho salvo quando disponível.
+  Future<String?> _saveWithSystemPicker(Uint8List bytes, String name) async {
     try {
-      String? fullPath;
-
-      if (Platform.isAndroid) {
-        // tenta permissão de armazenamento (<= Android 12)
-        final status = await Permission.storage.request();
-        if (status.isGranted || status.isLimited) {
-          final dlDir = await DownloadsPathProvider.downloadsDirectory;
-          if (dlDir != null) {
-            final dir = Directory('${dlDir.path}/IPASEM');
-            if (!await dir.exists()) {
-              await dir.create(recursive: true);
-            }
-            final file = File('${dir.path}/$name');
-            await file.writeAsBytes(bytes);
-            fullPath = file.path;
-          }
-        }
-      } else if (Platform.isIOS || Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
-        final downloads = await _desktopDownloadsFallback();
-        if (downloads != null) {
-          final dir = Directory('${downloads.path}/IPASEM');
-          if (!await dir.exists()) {
-            await dir.create(recursive: true);
-          }
-          final file = File('${dir.path}/$name');
-          await file.writeAsBytes(bytes);
-          fullPath = file.path;
-        }
-      }
-
-      // Fallback: pasta de documentos do app (sempre funciona)
-      if (fullPath == null) {
-        final docs = await getApplicationDocumentsDirectory();
-        final dir = Directory('${docs.path}/IPASEM');
-        if (!await dir.exists()) {
-          await dir.create(recursive: true);
-        }
-        final file = File('${dir.path}/$name');
-        await file.writeAsBytes(bytes);
-        fullPath = file.path;
-      }
-
-      return fullPath;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // salva temporário pra abrir imediatamente com outro app (se o usuário quiser)
-  Future<String> _saveTemp(Uint8List bytes, String name) async {
-    final tmp = await getTemporaryDirectory();
-    final file = File('${tmp.path}/$name');
-    await file.writeAsBytes(bytes, flush: true);
-    return file.path;
-  }
-
-  // “Downloads” em desktop (quando disponível)
-  Future<Directory?> _desktopDownloadsFallback() async {
-    try {
-      // path_provider só dá Downloads em desktop/web (em mobile, geralmente não)
-      // então aqui tentamos uma pasta "Downloads" ao lado de Documents do usuário.
-      final docs = await getApplicationDocumentsDirectory();
-      final home = Directory(docs.path).parent.parent; // .../User/<you>/
-      final d1 = Directory('${home.path}/Downloads');
-      return await d1.exists() ? d1 : null;
+      final String? savedPath = await FileSaver.instance.saveAs(
+        name: name,
+        bytes: bytes,
+        fileExtension: 'pdf',
+        mimeType: MimeType.pdf,
+      );
+      return savedPath;
     } catch (_) {
       return null;
     }
