@@ -4,6 +4,12 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// NOVO: geração de PDF local
+import 'package:printing/printing.dart';
+import '../pdf/pdf_autorizacao.dart'; // buildAutorizacaoPdf
+import '../pdf/pdf_autorizacao_builder.dart';
+import '../pdf/pdf_mappers.dart';     // mapDetalheToPdfData
+
 import '../root_nav_shell.dart'; // pushInServicos / setTab
 import '../ui/app_shell.dart';
 import '../ui/components/section_card.dart';
@@ -55,7 +61,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
   // ---------- HELPERS DE DEBUG ----------
   String _appendDebugQuery(String url) {
-    // garante que adicionamos debug=1 corretamente (sem ?/?& duplicado)
     final u = Uri.parse(url);
     final qp = Map<String, String>.from(u.queryParameters);
     qp['debug'] = '1';
@@ -63,15 +68,14 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   }
 
   void _logPdfCall({
-    required String where,        // "open" | "download"
+    required String where, // "open" | "download" | "local"
     required int numero,
     required int idMatricula,
     required String nomeTitular,
-    required String url,
+    String? url,
   }) {
-    debugPrint(
-      '[PDF][$where] numero=$numero idmatricula=$idMatricula nome_titular="$nomeTitular" url=$url',
-    );
+    debugPrint('[PDF][$where] numero=$numero idmatricula=$idMatricula '
+        'nome_titular="$nomeTitular"${url != null ? ' url=$url' : ''}');
   }
   // --------------------------------------
 
@@ -212,7 +216,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             },
             child: const Text('Ver detalhes'),
           ),
-          TextButton( // abrir inline (WebView)
+          TextButton( // abrir inline (WebView servidor)
             onPressed: () async {
               Navigator.of(ctx).pop();
               final profile = await Session.getProfile();
@@ -221,11 +225,10 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
               var url = _reimpRepo!.pdfUrl(
                 numero: a.numero,
                 idMatricula: profile.id,
-                nomeTitular: profile.nome, // mandamos o nome também
+                nomeTitular: profile.nome,
                 download: false,
               );
 
-              // Em debug, injeta &debug=1
               if (!kReleaseMode) {
                 url = _appendDebugQuery(url);
               }
@@ -242,7 +245,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             },
             child: const Text('Abrir PDF'),
           ),
-          FilledButton( // baixar (via navegador)
+          FilledButton( // baixar (servidor)
             onPressed: () async {
               Navigator.of(ctx).pop();
               final profile = await Session.getProfile();
@@ -271,9 +274,58 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             },
             child: const Text('Baixar PDF'),
           ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon( // NOVO: gerar PDF localmente (no app)
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await _generateLocalPdf(numero: a.numero);
+            },
+            label: const Text('PDF no app'),
+          ),
         ],
       ),
     );
+  }
+
+  // Gera PDF localmente usando o pacote `pdf` + `printing`
+  Future<void> _generateLocalPdf({required int numero}) async {
+    try {
+      if (_reimpRepo == null) return;
+      final profile = await Session.getProfile();
+      if (profile == null) return;
+
+      // busca detalhes para preencher o PDF
+      final det = await _reimpRepo!.detalhe(numero, idMatricula: profile.id);
+      if (det == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível carregar os detalhes desta ordem.')),
+        );
+        return;
+      }
+
+      _logPdfCall(where: 'local', numero: numero, idMatricula: profile.id, nomeTitular: profile.nome);
+
+      // mapeia para o modelo de PDF local
+      final data = mapDetalheToPdfData(
+        det: det,
+        idMatricula: profile.id,
+        nomeTitular: profile.nome,
+        // se tiver campo de percentual/procedimentos na sua API, pre encha aqui:
+        // percentual: det.percentual,
+        procedimentos: const [],
+      );
+
+      // cria PDF e abre o diálogo nativo de impressão/compartilhamento
+      final bytes = await buildAutorizacaoPdf(data);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao gerar PDF no app: $e')),
+      );
+    }
   }
 
   // bottom sheet de detalhes
@@ -355,7 +407,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         );
       },
     );
-    // (sem download automático aqui)
   }
 
   Widget _kv(String k, String v) => Padding(
