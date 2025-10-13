@@ -1,3 +1,4 @@
+// lib/screens/autorizacao_exames_screen.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +33,7 @@ class AutorizacaoExamesScreen extends StatefulWidget {
 }
 
 class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
-  static const String _version = 'AutorizacaoExamesScreen v1.1.0';
+  static const String _version = 'AutorizacaoExamesScreen v1.2.0';
 
   bool _loading = true;
   String? _error;
@@ -54,8 +55,8 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
   bool _reposReady = false;
   late DevApi _api;
   late DependentsRepository _depsRepo;
-  late EspecialidadesRepository _espRepo; // EXAMES
-  late PrestadoresRepository _prestRepo;  // EXAMES
+  late EspecialidadesRepository _espRepo; // usaremos listarExames()
+  late PrestadoresRepository _prestRepo;
   late AutorizacoesRepository _autRepo;
 
   int _toInt(dynamic v) {
@@ -77,14 +78,13 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     _api       = DevApi(baseUrl);
     _depsRepo  = DependentsRepository(_api);
     _espRepo   = EspecialidadesRepository(_api);
-    _prestRepo = PrestadoresRepository (_api);
+    _prestRepo = PrestadoresRepository(_api);
     _autRepo   = AutorizacoesRepository(_api);
 
     _reposReady = true;
     if (kDebugMode) debugPrint(_version);
     _bootstrap();
   }
-
 
   Future<void> _bootstrap() async {
     setState(() { _loading = true; _error = null; });
@@ -116,7 +116,8 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       }
 
       try {
-        _especialidades = await _espRepo.listar(); // EXAMES
+        // <<< usa a lista específica de especialidades de EXAMES
+        _especialidades = await _espRepo.listarExames();
       } catch (e) {
         if (kDebugMode) print('especialidades (exames) erro: $e');
         _especialidades = const [];
@@ -144,7 +145,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       _selPrest = null;
     });
     try {
-      final rows = await _prestRepo.cidadesDisponiveis(_selEsp!.id); // EXAMES
+      final rows = await _prestRepo.cidadesDisponiveis(_selEsp!.id);
       setState(() {
         _cidades = rows;
         _loadingCidades = false;
@@ -165,7 +166,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     });
     try {
       final cidade = (_selCidade == null || _selCidade == 'TODAS AS CIDADES') ? null : _selCidade;
-      final rows = await _prestRepo.porEspecialidade(_selEsp!.id, cidade: cidade); // EXAMES
+      final rows = await _prestRepo.porEspecialidade(_selEsp!.id, cidade: cidade);
       setState(() {
         _prestadores = rows;
         _loadingPrestadores = false;
@@ -187,27 +188,18 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
 
     setState(() => _saving = true);
     try {
-      // A) usando o mesmo endpoint de autorizações “gerais”
-      final numero = await _autRepo.gravar(
-        idMatricula:     _selBenef!.idMat,
-        idDependente:    _selBenef!.idDep,
-        idEspecialidade: _toInt(_selEsp!.id),
-        idPrestador:     _toInt(_selPrest!.registro),
-        tipoPrestador:   _selPrest!.tipoPrestador,
+      // >>> gravação específica de exames
+      final numero = await _autRepo.gravarExame(
+        idMatricula:   _selBenef!.idMat,
+        idDependente:  _selBenef!.idDep,
+        idPrestador:   _toInt(_selPrest!.registro),
+        tipoPrestador: _selPrest!.tipoPrestador,
       );
 
-      // B) se você ativar endpoint dedicado no PHP, troque por:
-      // final numero = await _api.gravarExame(
-      //   idMatricula:   _selBenef!.idMat,
-      //   idDependente:  _selBenef!.idDep,
-      //   idPrestador:   _toInt(_selPrest!.registro),
-      //   tipoPrestador: _selPrest!.tipoPrestador,
-      // );
-
-      // 1) notifica HomeServicos para auto-atualizar
+      // notifica HomeServicos para auto-atualizar
       AuthEvents.instance.emitIssued(numero);
 
-      // 2) limpa seleção
+      // limpa seleção
       setState(() {
         _selEsp = null;
         _selCidade = null;
@@ -218,13 +210,12 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
 
       if (!mounted) return;
 
-      // 3) Dialog com número + “Abrir impressão”
       await AppAlert.showAuthNumber(
         context,
         numero: numero,
         useRootNavigator: false,
         onOpenPreview: () => openPreviewFromNumero(context, numero),
-        onOk: () => _goBackToServicos(numero: numero), // devolve o resultado
+        onOk: () => _goBackToServicos(numero: numero),
       );
     } on FormatException {
       if (!mounted) return;
@@ -264,7 +255,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     }
   }
 
-  // volta para HomeServicos devolvendo resultado (para cenários que usam pop result)
   void _goBackToServicos({int? numero}) {
     if (!mounted) return;
     final nav = Navigator.of(context);
@@ -273,7 +263,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     }
   }
 
-  // ===== Card do prestador (aparece só quando há seleção) =====
   Widget _prestadorCardOrEmpty() {
     final p = _selPrest;
     if (p == null) return const SizedBox.shrink();
@@ -343,6 +332,22 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
 
             if (!_loading && _error == null) ...[
+              // Orientações (espelha o aviso do site)
+              SectionCard(
+                title: 'Orientações',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    _Bullet('A imagem da requisição deve ser completa e sem cortes.'),
+                    _Bullet('Se houver exames para locais diferentes, emita autorizações separadas.'),
+                    _Bullet('Tamanho máximo da imagem 10MB (quando aplicável).'),
+                    _Bullet('Após a solicitação, o retorno pode levar até 48 horas.'),
+                    _Bullet('Você pode consultar suas solicitações no histórico do app.'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
               SectionCard(
                 title: 'Paciente',
                 child: DropdownButtonFormField<_Beneficiario>(
@@ -424,7 +429,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                               : (_prestadores.isEmpty ? 'Sem prestadores para o filtro' : 'Escolha o prestador'),
                         ),
                       ),
-
                     _prestadorCardOrEmpty(),
                   ],
                 ),
@@ -471,3 +475,21 @@ class _Beneficiario {
   const _Beneficiario({required this.idMat, required this.idDep, required this.nome});
 }
 extension<T> on List<T> { T? get firstOrNull => isEmpty ? null : first; }
+
+class _Bullet extends StatelessWidget {
+  final String text;
+  const _Bullet(this.text);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('•  ', style: TextStyle(height: 1.4)),
+          Expanded(child: Text(text, style: const TextStyle(height: 1.4))),
+        ],
+      ),
+    );
+  }
+}
