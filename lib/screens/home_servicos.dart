@@ -18,15 +18,17 @@ import '../controllers/home_servicos_controller.dart';
 import '../ui/components/reimp_action_sheet.dart';
 import '../ui/components/reimp_detalhes_sheet.dart';
 
-import '../state/auth_events.dart';
+import '../state/auth_events.dart'; // escuta emissões para auto-refresh
 
 import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
 import 'autorizacao_odontologica_screen.dart';
+import 'autorizacao_exames_screen.dart'; // <<< NOVA TELA
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
+  static const String _prefsKeyCpf = 'saved_cpf';
   static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
   static const String _siteUrl  = 'https://www.ipasemnh.com.br/home';
 
@@ -44,7 +46,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
   HomeServicosController? _controller;
 
-  // Listener para eventos de emissão
   VoidCallback? _authListener;
 
   @override
@@ -52,13 +53,25 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     super.initState();
     warmupInit();
 
-    // Quando sair uma nova autorização, tenta esperar o backend refletir no histórico e recarrega
+    // Quando sair uma nova autorização, recarrega o histórico aqui
     _authListener = () {
+      // dispara de forma assíncrona para não conflitar com o frame atual
       Future.microtask(_refreshAfterIssue);
     };
     AuthEvents.instance.lastIssued.addListener(_authListener!);
 
     _bootstrap();
+  }
+
+  Future<void> _refreshAfterIssue() async {
+    final numero = AuthEvents.instance.lastIssued.value;
+    if (!mounted || numero == null) return;
+
+    if (_controller != null) {
+      await _controller!.waitUntilInHistorico(numero);
+    }
+    if (!mounted) return;
+    await _bootstrap();
   }
 
   @override
@@ -81,19 +94,40 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     if (_isLoggedIn) {
       try {
         _controller = await HomeServicosController.init(context);
+
+        // 👇 pega o nome do titular para fallback do "paciente"
+        final titularNome = await _controller!.profileName();
+
         final rows = await _controller!.loadHistorico();
         _histRows = rows;
 
         _historico = rows.map((h) {
-          final titulo = h.prestadorExec.isNotEmpty ? h.prestadorExec : 'Autorização ${h.numero}';
-          final sub = [
-            if (h.dataEmissao.isNotEmpty && h.horaEmissao.isNotEmpty)
-              '${h.dataEmissao} • ${h.horaEmissao}'
-            else if (h.dataEmissao.isNotEmpty)
-              h.dataEmissao,
-            if (h.paciente.isNotEmpty) '• ${h.paciente}',
-          ].join(' ');
-          return HistoryItem(title: titulo, subtitle: sub, onTap: () => _onTapHistorico(h));
+          // paciente com fallback (quando é o titular, a API pode vir vazio)
+          final paciente = (h.paciente.trim().isNotEmpty)
+              ? h.paciente.trim()
+              : (titularNome?.trim() ?? '');
+
+          // título: se tiver prestador usa, senão cai para paciente, e por fim nº
+          final titulo = h.prestadorExec.isNotEmpty
+              ? h.prestadorExec
+              : (paciente.isNotEmpty ? paciente : 'Autorização ${h.numero}');
+
+          // subtítulo: data/hora + • paciente (se houver)
+          final subParts = <String>[];
+          if (h.dataEmissao.isNotEmpty && h.horaEmissao.isNotEmpty) {
+            subParts.add('${h.dataEmissao} • ${h.horaEmissao}');
+          } else if (h.dataEmissao.isNotEmpty) {
+            subParts.add(h.dataEmissao);
+          }
+          if (paciente.isNotEmpty) subParts.add('• $paciente');
+
+          final sub = subParts.join(' ');
+
+          return HistoryItem(
+            title: titulo,
+            subtitle: sub,
+            onTap: () => _onTapHistorico(h),
+          );
         }).toList();
       } catch (e) {
         _historico = const [];
@@ -105,27 +139,9 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         }
       }
     }
-
     if (mounted) setState(() => _loading = false);
   }
 
-  // Após emissão, aguarda o histórico refletir a nova ordem e recarrega
-  Future<void> _refreshAfterIssue() async {
-    final numero = AuthEvents.instance.lastIssued.value;
-    if (!mounted || numero == null) return;
-
-    if (_controller != null) {
-      // requer o método waitUntilInHistorico no controller
-      try {
-        await _controller!.waitUntilInHistorico(numero);
-      } catch (_) {
-        // se o método não existir/der erro, segue para o bootstrap mesmo assim
-      }
-    }
-
-    if (!mounted) return;
-    await _bootstrap();
-  }
 
   // ====== AÇÕES RÁPIDAS (logado) ======
   List<QuickActionItem> _loggedActions() {
@@ -164,6 +180,25 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         audience: QaAudience.loggedIn,
         requiresLogin: false,
       ),
+      // <<< NOVO BOTÃO
+      QuickActionItem(
+        id: 'aut_exames',
+        label: 'Autorização de Exames',
+        icon: FontAwesomeIcons.xRay,
+        onTap: () {
+          final scope = RootNavShell.maybeOf(context);
+          if (scope != null) {
+            scope.pushInServicos('autorizacao-exames');
+          } else {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AutorizacaoExamesScreen()),
+            );
+          }
+        },
+        audience: QaAudience.loggedIn,
+        requiresLogin: false,
+      ),
+      // >>>
       QuickActionItem(
         id: 'carteirinha',
         label: 'Carteirinha Digital',
@@ -198,7 +233,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         await _showDetalhes(a.numero, pacienteFallback: a.paciente.isNotEmpty ? a.paciente : null);
         break;
       case ReimpAction.pdfLocal:
-        await openPreviewFromNumero(context, a.numero);
+        await openPreviewFromNumero(context, a.numero); // helper centralizado
         break;
     }
   }
