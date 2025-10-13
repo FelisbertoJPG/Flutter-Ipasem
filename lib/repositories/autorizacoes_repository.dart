@@ -32,20 +32,29 @@ class AutorizacoesRepository {
     required int idDependente,
     required int idPrestador,
     required String tipoPrestador,
-    int? idEspecialidade, // opcional
   }) async {
-    final res = await api.post(
-      // ajuste se sua rota for diferente (ex: '/exames/gravar')
-      '/api-dev.php?action=gravar_exame',
+    final res = await api.postAction<Map<String, dynamic>>(
+      'gravar_exame',
       data: {
         'id_matricula':   idMatricula,
         'id_dependente':  idDependente,
         'id_prestador':   idPrestador,
         'tipo_prestador': tipoPrestador,
-        if (idEspecialidade != null) 'id_especialidade': idEspecialidade,
       },
     );
-    return _extractNumeroOrThrow(res);
+    final body = (res.data ?? {});
+    if (body['ok'] == true) {
+      final data = (body['data'] as Map?) ?? const {};
+      final raw  = data['o_nro_autorizacao'] ?? data['numero'];
+      final numAut = raw is int ? raw : int.tryParse('$raw') ?? 0;
+      if (numAut > 0) return numAut;
+    }
+    throw DioException(
+      requestOptions: res.requestOptions,
+      response: res,
+      type: DioExceptionType.badResponse,
+      error: body['error'],
+    );
   }
 
   // ----------------- Helpers -----------------
