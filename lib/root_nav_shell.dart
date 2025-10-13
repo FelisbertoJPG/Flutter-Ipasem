@@ -28,6 +28,10 @@ class _RootNavShellState extends State<RootNavShell> {
   int _currentIndex = 0;
   bool _handledArgs = false;
 
+  // >>> ENABLE SWIPE BETWEEN TABS
+  late final PageController _pageController = PageController(initialPage: _currentIndex);
+  // <<<
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -38,9 +42,17 @@ class _RootNavShellState extends State<RootNavShell> {
       final idx = args['tab'] as int;
       if (idx >= 0 && idx <= 2) {
         _currentIndex = idx;
+        // garante que o PageView vá para a aba solicitada (caso venha via args)
+        _pageController.jumpToPage(_currentIndex);
       }
     }
     _handledArgs = true;
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   static const String _tel = 'tel:5135949162';
@@ -54,6 +66,12 @@ class _RootNavShellState extends State<RootNavShell> {
       return;
     }
     setState(() => _currentIndex = i);
+    // sincroniza seleção -> página
+    _pageController.animateToPage(
+      i,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
   }
 
   Future<T?> _pushInServicos<T>(
@@ -63,6 +81,7 @@ class _RootNavShellState extends State<RootNavShell> {
       }) {
     if (switchTab && _currentIndex != 1) {
       setState(() => _currentIndex = 1);
+      _pageController.jumpToPage(1); // garante que está na página de Serviços
     }
     final nav = _tabKeys[1]!.currentState!;
     return nav.pushNamed<T>(name, arguments: arguments);
@@ -133,7 +152,7 @@ class _RootNavShellState extends State<RootNavShell> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-        selectedIndex: _currentIndex,
+        selectedIndex: _currentIndex, // segue a página atual do PageView
         onDestinationSelected: (i) {
           if (i == 3) {
             _showContactsSheet(context);
@@ -175,14 +194,21 @@ class _RootNavShellState extends State<RootNavShell> {
       currentIndex: _currentIndex,
       pushInServicos: _pushInServicos,
       child: Scaffold(
-        body: IndexedStack(
-          index: _currentIndex,
+        // >>> PageView no lugar do IndexedStack
+        body: PageView(
+          controller: _pageController,
+          physics: const PageScrollPhysics(), // permite arrastar
+          onPageChanged: (i) {
+            // sincroniza página -> seleção do NavigationBar
+            setState(() => _currentIndex = i);
+          },
           children: [
             _tabNavigator(index: 0, onGenerateRoute: _routeHome),
             _tabNavigator(index: 1, onGenerateRoute: _routeServicos),
             _tabNavigator(index: 2, onGenerateRoute: _routePerfil),
           ],
         ),
+        // <<<
         bottomNavigationBar: bottomBar,
       ),
     );
@@ -275,7 +301,7 @@ class _RootNavShellState extends State<RootNavShell> {
     await Clipboard.setData(const ClipboardData(text: _email));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Nenhum app de e-mail encontrado. Endereço copiado.')),
+        const SnackBar(content: Text('Nenhum app de e-mail encontrado. Endereço copiado.'))
     );
   }
 }
