@@ -42,4 +42,21 @@ class HomeServicosController {
     final profile = await Session.getProfile();
     return profile?.nome;
   }
+  // HomeServicosController
+  Future<bool> waitUntilInHistorico(
+      int numero, {
+        Duration maxWait = const Duration(seconds: 4),
+      }) async {
+    final start = DateTime.now();
+    var delay = const Duration(milliseconds: 250); // 250ms -> 500 -> 1s -> 2s...
+
+    while (DateTime.now().difference(start) < maxWait) {
+      final rows = await loadHistorico();
+      if (rows.any((r) => r.numero == numero)) return true;
+      await Future.delayed(delay);
+      delay *= 2;
+    }
+    return false;
+  }
+
 }

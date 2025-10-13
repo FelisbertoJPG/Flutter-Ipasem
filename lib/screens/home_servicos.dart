@@ -18,7 +18,7 @@ import '../controllers/home_servicos_controller.dart';
 import '../ui/components/reimp_action_sheet.dart';
 import '../ui/components/reimp_detalhes_sheet.dart';
 
-import '../state/auth_events.dart'; // <<< NOVO: escuta emissões para auto-refresh
+import '../state/auth_events.dart';
 
 import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
@@ -27,7 +27,6 @@ import 'autorizacao_odontologica_screen.dart';
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
-  static const String _prefsKeyCpf = 'saved_cpf';
   static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
   static const String _siteUrl  = 'https://www.ipasemnh.com.br/home';
 
@@ -45,40 +44,28 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
   HomeServicosController? _controller;
 
-  // <<< NOVO: guardamos o listener para remover no dispose
+  // Listener para eventos de emissão
   VoidCallback? _authListener;
-  // >>>
 
   @override
   void initState() {
     super.initState();
     warmupInit();
 
-    // <<< NOVO: quando sair uma nova autorização, recarrega o histórico aqui
+    // Quando sair uma nova autorização, tenta esperar o backend refletir no histórico e recarrega
     _authListener = () {
-      final numero = AuthEvents.instance.lastIssued.value;
-      if (!mounted) return;
-      if (numero != null) {
-        // opcional: um feedback sutil
-        // ScaffoldMessenger.of(context).showSnackBar(
-        //   const SnackBar(content: Text('Histórico atualizado.')),
-        // );
-        _bootstrap(); // recarrega a lista
-      }
+      Future.microtask(_refreshAfterIssue);
     };
     AuthEvents.instance.lastIssued.addListener(_authListener!);
-    // >>>
 
     _bootstrap();
   }
 
   @override
   void dispose() {
-    // <<< NOVO: remove o listener
     if (_authListener != null) {
       AuthEvents.instance.lastIssued.removeListener(_authListener!);
     }
-    // >>>
     super.dispose();
   }
 
@@ -120,6 +107,24 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     }
 
     if (mounted) setState(() => _loading = false);
+  }
+
+  // Após emissão, aguarda o histórico refletir a nova ordem e recarrega
+  Future<void> _refreshAfterIssue() async {
+    final numero = AuthEvents.instance.lastIssued.value;
+    if (!mounted || numero == null) return;
+
+    if (_controller != null) {
+      // requer o método waitUntilInHistorico no controller
+      try {
+        await _controller!.waitUntilInHistorico(numero);
+      } catch (_) {
+        // se o método não existir/der erro, segue para o bootstrap mesmo assim
+      }
+    }
+
+    if (!mounted) return;
+    await _bootstrap();
   }
 
   // ====== AÇÕES RÁPIDAS (logado) ======
@@ -193,7 +198,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         await _showDetalhes(a.numero, pacienteFallback: a.paciente.isNotEmpty ? a.paciente : null);
         break;
       case ReimpAction.pdfLocal:
-        await openPreviewFromNumero(context, a.numero); // helper centralizado
+        await openPreviewFromNumero(context, a.numero);
         break;
     }
   }
