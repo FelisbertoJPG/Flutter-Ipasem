@@ -20,6 +20,11 @@ import '../models/dependent.dart';
 import '../models/especialidade.dart';
 import '../models/prestador.dart';
 
+// <<< NOVOS IMPORTS
+import '../state/auth_events.dart';
+import '../ui/utils/print_helpers.dart'; // openPreviewFromNumero
+// >>>
+
 class AutorizacaoOdontologicaScreen extends StatefulWidget {
   const AutorizacaoOdontologicaScreen({super.key});
 
@@ -28,7 +33,7 @@ class AutorizacaoOdontologicaScreen extends StatefulWidget {
 }
 
 class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaScreen> {
-  static const String _version = 'AutorizacaoOdontologicaScreen v1.0.2';
+  static const String _version = 'AutorizacaoOdontologicaScreen v1.0.3';
 
   bool _loading = true;
   String? _error;
@@ -65,7 +70,7 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
   // Heurística simples para filtrar só especialidades odontológicas por nome
   bool _isOdonto(Especialidade e) {
     final n = (e.nome ?? '').toUpperCase();
-    return n.contains('ODONTO'); // ex.: ODONTOLOGIA, ODONTOLÓGICA etc.
+    return n.contains('ODONTO'); // ODONTOLOGIA, ODONTOLÓGICA etc.
   }
 
   @override
@@ -118,7 +123,6 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
 
       try {
         final todas = await _espRepo.listar();
-        // >>> Diferença: só especialidades de Odonto.
         _especialidades = (todas ?? const [])
             .where(_isOdonto)
             .toList()
@@ -201,6 +205,10 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
         tipoPrestador:   _selPrest!.tipoPrestador,
       );
 
+      // >>> emite evento p/ atualizar o histórico na HomeServicos
+      AuthEvents.instance.emitIssued(numero);
+      // <<<
+
       // limpa seleção para um novo fluxo
       setState(() {
         _selEsp = null;
@@ -216,6 +224,7 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
         context,
         numero: numero,
         useRootNavigator: false, // dialog dentro do navigator da aba
+        onOpenPreview: () => openPreviewFromNumero(context, numero), // atalho p/ impressão
         onOk: _goBackToServicos,
       );
     } on FormatException {
