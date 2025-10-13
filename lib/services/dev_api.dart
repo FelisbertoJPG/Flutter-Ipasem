@@ -10,23 +10,23 @@ import '../models/prestador.dart';
 typedef TokenProvider = String? Function();
 
 class DevApi {
-  final String _base; // ex.: http://192.9.200.18
-  final String _apiPath; // ex.: /api-dev.php
-  String? _sessionToken; // token em memória
+  final String _base;            // ex.: http://192.9.200.18
+  final String _apiPath;         // ex.: /api-dev.php
+  String? _sessionToken;         // token em memória
   final TokenProvider? _tokenProvider;
-  final bool _formUrlEncoded; // se false, envia JSON
+  final bool _formUrlEncoded;    // se false, envia JSON
 
   String get endpoint => '$_base$_apiPath';
 
   static String _normalizeBase(String raw) =>
       raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
 
-  DevApi(String baseUrl, {
-    String apiPath = '/api-dev.php',
-    TokenProvider? tokenProvider,
-    bool formUrlEncoded = true,
-  })
-      : _base = _normalizeBase(baseUrl),
+  DevApi(
+      String baseUrl, {
+        String apiPath = '/api-dev.php',
+        TokenProvider? tokenProvider,
+        bool formUrlEncoded = true,
+      })  : _base = _normalizeBase(baseUrl),
         _apiPath = apiPath,
         _tokenProvider = tokenProvider,
         _formUrlEncoded = formUrlEncoded;
@@ -42,15 +42,12 @@ class DevApi {
         responseType: ResponseType.json,
         headers: {
           Headers.contentTypeHeader:
-          _formUrlEncoded ? Headers.formUrlEncodedContentType : Headers
-              .jsonContentType,
+          _formUrlEncoded ? Headers.formUrlEncodedContentType : Headers.jsonContentType,
         },
       ),
     );
     // logs (com redaction)
-    try {
-      d.interceptors.add(RedactingLogInterceptor());
-    } catch (_) {}
+    try { d.interceptors.add(RedactingLogInterceptor()); } catch (_) {}
     // injeta X-Session
     d.interceptors.add(
       InterceptorsWrapper(onRequest: (opt, h) {
@@ -64,25 +61,53 @@ class DevApi {
   }
 
   // ====== conveniências ======
-  Future<Response<T>> post<T>(String path, {
-    Object? data,
-    Map<String, dynamic>? queryParameters,
-    Options? options,
-  }) {
-    return _dio().post<T>(
-        path, data: data, queryParameters: queryParameters, options: options);
+  Future<Response<T>> post<T>(
+      String path, {
+        Object? data,
+        Map<String, dynamic>? queryParameters,
+        Options? options,
+      }) {
+    return _dio().post<T>(path, data: data, queryParameters: queryParameters, options: options);
   }
 
   /// Helper para rotas do api-dev.php com ?action=...
-  Future<Response<T>> postAction<T>(String action, {
-    Object? data,
-    Options? options,
-  }) {
+  Future<Response<T>> postAction<T>(
+      String action, {
+        Object? data,
+        Options? options,
+      }) {
     return _dio().post<T>(
       _apiPath,
       queryParameters: {'action': action},
       data: data,
       options: options,
+    );
+  }
+
+  /// Helper para upload multipart (ex.: imagens de exames)
+  Future<Response<dynamic>> uploadAction(
+      String action, {
+        required Map<String, dynamic> fields,                    // campos simples
+        required Map<String, List<MultipartFile>> files,         // ex.: {'images[]': [file1, file2]}
+      }) async {
+    final d = _dio();
+    final form = FormData();
+
+    // campos simples
+    fields.forEach((k, v) => form.fields.add(MapEntry(k, '$v')));
+
+    // arquivos
+    files.forEach((k, list) {
+      for (final f in list) {
+        form.files.add(MapEntry(k, f));
+      }
+    });
+
+    return d.post(
+      _apiPath,
+      queryParameters: {'action': action},
+      data: form,
+      options: Options(contentType: 'multipart/form-data'),
     );
   }
 
@@ -103,8 +128,7 @@ class DevApi {
       final data = (body['data'] as Map?) ?? const {};
       final token = data['session_token'] as String?;
       if (token != null && token.isNotEmpty) setSessionToken(token);
-      final profile = (data['profile'] as Map?)?.cast<String, dynamic>() ??
-          const {};
+      final profile = (data['profile'] as Map?)?.cast<String, dynamic>() ?? const {};
       return profile;
     }
     throw DioException(
@@ -140,16 +164,14 @@ class DevApi {
   }
 
   Future<Map<String, dynamic>> ping() async {
-    final r = await _dio().post(
-        _apiPath, queryParameters: {'action': 'ping'}, data: const {});
+    final r = await _dio().post(_apiPath, queryParameters: {'action': 'ping'}, data: const {});
     return (r.data as Map).cast<String, dynamic>();
   }
 
   /// se não existir a rota 'me' no PHP, cai no ping()
   Future<bool> checkSession() async {
     try {
-      final r = await _dio().post(
-          _apiPath, queryParameters: {'action': 'me'}, data: const {});
+      final r = await _dio().post(_apiPath, queryParameters: {'action': 'me'}, data: const {});
       final m = (r.data as Map).cast<String, dynamic>();
       return m['ok'] == true;
     } catch (_) {
@@ -231,57 +253,7 @@ class DevApi {
   }
 
   // ========== ROTAS “EXAMES” (NOVAS) ==========
-  // ---------- EXAMES ----------
-
-
-  Future<List<String>> fetchCidadesPorEspecialidadeExames(
-      int especialidade) async {
-    final r = await _dio().post(
-      _apiPath,
-      queryParameters: {'action': 'cidades_por_especialidade_exames'},
-      // fallback: 'cidades_por_especialidade'
-      data: {'especialidade': especialidade},
-    );
-    final m = (r.data as Map).cast<String, dynamic>();
-    if (m['ok'] == true) {
-      final rows = (m['data']['rows'] as List?) ?? const [];
-      return rows.cast<String>();
-    }
-    throw DioException(
-      requestOptions: r.requestOptions,
-      response: r,
-      type: DioExceptionType.badResponse,
-      error: m['error'],
-    );
-  }
-
-  Future<List<PrestadorRow>> fetchPrestadoresPorEspecialidadeExames({
-    required int especialidade,
-    String? cidade,
-  }) async {
-    final r = await _dio().post(
-      _apiPath,
-      queryParameters: {'action': 'prestadores_exames'},
-      // ou 'prestadores_especialidade_exames'
-      data: {
-        'especialidade': especialidade,
-        if (cidade != null && cidade.isNotEmpty) 'cidade': cidade,
-      },
-    );
-    final m = (r.data as Map).cast<String, dynamic>();
-    if (m['ok'] == true) {
-      final rows = (m['data']['rows'] as List?) ?? const [];
-      return rows
-          .map((e) => PrestadorRow.fromMap((e as Map).cast<String, dynamic>()))
-          .toList();
-    }
-    throw DioException(
-      requestOptions: r.requestOptions,
-      response: r,
-      type: DioExceptionType.badResponse,
-      error: m['error'],
-    );
-  }
+  /// Lista de especialidades **de exames** (api-dev.php?action=especialidades_exames)
   Future<List<Especialidade>> fetchEspecialidadesExames() async {
     final r = await _dio().post(
       _apiPath,
@@ -303,5 +275,55 @@ class DevApi {
     );
   }
 
+  /// (Opcional) Cidades para especialidade **de exames**.
+  /// Aqui reusamos a mesma rota geral, então não precisa criar nada novo no PHP.
+  Future<List<String>> fetchCidadesPorEspecialidadeExames(int especialidade) async {
+    final r = await _dio().post(
+      _apiPath,
+      // reutiliza a geral:
+      queryParameters: {'action': 'cidades_por_especialidade'},
+      data: {'especialidade': especialidade},
+    );
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      final rows = (m['data']['rows'] as List?) ?? const [];
+      return rows.cast<String>();
+    }
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
 
+  /// (Opcional) Prestadores filtrados por especialidade **de exames**.
+  /// Também reaproveita a rota geral.
+  Future<List<PrestadorRow>> fetchPrestadoresPorEspecialidadeExames({
+    required int especialidade,
+    String? cidade,
+  }) async {
+    final r = await _dio().post(
+      _apiPath,
+      // reutiliza a geral:
+      queryParameters: {'action': 'prestadores_especialidade'},
+      data: {
+        'especialidade': especialidade,
+        if (cidade != null && cidade.isNotEmpty) 'cidade': cidade,
+      },
+    );
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      final rows = (m['data']['rows'] as List?) ?? const [];
+      return rows
+          .map((e) => PrestadorRow.fromMap((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
 }

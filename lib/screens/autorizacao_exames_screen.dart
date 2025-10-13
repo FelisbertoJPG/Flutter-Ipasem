@@ -1,5 +1,8 @@
 // lib/screens/autorizacao_exames_screen.dart
+import 'dart:io';
+
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -33,7 +36,11 @@ class AutorizacaoExamesScreen extends StatefulWidget {
 }
 
 class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
-  static const String _version = 'AutorizacaoExamesScreen v1.2.0';
+  static const String _version = 'AutorizacaoExamesScreen v1.4.0';
+
+  // anexos
+  final ImagePicker _picker = ImagePicker();
+  List<XFile> _imagens = [];
 
   bool _loading = true;
   String? _error;
@@ -55,7 +62,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
   bool _reposReady = false;
   late DevApi _api;
   late DependentsRepository _depsRepo;
-  late EspecialidadesRepository _espRepo; // usaremos listarExames()
+  late EspecialidadesRepository _espRepo; // listarExames()
   late PrestadoresRepository _prestRepo;
   late AutorizacoesRepository _autRepo;
 
@@ -116,7 +123,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       }
 
       try {
-        // <<< usa a lista específica de especialidades de EXAMES
         _especialidades = await _espRepo.listarExames();
       } catch (e) {
         if (kDebugMode) print('especialidades (exames) erro: $e');
@@ -128,6 +134,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       _selCidade = null;
       _prestadores = const [];
       _selPrest = null;
+      _imagens = [];
     } catch (e) {
       _error = kDebugMode ? 'Falha ao carregar dados. ($e)' : 'Falha ao carregar dados.';
     } finally {
@@ -180,15 +187,21 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     }
   }
 
+  // exige anexos
   bool get _formOk =>
-      _selBenef != null && _selEsp != null && _selCidade != null && _selPrest != null;
+      _selBenef != null &&
+          _selEsp != null &&
+          _selCidade != null &&
+          _selPrest != null &&
+          _imagens.isNotEmpty;
 
   Future<void> _onSubmit() async {
     if (!_formOk || _saving) return;
 
+    FocusScope.of(context).unfocus();
     setState(() => _saving = true);
     try {
-      // >>> gravação específica de exames
+      // 1) gravação específica de exames
       final numero = await _autRepo.gravarExame(
         idMatricula:   _selBenef!.idMat,
         idDependente:  _selBenef!.idDep,
@@ -196,20 +209,39 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
         tipoPrestador: _selPrest!.tipoPrestador,
       );
 
-      // notifica HomeServicos para auto-atualizar
+      // 2) sobe as fotos (obrigatório)
+      try {
+        await _autRepo.enviarImagensExame(
+          numero: numero,
+          paths: _imagens.map((x) => x.path).toList(),
+        );
+      } catch (e) {
+        await AppAlert.show(
+          context,
+          title: 'Falha no envio das imagens',
+          message: 'A autorização nº $numero foi gerada, mas não conseguimos anexar as fotos. Tente reenviar agora.',
+          type: AppAlertType.error,
+          useRootNavigator: false,
+        );
+        return; // não limpa estado, usuário pode tentar de novo
+      }
+
+      // 3) notifica HomeServicos para auto-atualizar
       AuthEvents.instance.emitIssued(numero);
 
-      // limpa seleção
+      // 4) limpa seleção somente após upload OK
       setState(() {
         _selEsp = null;
         _selCidade = null;
         _selPrest = null;
         _cidades = const [];
         _prestadores = const [];
+        _imagens = [];
       });
 
       if (!mounted) return;
 
+      // 5) Dialog com número + “Abrir impressão”
       await AppAlert.showAuthNumber(
         context,
         numero: numero,
@@ -261,6 +293,94 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     if (nav.canPop()) {
       nav.pop({'issued': true, 'numero': numero});
     }
+  }
+
+  // ====== anexos helpers ======
+  Future<void> _addImages() async {
+    try {
+      final picked = await _picker.pickMultiImage(imageQuality: 85, maxWidth: 2000);
+      if (picked.isEmpty) return;
+
+      // junta com o que já tem e corta no máximo 2
+      final merged = [..._imagens, ...picked].take(2).toList();
+
+      // validação 10MB por imagem
+      for (final x in merged) {
+        final bytes = await File(x.path).length();
+        if (bytes > 10 * 1024 * 1024) {
+          AppAlert.toast(context, 'Cada imagem deve ter até 10 MB.');
+          return;
+        }
+      }
+
+      setState(() => _imagens = merged);
+    } catch (_) {
+      AppAlert.toast(context, 'Falha ao adicionar imagens.');
+    }
+  }
+
+  void _removeImage(int index) {
+    setState(() => _imagens = [..._imagens]..removeAt(index));
+  }
+
+  // ====== UI ======
+
+  // grid de miniaturas responsivo
+  Widget _thumbGrid() {
+    if (_imagens.isEmpty) return const Text('Anexe ao menos 1 imagem da requisição.');
+    return LayoutBuilder(
+      builder: (context, c) {
+        // calcula colunas conforme a largura disponível
+        final w = c.maxWidth;
+        int cols;
+        if (w >= 520) {
+          cols = 5;
+        } else if (w >= 420) {
+          cols = 4;
+        } else if (w >= 340) {
+          cols = 3;
+        } else {
+          cols = 2;
+        }
+        const gap = 8.0;
+        final thumb = ((w - (gap * (cols - 1))) / cols).clamp(72.0, 112.0);
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: List.generate(_imagens.length, (i) {
+            final x = _imagens[i];
+            return SizedBox(
+              width: thumb,
+              height: thumb,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(x.path),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: -8,
+                    top: -8,
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.cancel, size: 20),
+                      onPressed: () => _removeImage(i),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        );
+      },
+    );
   }
 
   Widget _prestadorCardOrEmpty() {
@@ -322,6 +442,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
           padding: const EdgeInsets.fromLTRB(16,16,16,24),
           children: [
             if (_loading) const SectionCard(title: ' ', child: LoadingPlaceholder(height: 120)),
+
             if (!_loading && _error != null)
               SectionCard(
                 title: ' ',
@@ -332,7 +453,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
 
             if (!_loading && _error == null) ...[
-              // Orientações (espelha o aviso do site)
+              // Orientações
               SectionCard(
                 title: 'Orientações',
                 child: Column(
@@ -348,6 +469,36 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
               const SizedBox(height: 12),
 
+              // Anexos (obrigatório)
+              SectionCard(
+                title: 'Requisição (fotos) — obrigatório',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Wrap evita overflow em telas estreitas
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        FilledButton.tonal(
+                          onPressed: _imagens.length >= 2 ? null : _addImages,
+                          child: const Text('Adicionar imagens (até 2)', overflow: TextOverflow.ellipsis),
+                        ),
+                        Text(
+                          '${_imagens.length}/2 selecionadas',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _thumbGrid(),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Paciente
               SectionCard(
                 title: 'Paciente',
                 child: DropdownButtonFormField<_Beneficiario>(
@@ -363,6 +514,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
               const SizedBox(height: 12),
 
+              // Especialidade
               SectionCard(
                 title: 'Especialidade',
                 child: DropdownButtonFormField<Especialidade>(
@@ -384,6 +536,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
               const SizedBox(height: 12),
 
+              // Cidade
               SectionCard(
                 title: 'Cidade',
                 child: Column(
@@ -409,6 +562,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
               const SizedBox(height: 12),
 
+              // Prestador
               SectionCard(
                 title: 'Prestador',
                 child: Column(
@@ -435,6 +589,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
               const SizedBox(height: 16),
 
+              // Submit
               SizedBox(
                 height: 48,
                 child: FilledButton(
