@@ -1,3 +1,4 @@
+// lib/ui/components/quick_actions.dart
 import 'package:flutter/material.dart';
 
 /// Público-alvo do item de ação.
@@ -49,28 +50,28 @@ class QuickActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final visible = items.where((it) {
       switch (it.audience) {
-        case QaAudience.all:      return true;
-        case QaAudience.loggedIn: return isLoggedIn;
-        case QaAudience.visitor:  return !isLoggedIn;
+        case QaAudience.all:
+          return true;
+        case QaAudience.loggedIn:
+          return isLoggedIn;
+        case QaAudience.visitor:
+          return !isLoggedIn;
       }
     }).toList();
 
+    if (visible.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final tScale = MediaQuery.textScaleFactorOf(context);
+
+    // altura do tile adaptada à acessibilidade
+    final double tileHeight = 112.0 + (tScale - 1.0) * 36.0;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 3 colunas padrão, 4 em telas largas
-        final cols = constraints.maxWidth >= 560 ? 4 : 3;
-
-        // cálculo robusto de altura do tile (base + ajuste por acessibilidade)
-        final textScale = MediaQuery.textScaleFactorOf(context);
-        final baseH = 96.0; // altura confortável p/ ícone + 2 linhas
-        final tileH = baseH + (textScale - 1.0) * 28.0; // cresce com fonte maior
-
-        // largura de cada célula (considera espaçamento)
-        const spacing = 12.0;
-        final itemW = (constraints.maxWidth - spacing * (cols - 1)) / cols;
-
-        // usamos ratio = largura/altura para dar a altura desejada
-        final ratio = itemW / tileH;
+        // controla largura máxima por card para a grade "respirar"
+        final double maxExtent =
+        constraints.maxWidth >= 720 ? 190 : constraints.maxWidth >= 560 ? 180 : 168;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,10 +81,9 @@ class QuickActions extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 4, bottom: 8),
                 child: Text(
                   title!,
-                  style: const TextStyle(
-                    fontSize: 14,
+                  style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF344054),
+                    color: const Color(0xFF344054),
                   ),
                 ),
               ),
@@ -91,11 +91,12 @@ class QuickActions extends StatelessWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: visible.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cols,
-                crossAxisSpacing: spacing,
-                mainAxisSpacing: spacing,
-                childAspectRatio: ratio, // <<< evita overflow
+              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: maxExtent,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                // força altura consistente por item (bom para até 3 linhas de label)
+                mainAxisExtent: tileHeight,
               ),
               itemBuilder: (context, i) {
                 final it = visible[i];
@@ -160,16 +161,18 @@ class _QaTile extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(icon, size: 24, color: const Color(0xFF143C8D)),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
+                // até 3 linhas, quebra natural e ellipsis só se faltar espaço
                 Text(
                   label,
                   textAlign: TextAlign.center,
-                  maxLines: 2,
+                  softWrap: true,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12.5,
-                    height: 1.1,
-                    fontWeight: FontWeight.w600,
+                    height: 1.15,
+                    fontWeight: FontWeight.w700,
                     color: Color(0xFF101828),
                   ),
                 ),
@@ -186,14 +189,18 @@ class _QaTile extends StatelessWidget {
       ),
     );
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Opacity(
-          opacity: locked ? 0.6 : 1.0,
-          child: base,
+    return Tooltip(
+      message: label,
+      waitDuration: const Duration(milliseconds: 500),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Opacity(
+            opacity: locked ? 0.6 : 1.0,
+            child: base,
+          ),
         ),
       ),
     );
