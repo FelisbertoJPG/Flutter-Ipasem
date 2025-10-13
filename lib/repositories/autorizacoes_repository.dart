@@ -83,4 +83,34 @@ class AutorizacoesRepository {
       error: body['error'] ?? 'Falha ao gravar autorização',
     );
   }
+  /// NOVO: upload das imagens da requisição do exame (até 2)
+  Future<void> enviarImagensExame({
+    required int numero,
+    required List<String> paths,
+  }) async {
+    if (paths.isEmpty) return;
+
+    final files = <String, List<MultipartFile>>{
+      'images[]': [
+        for (final p in paths.take(2))
+          await MultipartFile.fromFile(p, filename: p.split('/').last),
+      ],
+    };
+
+    final res = await api.uploadAction(
+      'upload_exame_imagens',
+      fields: {'numero': numero},
+      files: files,
+    );
+
+    final body = (res.data as Map).cast<String, dynamic>();
+    if (body['ok'] != true) {
+      throw DioException(
+        requestOptions: res.requestOptions,
+        response: res,
+        type: DioExceptionType.badResponse,
+        error: body['error'] ?? 'Falha no upload das imagens.',
+      );
+    }
+  }
 }
