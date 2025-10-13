@@ -5,6 +5,7 @@ class AutorizacoesRepository {
   final DevApi api;
   AutorizacoesRepository(this.api);
 
+  /// Médico / Odonto
   Future<int> gravar({
     required int idMatricula,
     required int idDependente,
@@ -12,7 +13,6 @@ class AutorizacoesRepository {
     required int idPrestador,
     required String tipoPrestador,
   }) async {
-
     final res = await api.post(
       '/api-dev.php?action=gravar_autorizacao',
       data: {
@@ -23,29 +23,55 @@ class AutorizacoesRepository {
         'tipo_prestador':   tipoPrestador,
       },
     );
+    return _extractNumeroOrThrow(res);
+  }
 
+  /// Exames (usa SP de exames; sem obrigatoriedade de id_especialidade)
+  Future<int> gravarExame({
+    required int idMatricula,
+    required int idDependente,
+    required int idPrestador,
+    required String tipoPrestador,
+    int? idEspecialidade, // opcional
+  }) async {
+    final res = await api.post(
+      // ajuste se sua rota for diferente (ex: '/exames/gravar')
+      '/api-dev.php?action=gravar_exame',
+      data: {
+        'id_matricula':   idMatricula,
+        'id_dependente':  idDependente,
+        'id_prestador':   idPrestador,
+        'tipo_prestador': tipoPrestador,
+        if (idEspecialidade != null) 'id_especialidade': idEspecialidade,
+      },
+    );
+    return _extractNumeroOrThrow(res);
+  }
+
+  // ----------------- Helpers -----------------
+
+  int _extractNumeroOrThrow(Response res) {
     final body = (res.data as Map).cast<String, dynamic>();
     if (body['ok'] == true) {
       final data = (body['data'] as Map?) ?? const {};
       final raw  = data['o_nro_autorizacao'] ?? data['numero'];
       final numAut = raw is int ? raw : int.tryParse('$raw') ?? 0;
-      if (numAut <= 0) {
-        throw DioException(
-          requestOptions: res.requestOptions,
-          response: res,
-          type: DioExceptionType.badResponse,
-          error: 'Resposta inválida do backend.',
-        );
-      }
-      return numAut;
+      if (numAut > 0) return numAut;
+      // se 'ok' veio true mas sem número válido:
+      throw DioException(
+        requestOptions: res.requestOptions,
+        response: res,
+        type: DioExceptionType.badResponse,
+        error: 'Resposta inválida do backend (sem número).',
+      );
     }
 
-    // devolve o erro “cru” do PHP (inclui BUSINESS_RULE)
+    // devolve o erro “cru” do backend (inclui BUSINESS_RULE)
     throw DioException(
       requestOptions: res.requestOptions,
       response: res,
       type: DioExceptionType.badResponse,
-      error: body['error'],
+      error: body['error'] ?? 'Falha ao gravar autorização',
     );
   }
 }

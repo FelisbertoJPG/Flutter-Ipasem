@@ -1,7 +1,9 @@
-// lib/screens/autorizacao_odontologica_screen.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../state/auth_events.dart';
+import '../ui/utils/print_helpers.dart'; // openPreviewFromNumero
 
 import '../theme/colors.dart';
 import '../ui/app_shell.dart';
@@ -11,29 +13,26 @@ import '../ui/components/app_alert.dart';
 
 import '../config/app_config.dart';
 import '../services/dev_api.dart';
+import '../services/session.dart';
+
 import '../repositories/dependents_repository.dart';
+import '../repositories/autorizacoes_repository.dart';
 import '../repositories/especialidades_repository.dart';
 import '../repositories/prestadores_repository.dart';
-import '../repositories/autorizacoes_repository.dart';
-import '../services/session.dart';
+
 import '../models/dependent.dart';
 import '../models/especialidade.dart';
 import '../models/prestador.dart';
 
-// <<< NOVOS IMPORTS
-import '../state/auth_events.dart';
-import '../ui/utils/print_helpers.dart'; // openPreviewFromNumero
-// >>>
-
-class AutorizacaoOdontologicaScreen extends StatefulWidget {
-  const AutorizacaoOdontologicaScreen({super.key});
+class AutorizacaoExamesScreen extends StatefulWidget {
+  const AutorizacaoExamesScreen({super.key});
 
   @override
-  State<AutorizacaoOdontologicaScreen> createState() => _AutorizacaoOdontologicaScreenState();
+  State<AutorizacaoExamesScreen> createState() => _AutorizacaoExamesScreenState();
 }
 
-class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaScreen> {
-  static const String _version = 'AutorizacaoOdontologicaScreen v1.0.3';
+class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
+  static const String _version = 'AutorizacaoExamesScreen v1.1.0';
 
   bool _loading = true;
   String? _error;
@@ -55,8 +54,8 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
   bool _reposReady = false;
   late DevApi _api;
   late DependentsRepository _depsRepo;
-  late EspecialidadesRepository _espRepo;
-  late PrestadoresRepository _prestRepo;
+  late EspecialidadesRepository _espRepo; // EXAMES
+  late PrestadoresRepository _prestRepo;  // EXAMES
   late AutorizacoesRepository _autRepo;
 
   int _toInt(dynamic v) {
@@ -65,12 +64,6 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
     final n = int.tryParse(s);
     if (n == null) throw const FormatException('valor inválido');
     return n;
-  }
-
-  // Heurística simples para filtrar só especialidades odontológicas por nome
-  bool _isOdonto(Especialidade e) {
-    final n = (e.nome ?? '').toUpperCase();
-    return n.contains('ODONTO'); // ODONTOLOGIA, ODONTOLÓGICA etc.
   }
 
   @override
@@ -84,13 +77,14 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
     _api       = DevApi(baseUrl);
     _depsRepo  = DependentsRepository(_api);
     _espRepo   = EspecialidadesRepository(_api);
-    _prestRepo = PrestadoresRepository(_api);
+    _prestRepo = PrestadoresRepository (_api);
     _autRepo   = AutorizacoesRepository(_api);
 
     _reposReady = true;
     if (kDebugMode) debugPrint(_version);
     _bootstrap();
   }
+
 
   Future<void> _bootstrap() async {
     setState(() { _loading = true; _error = null; });
@@ -122,13 +116,9 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
       }
 
       try {
-        final todas = await _espRepo.listar();
-        _especialidades = (todas ?? const [])
-            .where(_isOdonto)
-            .toList()
-          ..sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+        _especialidades = await _espRepo.listar(); // EXAMES
       } catch (e) {
-        if (kDebugMode) print('especialidades erro: $e');
+        if (kDebugMode) print('especialidades (exames) erro: $e');
         _especialidades = const [];
       }
 
@@ -154,7 +144,7 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
       _selPrest = null;
     });
     try {
-      final rows = await _prestRepo.cidadesDisponiveis(_selEsp!.id);
+      final rows = await _prestRepo.cidadesDisponiveis(_selEsp!.id); // EXAMES
       setState(() {
         _cidades = rows;
         _loadingCidades = false;
@@ -175,7 +165,7 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
     });
     try {
       final cidade = (_selCidade == null || _selCidade == 'TODAS AS CIDADES') ? null : _selCidade;
-      final rows = await _prestRepo.porEspecialidade(_selEsp!.id, cidade: cidade);
+      final rows = await _prestRepo.porEspecialidade(_selEsp!.id, cidade: cidade); // EXAMES
       setState(() {
         _prestadores = rows;
         _loadingPrestadores = false;
@@ -197,6 +187,7 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
 
     setState(() => _saving = true);
     try {
+      // A) usando o mesmo endpoint de autorizações “gerais”
       final numero = await _autRepo.gravar(
         idMatricula:     _selBenef!.idMat,
         idDependente:    _selBenef!.idDep,
@@ -205,11 +196,18 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
         tipoPrestador:   _selPrest!.tipoPrestador,
       );
 
-      // >>> emite evento p/ atualizar o histórico na HomeServicos
-      AuthEvents.instance.emitIssued(numero);
-      // <<<
+      // B) se você ativar endpoint dedicado no PHP, troque por:
+      // final numero = await _api.gravarExame(
+      //   idMatricula:   _selBenef!.idMat,
+      //   idDependente:  _selBenef!.idDep,
+      //   idPrestador:   _toInt(_selPrest!.registro),
+      //   tipoPrestador: _selPrest!.tipoPrestador,
+      // );
 
-      // limpa seleção para um novo fluxo
+      // 1) notifica HomeServicos para auto-atualizar
+      AuthEvents.instance.emitIssued(numero);
+
+      // 2) limpa seleção
       setState(() {
         _selEsp = null;
         _selCidade = null;
@@ -220,12 +218,13 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
 
       if (!mounted) return;
 
+      // 3) Dialog com número + “Abrir impressão”
       await AppAlert.showAuthNumber(
         context,
         numero: numero,
-        useRootNavigator: false, // dialog dentro do navigator da aba
-        onOpenPreview: () => openPreviewFromNumero(context, numero), // atalho p/ impressão
-        onOk: _goBackToServicos,
+        useRootNavigator: false,
+        onOpenPreview: () => openPreviewFromNumero(context, numero),
+        onOk: () => _goBackToServicos(numero: numero), // devolve o resultado
       );
     } on FormatException {
       if (!mounted) return;
@@ -265,12 +264,12 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
     }
   }
 
-  // volta para HomeServicos dentro da aba (mantém hotbar)
-  void _goBackToServicos() {
+  // volta para HomeServicos devolvendo resultado (para cenários que usam pop result)
+  void _goBackToServicos({int? numero}) {
     if (!mounted) return;
     final nav = Navigator.of(context);
     if (nav.canPop()) {
-      nav.pop();
+      nav.pop({'issued': true, 'numero': numero});
     }
   }
 
@@ -327,7 +326,7 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Autorização Odontológica',
+      title: 'Autorização de Exames',
       body: RefreshIndicator(
         onRefresh: _bootstrap,
         child: ListView(
@@ -375,7 +374,7 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
                     });
                     if (v!=null) _loadCidades();
                   },
-                  decoration: _inputDeco('Escolha a especialidade (Odonto)'),
+                  decoration: _inputDeco('Escolha a especialidade (Exames)'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -426,7 +425,6 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
                         ),
                       ),
 
-                    // 👉 Card de detalhes do prestador (somente se selecionado)
                     _prestadorCardOrEmpty(),
                   ],
                 ),

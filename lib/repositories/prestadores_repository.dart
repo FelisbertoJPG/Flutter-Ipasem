@@ -5,9 +5,17 @@ class PrestadoresRepository {
   final DevApi api;
   PrestadoresRepository(this.api);
 
-  Future<List<String>> cidadesDisponiveis(int codEspecialidade) =>
-      api.fetchCidadesPorEspecialidade(codEspecialidade);
+  // já existia:
+  Future<List<String>> cidadesDisponiveis(int especialidade) =>
+      api.fetchCidadesPorEspecialidade(especialidade);
 
-  Future<List<PrestadorRow>> porEspecialidade(int codEspecialidade, {String? cidade}) =>
-      api.fetchPrestadoresPorEspecialidade(especialidade: codEspecialidade, cidade: cidade);
+  Future<List<PrestadorRow>> porEspecialidade(int especialidade, {String? cidade}) =>
+      api.fetchPrestadoresPorEspecialidade(especialidade: especialidade, cidade: cidade);
+
+  // NOVOS: variantes para EXAMES
+  Future<List<String>> cidadesDisponiveisExames(int especialidade) =>
+      api.fetchCidadesPorEspecialidadeExames(especialidade);
+
+  Future<List<PrestadorRow>> porEspecialidadeExames(int especialidade, {String? cidade}) =>
+      api.fetchPrestadoresPorEspecialidadeExames(especialidade: especialidade, cidade: cidade);
 }

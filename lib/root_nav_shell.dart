@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ipasemnhdigital/screens/autorizacao_exames_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'screens/home_screen.dart';
@@ -112,7 +113,12 @@ class _RootNavShellState extends State<RootNavShell> {
           builder: (_) => const AutorizacaoOdontologicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-odontologica'),
         );
-      default:
+    case 'autorizacao-exames': // <<< NOVO
+    return MaterialPageRoute(
+    builder: (_) => const AutorizacaoExamesScreen(),
+    settings: const RouteSettings(name: 'autorizacao-exames'),
+    );
+    default:
         return MaterialPageRoute(
           builder: (_) => const HomeServicos(),
           settings: const RouteSettings(name: 'servicos-root'),
