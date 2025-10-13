@@ -95,7 +95,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       try {
         _controller = await HomeServicosController.init(context);
 
-        // 👇 pega o nome do titular para fallback do "paciente"
+        // pega o nome do titular para fallback do "paciente"
         final titularNome = await _controller!.profileName();
 
         final rows = await _controller!.loadHistorico();

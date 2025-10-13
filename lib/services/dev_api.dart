@@ -232,27 +232,7 @@ class DevApi {
 
   // ========== ROTAS “EXAMES” (NOVAS) ==========
   // ---------- EXAMES ----------
-  Future<List<Especialidade>> fetchEspecialidadesExames() async {
-    final r = await _dio().post(
-      _apiPath,
-      queryParameters: {'action': 'especialidades_exames'},
-      // ou 'especialidades' + context
-      data: const {},
-    );
-    final m = (r.data as Map).cast<String, dynamic>();
-    if (m['ok'] == true) {
-      final rows = (m['data']['rows'] as List?) ?? const [];
-      return rows
-          .map((e) => Especialidade.fromMap((e as Map).cast<String, dynamic>()))
-          .toList();
-    }
-    throw DioException(
-      requestOptions: r.requestOptions,
-      response: r,
-      type: DioExceptionType.badResponse,
-      error: m['error'],
-    );
-  }
+
 
   Future<List<String>> fetchCidadesPorEspecialidadeExames(
       int especialidade) async {
@@ -302,4 +282,26 @@ class DevApi {
       error: m['error'],
     );
   }
+  Future<List<Especialidade>> fetchEspecialidadesExames() async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'especialidades_exames'},
+      data: const {},
+    );
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      final rows = (m['data']['rows'] as List?) ?? const [];
+      return rows
+          .map((e) => Especialidade.fromMap((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+
 }
