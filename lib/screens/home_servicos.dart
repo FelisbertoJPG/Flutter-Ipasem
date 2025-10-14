@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../root_nav_shell.dart';
 import '../ui/app_shell.dart';
+import '../ui/components/exames_pendentes_card.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/quick_actions.dart';
 import '../ui/components/services_visitor.dart';
@@ -323,6 +324,8 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             onRequireLogin: null,
           ),
         ),
+        const SizedBox(height: 12),
+        const ExamesPendentesCard(),
         const SizedBox(height: 12),
         SectionCard(
           title: 'Histórico de Autorizações',
