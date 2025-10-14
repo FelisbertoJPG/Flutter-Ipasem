@@ -1,6 +1,8 @@
 // lib/screens/autorizacao_exames_screen.dart
 import 'dart:io';
 
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -213,7 +215,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       try {
         await _autRepo.enviarImagensExame(
           numero: numero,
-          paths: _imagens.map((x) => x.path).toList(),
+          files: _imagens, // <-- passe a lista de XFile direto
         );
       } catch (e) {
         await AppAlert.show(
@@ -223,8 +225,10 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
           type: AppAlertType.error,
           useRootNavigator: false,
         );
-        return; // não limpa estado, usuário pode tentar de novo
+        return;
       }
+
+
 
       // 3) notifica HomeServicos para auto-atualizar
       AuthEvents.instance.emitIssued(numero);
@@ -295,28 +299,31 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     }
   }
 
+
+
   // ====== anexos helpers ======
-  Future<void> _addImages() async {
-    try {
-      final picked = await _picker.pickMultiImage(imageQuality: 85, maxWidth: 2000);
-      if (picked.isEmpty) return;
+Future<void> _addImages() async {
+  try {
+    final picked = await _picker.pickMultiImage(imageQuality: 85, maxWidth: 2000);
+    if (picked.isEmpty) return;
 
-      // junta com o que já tem e corta no máximo 2
-      final merged = [..._imagens, ...picked].take(2).toList();
+    // junta com o que já tem e corta no máximo 2
+    final merged = [..._imagens, ...picked].take(2).toList();
 
-      // validação 10MB por imagem
-      for (final x in merged) {
-        final bytes = await File(x.path).length();
-        if (bytes > 10 * 1024 * 1024) {
-          AppAlert.toast(context, 'Cada imagem deve ter até 10 MB.');
-          return;
-        }
+    // validação 10MB por imagem — use XFile.length() (cross-platform)
+    for (final x in merged) {
+      final bytes = await x.length(); // <-- em vez de File(x.path).length()
+      if (bytes > 10 * 1024 * 1024) {
+        AppAlert.toast(context, 'Cada imagem deve ter até 10 MB.');
+        return;
       }
-
-      setState(() => _imagens = merged);
-    } catch (_) {
-      AppAlert.toast(context, 'Falha ao adicionar imagens.');
     }
+
+    setState(() => _imagens = merged);
+  } catch (e) {
+    if (kDebugMode) print('addImages error: $e');
+    AppAlert.toast(context, 'Falha ao adicionar imagens.');
+  }
   }
 
   void _removeImage(int index) {
@@ -330,7 +337,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     if (_imagens.isEmpty) return const Text('Anexe ao menos 1 imagem da requisição.');
     return LayoutBuilder(
       builder: (context, c) {
-        // calcula colunas conforme a largura disponível
         final w = c.maxWidth;
         int cols;
         if (w >= 520) {
@@ -350,6 +356,24 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
           runSpacing: gap,
           children: List.generate(_imagens.length, (i) {
             final x = _imagens[i];
+
+            Widget img;
+            if (kIsWeb) {
+              // No Web, leia os bytes
+              img = FutureBuilder<Uint8List>(
+                future: x.readAsBytes(),
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                  }
+                  return Image.memory(snap.data!, fit: BoxFit.cover);
+                },
+              );
+            } else {
+              // Em mobile/desktop, pode usar Image.file normalmente
+              img = Image.file(File(x.path), fit: BoxFit.cover);
+            }
+
             return SizedBox(
               width: thumb,
               height: thumb,
@@ -359,10 +383,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(x.path),
-                        fit: BoxFit.cover,
-                      ),
+                      child: img,
                     ),
                   ),
                   Positioned(
@@ -382,6 +403,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       },
     );
   }
+
 
   Widget _prestadorCardOrEmpty() {
     final p = _selPrest;
