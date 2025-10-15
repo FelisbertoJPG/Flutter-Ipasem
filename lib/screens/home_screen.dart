@@ -229,6 +229,17 @@ class _HomeScreenState extends State<HomeScreen>
                             MaterialPageRoute(builder: (_) => const LoginScreen()),
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        // ===== Comunicados
+                        ComunicadosCard(
+                          isLoading: s.loading,
+                          items: s.comunicados,
+                          take: 3,
+                          skeletonHeight: 100,
+                          onTapItem: (c) {
+                            // abrir detalhe/navegar...
+                          },
+                        ),
                         const SizedBox(height: 16),
 
                         // ===== Ações rápidas (controladas por rotina)
@@ -258,17 +269,6 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 12),
 
-                        // ===== Comunicados
-                        ComunicadosCard(
- // se seu SectionCard já define, pode omitir
-                          isLoading: s.loading,
-                          items: s.comunicados,
-                          take: 3,
-                          skeletonHeight: 100,
-                          onTapItem: (c) {
-                            // abrir detalhe/navegar...
-                          },
-                        ),
                       ],
                     ),
                   ),
