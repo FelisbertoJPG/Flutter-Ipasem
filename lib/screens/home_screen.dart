@@ -260,11 +260,14 @@ class _HomeScreenState extends State<HomeScreen>
 
                         // ===== Comunicados
                         ComunicadosCard(
+ // se seu SectionCard já define, pode omitir
                           isLoading: s.loading,
                           items: s.comunicados,
                           take: 3,
                           skeletonHeight: 100,
-                          // onTapItem: (c) { ... abrir detalhe se quiser ... },
+                          onTapItem: (c) {
+                            // abrir detalhe/navegar...
+                          },
                         ),
                       ],
                     ),
