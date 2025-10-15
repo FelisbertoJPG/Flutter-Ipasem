@@ -194,10 +194,10 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
         tipoPrestador:   _selPrest!.tipoPrestador,
       );
 
-      // 1) emite evento para HomeServicos auto-atualizar
+      // evento para HomeServicos
       AuthEvents.instance.emitIssued(numero);
 
-      // 2) limpa seleção para um novo fluxo
+      // limpa seleção
       setState(() {
         _selEsp = null;
         _selCidade = null;
@@ -208,13 +208,12 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
 
       if (!mounted) return;
 
-      // 3) Card com número + atalho "Abrir impressão"
       await AppAlert.showAuthNumber(
         context,
         numero: numero,
         useRootNavigator: false,
-        onOpenPreview: () => openPreviewFromNumero(context, numero), // helper centralizado
-        onOk: () => _goBackToServicos(numero: numero),               // pop devolvendo resultado
+        onOpenPreview: () => openPreviewFromNumero(context, numero),
+        onOk: () => _goBackToServicos(numero: numero),
       );
     } on FormatException {
       if (!mounted) return;
@@ -254,13 +253,52 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     }
   }
 
-  // volta para HomeServicos dentro da aba devolvendo resultado para forçar refresh
   void _goBackToServicos({int? numero}) {
     if (!mounted) return;
     final nav = Navigator.of(context);
     if (nav.canPop()) {
       nav.pop({'issued': true, 'numero': numero});
     }
+  }
+
+  // === Helpers para itens com divisor (menu) e exibição limpa (campo) ===
+  static const _kMenuDivider = BorderSide(color: Color(0xFFE6E9EF), width: 0.8);
+
+  List<DropdownMenuItem<T>> _buildMenuItems<T>({
+    required List<T> data,
+    required String Function(T) labelOf,
+  }) {
+    final out = <DropdownMenuItem<T>>[];
+    for (var i = 0; i < data.length; i++) {
+      final e = data[i];
+      final isLast = i == data.length - 1;
+      out.add(
+        DropdownMenuItem<T>(
+          value: e,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              border: isLast ? null : const Border(bottom: _kMenuDivider),
+            ),
+            child: Text(labelOf(e), maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  List<Widget> _buildSelecteds<T>({
+    required List<T> data,
+    required String Function(T) labelOf,
+  }) {
+    // usado no campo fechado (sem “linha”)
+    return data
+        .map((e) => Align(
+      alignment: Alignment.centerLeft,
+      child: Text(labelOf(e), maxLines: 1, overflow: TextOverflow.ellipsis),
+    ))
+        .toList();
   }
 
   // ===== Card do prestador (aparece só quando há seleção) =====
@@ -333,27 +371,40 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
               ),
 
             if (!_loading && _error == null) ...[
+              // ===== Paciente
               SectionCard(
                 title: 'Paciente',
                 child: DropdownButtonFormField<_Beneficiario>(
                   isExpanded: true,
                   value: _selBenef,
-                  items: _beneficiarios.map((b){
-                    final isTit = b.idDep==0;
-                    return DropdownMenuItem(value: b, child: Text(isTit ? '${b.nome} (Titular)' : b.nome));
-                  }).toList(),
+                  items: _buildMenuItems<_Beneficiario>(
+                    data: _beneficiarios,
+                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                  ),
+                  selectedItemBuilder: (_) => _buildSelecteds<_Beneficiario>(
+                    data: _beneficiarios,
+                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                  ),
                   onChanged: (v)=>setState(()=>_selBenef=v),
                   decoration: _inputDeco('Selecione o Paciente'),
                 ),
               ),
               const SizedBox(height: 12),
 
+              // ===== Especialidade
               SectionCard(
                 title: 'Especialidade',
                 child: DropdownButtonFormField<Especialidade>(
                   isExpanded: true,
                   value: _selEsp,
-                  items: _especialidades.map((e)=>DropdownMenuItem(value: e, child: Text(e.nome))).toList(),
+                  items: _buildMenuItems<Especialidade>(
+                    data: _especialidades,
+                    labelOf: (e) => e.nome,
+                  ),
+                  selectedItemBuilder: (_) => _buildSelecteds<Especialidade>(
+                    data: _especialidades,
+                    labelOf: (e) => e.nome,
+                  ),
                   onChanged: (v){
                     setState(() {
                       _selEsp = v;
@@ -369,6 +420,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
               ),
               const SizedBox(height: 12),
 
+              // ===== Cidade
               SectionCard(
                 title: 'Cidade',
                 child: Column(
@@ -378,7 +430,14 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         value: _selCidade,
-                        items: _cidades.map((c)=>DropdownMenuItem(value: c, child: Text(c))).toList(),
+                        items: _buildMenuItems<String>(
+                          data: _cidades,
+                          labelOf: (c) => c,
+                        ),
+                        selectedItemBuilder: (_) => _buildSelecteds<String>(
+                          data: _cidades,
+                          labelOf: (c) => c,
+                        ),
                         onChanged: (_selEsp==null)?null:(v){
                           setState(() { _selCidade = v; _prestadores = const []; _selPrest = null; });
                           if (v!=null) _loadPrestadores();
@@ -394,6 +453,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
               ),
               const SizedBox(height: 12),
 
+              // ===== Prestador
               SectionCard(
                 title: 'Prestador',
                 child: Column(
@@ -403,10 +463,14 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                       DropdownButtonFormField<PrestadorRow>(
                         isExpanded: true,
                         value: _selPrest,
-                        items: _prestadores.map((p)=>DropdownMenuItem(
-                          value: p,
-                          child: Text(p.nome),
-                        )).toList(),
+                        items: _buildMenuItems<PrestadorRow>(
+                          data: _prestadores,
+                          labelOf: (p) => p.nome,
+                        ),
+                        selectedItemBuilder: (_) => _buildSelecteds<PrestadorRow>(
+                          data: _prestadores,
+                          labelOf: (p) => p.nome,
+                        ),
                         onChanged: (_selCidade==null)?null:(v)=>setState(()=>_selPrest=v),
                         decoration: _inputDeco(
                           _selCidade==null
@@ -414,8 +478,6 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                               : (_prestadores.isEmpty ? 'Sem prestadores para o filtro' : 'Escolha o prestador'),
                         ),
                       ),
-
-                    // 👉 Card de detalhes do prestador (somente se selecionado)
                     _prestadorCardOrEmpty(),
                   ],
                 ),

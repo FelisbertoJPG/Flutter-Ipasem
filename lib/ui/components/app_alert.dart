@@ -70,18 +70,27 @@ class AppAlert {
     );
   }
 
-  /// Mostra o número da autorização e (opcionalmente) um botão para ir direto
-  /// à tela de impressão/preview (PdfPreviewScreen), via [onOpenPreview].
+  /// Mostra o número da autorização. Quando [pendente] for true (caso Exames),
+  /// esconde o botão "Abrir impressão" e exibe um aviso de análise.
   static Future<void> showAuthNumber(
       BuildContext context, {
         required int numero,
         String title = 'Autorização emitida',
         VoidCallback? onOk,
-        VoidCallback? onOpenPreview, // <<< NOVO: navega para a tela de impressão
+        VoidCallback? onOpenPreview, // navega para a tela de impressão
         bool barrierDismissible = false,
-        bool useRootNavigator = false, // <<< importante p/ nested nav
+        bool useRootNavigator = false, // importante p/ nested nav
+
+        // --- NOVOS ---
+        bool pendente = false,
+        String? pendenteMsg,
       }) {
-    final color = _color(context, AppAlertType.success);
+    final bool isPendente = pendente;
+    final Color color =
+    _color(context, isPendente ? AppAlertType.warning : AppAlertType.success);
+    final IconData leadingIcon =
+    isPendente ? Icons.hourglass_bottom_outlined : Icons.check_circle_outline;
+    final String effectiveTitle = isPendente ? 'Autorização enviada' : title;
 
     return showDialog<void>(
       context: context,
@@ -91,9 +100,9 @@ class AppAlert {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.check_circle_outline, size: 24, color: color),
+            Icon(leadingIcon, size: 24, color: color),
             const SizedBox(width: 8),
-            Flexible(child: Text(title)),
+            Flexible(child: Text(effectiveTitle)),
           ],
         ),
         content: Column(
@@ -106,10 +115,21 @@ class AppAlert {
               '$numero',
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
             ),
+            if (isPendente) ...[
+              const SizedBox(height: 12),
+              Text(
+                pendenteMsg ??
+                    'Autorização enviada para análise.\nPrevisão de até 48h.',
+                style: const TextStyle(
+                  color: Color(0xFF667085),
+                  height: 1.25,
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
-          if (onOpenPreview != null)
+          if (!isPendente && onOpenPreview != null)
             TextButton.icon(
               icon: const Icon(Icons.print_outlined),
               label: const Text('Abrir impressão'),
@@ -131,6 +151,7 @@ class AppAlert {
   }
 
   static void toast(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
