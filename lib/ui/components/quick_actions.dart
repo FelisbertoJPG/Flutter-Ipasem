@@ -1,21 +1,15 @@
 // lib/ui/components/quick_actions.dart
 import 'package:flutter/material.dart';
+import './section_card.dart';
 
-/// Público-alvo do item de ação.
 enum QaAudience { all, loggedIn, visitor }
 
-/// Modelo de item de ação rápida.
 class QuickActionItem {
   final String id;
   final String label;
   final IconData icon;
   final VoidCallback onTap;
-
-  /// Quem deve ver este item (all/loggedIn/visitor).
   final QaAudience audience;
-
-  /// Se true, o item aparece para todos, mas exige login no toque quando
-  /// o usuário for visitante (mostra cadeado e chama onRequireLogin).
   final bool requiresLogin;
 
   const QuickActionItem({
@@ -28,10 +22,6 @@ class QuickActionItem {
   });
 }
 
-/// Grid de ações rápidas.
-/// - Filtra por [audience].
-/// - Mostra cadeado e bloqueia o toque de itens `requiresLogin` quando visitante.
-/// - Chama [onRequireLogin] quando um item bloqueado for tocado.
 class QuickActions extends StatelessWidget {
   const QuickActions({
     super.key,
@@ -39,12 +29,17 @@ class QuickActions extends StatelessWidget {
     required this.isLoggedIn,
     this.onRequireLogin,
     this.title,
+    this.outerPadding, // ⬅ opcional pra controlar a margem externa
   });
 
   final List<QuickActionItem> items;
   final bool isLoggedIn;
   final VoidCallback? onRequireLogin;
   final String? title;
+
+  /// Margem EXTERNA do card (entre o card e as bordas da tela/seção).
+  /// Se não for informada, usa breakpoints responsivos.
+  final EdgeInsetsGeometry? outerPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -58,75 +53,82 @@ class QuickActions extends StatelessWidget {
           return !isLoggedIn;
       }
     }).toList();
-
     if (visible.isEmpty) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
-    final tScale = MediaQuery.textScaleFactorOf(context);
+    final w = MediaQuery.of(context).size.width;
 
-    // altura do tile adaptada à acessibilidade
+    // margem EXTERNA do card (até a borda da tela)
+    final double hPadDefault =
+    w >= 1024 ? 32 :
+    w >=  840 ? 24 :
+    w >=  600 ? 20 : 0; //  “engordar” um pouco
+
+    // padding INTERNO do card (respiro do conteúdo, estilo WelcomeCard)
+    final double inPad = w < 360 ? 12 : 16;
+
+    // largura máxima por tile (Grid usa esse maxCrossAxisExtent)
+    final double maxExtent =
+    w >= 1024 ? 220 :
+    w >=  840 ? 200 :
+    w >=  600 ? 180 : 168;
+
+    // altura do tile sensível ao textScale (acessibilidade)
+    final tScale = MediaQuery.textScaleFactorOf(context);
     final double tileHeight = 112.0 + (tScale - 1.0) * 36.0;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // controla largura máxima por card para a grade "respirar"
-        final double maxExtent =
-        constraints.maxWidth >= 720 ? 190 : constraints.maxWidth >= 560 ? 180 : 168;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (title != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 8),
-                child: Text(
-                  title!,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF344054),
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          // afasta o card das laterais da tela
+          padding: outerPadding ?? EdgeInsets.symmetric(horizontal: hPadDefault),
+          child: SectionCard(
+            title: title,
+            // padding interno no conteúdo do card
+            child: Padding(
+              padding: EdgeInsets.all(inPad),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: visible.length,
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: maxExtent,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  mainAxisExtent: tileHeight,
                 ),
-              ),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: visible.length,
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: maxExtent,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                // força altura consistente por item (bom para até 3 linhas de label)
-                mainAxisExtent: tileHeight,
-              ),
-              itemBuilder: (context, i) {
-                final it = visible[i];
-                final locked = it.requiresLogin && !isLoggedIn;
+                itemBuilder: (context, i) {
+                  final it = visible[i];
+                  final locked = it.requiresLogin && !isLoggedIn;
 
-                void handleTap() {
-                  if (locked) {
-                    if (onRequireLogin != null) {
-                      onRequireLogin!();
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Faça login para usar esta função.')),
-                      );
+                  void handleTap() {
+                    if (locked) {
+                      onRequireLogin?.call();
+                      if (onRequireLogin == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Faça login para usar esta função.'),
+                          ),
+                        );
+                      }
+                      return;
                     }
-                    return;
+                    it.onTap();
                   }
-                  it.onTap();
-                }
 
-                return _QaTile(
-                  label: it.label,
-                  icon: it.icon,
-                  locked: locked,
-                  onTap: handleTap,
-                );
-              },
+                  return _QaTile(
+                    label: it.label,
+                    icon: it.icon,
+                    locked: locked,
+                    onTap: handleTap,
+                  );
+                },
+              ),
             ),
-          ],
-        );
-      },
+          ),
+        ),
+        const SizedBox(height: 12), // respiro até o próximo bloco
+      ],
     );
   }
 }
@@ -162,7 +164,6 @@ class _QaTile extends StatelessWidget {
               children: [
                 Icon(icon, size: 24, color: const Color(0xFF143C8D)),
                 const SizedBox(height: 8),
-                // até 3 linhas, quebra natural e ellipsis só se faltar espaço
                 Text(
                   label,
                   textAlign: TextAlign.center,
@@ -189,19 +190,12 @@ class _QaTile extends StatelessWidget {
       ),
     );
 
-    return Tooltip(
-      message: label,
-      waitDuration: const Duration(milliseconds: 500),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Opacity(
-            opacity: locked ? 0.6 : 1.0,
-            child: base,
-          ),
-        ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Opacity(opacity: locked ? 0.6 : 1.0, child: base),
       ),
     );
   }
