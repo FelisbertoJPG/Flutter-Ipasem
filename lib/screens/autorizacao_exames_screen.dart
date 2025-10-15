@@ -1,6 +1,5 @@
 // lib/screens/autorizacao_exames_screen.dart
 import 'dart:io';
-
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -215,7 +214,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       try {
         await _autRepo.enviarImagensExame(
           numero: numero,
-          files: _imagens, // <-- passe a lista de XFile direto
+          files: _imagens,
         );
       } catch (e) {
         await AppAlert.show(
@@ -228,12 +227,10 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
         return;
       }
 
-
-
-      // 3) notifica HomeServicos para auto-atualizar
+      // 3) notifica HomeServicos
       AuthEvents.instance.emitIssued(numero);
 
-      // 4) limpa seleção somente após upload OK
+      // 4) limpa seleção
       setState(() {
         _selEsp = null;
         _selCidade = null;
@@ -245,7 +242,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
 
       if (!mounted) return;
 
-      // 5) Dialog com número + “Abrir impressão”
+      // 5) Dialog com número + impressão
       await AppAlert.showAuthNumber(
         context,
         numero: numero,
@@ -299,38 +296,74 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     }
   }
 
+  // ===== Helpers para Dropdown com divisória no MENU =====
+  static const _kMenuDivider = BorderSide(color: Color(0xFFE6E9EF), width: 0.8);
 
+  List<DropdownMenuItem<T>> _buildMenuItems<T>({
+    required List<T> data,
+    required String Function(T) labelOf,
+  }) {
+    final out = <DropdownMenuItem<T>>[];
+    for (var i = 0; i < data.length; i++) {
+      final e = data[i];
+      final isLast = i == data.length - 1;
+      out.add(
+        DropdownMenuItem<T>(
+          value: e,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              border: isLast ? null : const Border(bottom: _kMenuDivider),
+            ),
+            child: Text(labelOf(e), maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  List<Widget> _buildSelecteds<T>({
+    required List<T> data,
+    required String Function(T) labelOf,
+  }) {
+    // usado no campo fechado
+    return data
+        .map((e) => Align(
+      alignment: Alignment.centerLeft,
+      child: Text(labelOf(e), maxLines: 1, overflow: TextOverflow.ellipsis),
+    ))
+        .toList();
+  }
 
   // ====== anexos helpers ======
-Future<void> _addImages() async {
-  try {
-    final picked = await _picker.pickMultiImage(imageQuality: 85, maxWidth: 2000);
-    if (picked.isEmpty) return;
+  Future<void> _addImages() async {
+    try {
+      final picked = await _picker.pickMultiImage(imageQuality: 85, maxWidth: 2000);
+      if (picked.isEmpty) return;
 
-    // junta com o que já tem e corta no máximo 2
-    final merged = [..._imagens, ...picked].take(2).toList();
+      // junta com o que já tem e corta no máximo 2
+      final merged = [..._imagens, ...picked].take(2).toList();
 
-    // validação 10MB por imagem — use XFile.length() (cross-platform)
-    for (final x in merged) {
-      final bytes = await x.length(); // <-- em vez de File(x.path).length()
-      if (bytes > 10 * 1024 * 1024) {
-        AppAlert.toast(context, 'Cada imagem deve ter até 10 MB.');
-        return;
+      // valida 10MB por imagem
+      for (final x in merged) {
+        final bytes = await x.length();
+        if (bytes > 10 * 1024 * 1024) {
+          AppAlert.toast(context, 'Cada imagem deve ter até 10 MB.');
+          return;
+        }
       }
-    }
 
-    setState(() => _imagens = merged);
-  } catch (e) {
-    if (kDebugMode) print('addImages error: $e');
-    AppAlert.toast(context, 'Falha ao adicionar imagens.');
-  }
+      setState(() => _imagens = merged);
+    } catch (e) {
+      if (kDebugMode) print('addImages error: $e');
+      AppAlert.toast(context, 'Falha ao adicionar imagens.');
+    }
   }
 
   void _removeImage(int index) {
     setState(() => _imagens = [..._imagens]..removeAt(index));
   }
-
-  // ====== UI ======
 
   // grid de miniaturas responsivo
   Widget _thumbGrid() {
@@ -359,7 +392,6 @@ Future<void> _addImages() async {
 
             Widget img;
             if (kIsWeb) {
-              // No Web, leia os bytes
               img = FutureBuilder<Uint8List>(
                 future: x.readAsBytes(),
                 builder: (context, snap) {
@@ -370,7 +402,6 @@ Future<void> _addImages() async {
                 },
               );
             } else {
-              // Em mobile/desktop, pode usar Image.file normalmente
               img = Image.file(File(x.path), fit: BoxFit.cover);
             }
 
@@ -403,7 +434,6 @@ Future<void> _addImages() async {
       },
     );
   }
-
 
   Widget _prestadorCardOrEmpty() {
     final p = _selPrest;
@@ -497,7 +527,6 @@ Future<void> _addImages() async {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Wrap evita overflow em telas estreitas
                     Wrap(
                       spacing: 12,
                       runSpacing: 8,
@@ -526,10 +555,14 @@ Future<void> _addImages() async {
                 child: DropdownButtonFormField<_Beneficiario>(
                   isExpanded: true,
                   value: _selBenef,
-                  items: _beneficiarios.map((b){
-                    final isTit = b.idDep==0;
-                    return DropdownMenuItem(value: b, child: Text(isTit ? '${b.nome} (Titular)' : b.nome));
-                  }).toList(),
+                  items: _buildMenuItems<_Beneficiario>(
+                    data: _beneficiarios,
+                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                  ),
+                  selectedItemBuilder: (_) => _buildSelecteds<_Beneficiario>(
+                    data: _beneficiarios,
+                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                  ),
                   onChanged: (v)=>setState(()=>_selBenef=v),
                   decoration: _inputDeco('Selecione o Paciente'),
                 ),
@@ -542,7 +575,14 @@ Future<void> _addImages() async {
                 child: DropdownButtonFormField<Especialidade>(
                   isExpanded: true,
                   value: _selEsp,
-                  items: _especialidades.map((e)=>DropdownMenuItem(value: e, child: Text(e.nome))).toList(),
+                  items: _buildMenuItems<Especialidade>(
+                    data: _especialidades,
+                    labelOf: (e) => e.nome,
+                  ),
+                  selectedItemBuilder: (_) => _buildSelecteds<Especialidade>(
+                    data: _especialidades,
+                    labelOf: (e) => e.nome,
+                  ),
                   onChanged: (v){
                     setState(() {
                       _selEsp = v;
@@ -568,7 +608,14 @@ Future<void> _addImages() async {
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         value: _selCidade,
-                        items: _cidades.map((c)=>DropdownMenuItem(value: c, child: Text(c))).toList(),
+                        items: _buildMenuItems<String>(
+                          data: _cidades,
+                          labelOf: (c) => c,
+                        ),
+                        selectedItemBuilder: (_) => _buildSelecteds<String>(
+                          data: _cidades,
+                          labelOf: (c) => c,
+                        ),
                         onChanged: (_selEsp==null)?null:(v){
                           setState(() { _selCidade = v; _prestadores = const []; _selPrest = null; });
                           if (v!=null) _loadPrestadores();
@@ -594,10 +641,14 @@ Future<void> _addImages() async {
                       DropdownButtonFormField<PrestadorRow>(
                         isExpanded: true,
                         value: _selPrest,
-                        items: _prestadores.map((p)=>DropdownMenuItem(
-                          value: p,
-                          child: Text(p.nome),
-                        )).toList(),
+                        items: _buildMenuItems<PrestadorRow>(
+                          data: _prestadores,
+                          labelOf: (p) => p.nome,
+                        ),
+                        selectedItemBuilder: (_) => _buildSelecteds<PrestadorRow>(
+                          data: _prestadores,
+                          labelOf: (p) => p.nome,
+                        ),
                         onChanged: (_selCidade==null)?null:(v)=>setState(()=>_selPrest=v),
                         decoration: _inputDeco(
                           _selCidade==null
