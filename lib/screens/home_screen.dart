@@ -20,6 +20,9 @@ import '../ui/components/minha_situacao_card.dart'; // card "Minha Situação"
 import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
+import '../ui/components/requerimentos_card.dart';
+import '../ui/components/comunicados_card.dart';
+
 
 import '../flows/visitor_consent.dart';
 
@@ -244,59 +247,24 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 12),
 
-                        // ===== Requerimentos em andamento (stub mantido)
-                        SectionList<RequerimentoResumo>(
-                          title: 'Requerimentos em andamento',
+                        // ===== Requerimentos em andamento
+                        RequerimentosEmAndamentoCard(
                           isLoading: s.loading,
                           items: s.reqs,
                           take: 3,
                           skeletonHeight: 100,
-                          itemBuilder: (e) => ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.description_outlined),
-                            title: Text(
-                              e.titulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              'Status: ${e.status} • Atualizado: ${fmtData(e.atualizadoEm)}',
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                          ),
-                          emptyIcon: Icons.assignment_outlined,
-                          emptyTitle: 'Nenhum requerimento em andamento',
-                          emptySubtitle:
-                          'Quando houverem movimentações, elas aparecerão aqui.',
+                          // onTapItem: (req) { ... abrir detalhe se quiser ... },
                         ),
 
                         const SizedBox(height: 12),
 
-                        // ===== Comunicados (via repo/controller.state)
-                        SectionList<ComunicadoResumo>(
-                          title: 'Comunicados',
+                        // ===== Comunicados
+                        ComunicadosCard(
                           isLoading: s.loading,
                           items: s.comunicados,
                           take: 3,
                           skeletonHeight: 100,
-                          itemBuilder: (c) => ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.campaign_outlined),
-                            title: Text(
-                              c.titulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              '${fmtData(c.data)} • ${c.descricao}',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          emptyIcon: Icons.campaign_outlined,
-                          emptyTitle: 'Sem comunicados Publicados',
-                          emptySubtitle:
-                          'Novos avisos oficiais aparecerão aqui.',
+                          // onTapItem: (c) { ... abrir detalhe se quiser ... },
                         ),
                       ],
                     ),
