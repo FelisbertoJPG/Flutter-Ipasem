@@ -1,3 +1,4 @@
+// lib/pdf/pdf_mappers.dart
 import '../models/reimpressao.dart';
 import '../models/proc_item.dart';
 import 'autorizacao_pdf_data.dart';
@@ -6,6 +7,7 @@ AutorizacaoPdfData mapDetalheToPdfData({
   required ReimpressaoDetalhe det,
   required String nomeTitular,
   required int idMatricula,
+  required AutorizacaoTipo tipo,        // << NOVO: obriga informar o tipo
   String? percentual,
   List<ProcItem> procedimentos = const [],
 }) {
@@ -41,25 +43,26 @@ AutorizacaoPdfData mapDetalheToPdfData({
   }
 
   return AutorizacaoPdfData(
+    tipo: tipo,                           // << repassa o tipo
     numero: det.numero,
     nomePrestador: det.nomePrestadorExec,
-    codPrestador: (det.codConselhoExec ?? ''),
+    codPrestador: det.codConselhoExec,
     especialidade: det.nomeEspecialidade,
     endereco: det.enderecoComl,
     bairro: det.bairroComl,
     cidade: det.cidadeComl,
     telefone: det.telefoneComl,
-    codigoVinculo: (det.codVinculo ?? ''),
-    nomeVinculo: (det.nomeVinculo ?? ''),
+    codigoVinculo: det.codVinculo,
+    nomeVinculo: det.nomeVinculo,
     idMatricula: idMatricula,
     nomeTitular: nomeTitular,
-    idDependente: det.idDependente ?? 0,
+    idDependente: det.idDependente,
     nomePaciente: det.nomePaciente,
-    idadePaciente: det.idadePaciente ?? '',
+    idadePaciente: det.idadePaciente,
     dataEmissao: det.dataEmissao,
-    codigoEspecialidade: det.codEspecialidade ?? 0,
+    codigoEspecialidade: det.codEspecialidade,
     observacoes: det.observacoes,
-    primeiraImpressao: false,
+    primeiraImpressao: false,             // reimpressão → sempre false
     percentual: percentual,
     procedimentos: procs,
   );

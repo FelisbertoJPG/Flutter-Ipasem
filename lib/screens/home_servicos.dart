@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../ui/components/exames_liberados_card.dart';
 
 import '../root_nav_shell.dart';
 import '../ui/app_shell.dart';
@@ -324,6 +325,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             onRequireLogin: null,
           ),
         ),
+        const ExamesLiberadosCard(),
         const SizedBox(height: 12),
         const ExamesPendentesCard(),
         const SizedBox(height: 12),
