@@ -1,4 +1,4 @@
-// lib/ui/cards/exames_liberados_card.dart
+// lib/ui/components/exames_liberados_card.dart
 import 'package:flutter/material.dart';
 
 import '../../config/app_config.dart';
@@ -11,7 +11,7 @@ import '../components/section_card.dart';
 import '../components/loading_placeholder.dart';
 import '../sheets/exame_detalhe_sheet.dart';
 
-// util que abre o preview/print do PDF no app
+// abre o preview/print do PDF no app
 import '../utils/print_helpers.dart';
 
 class ExamesLiberadosCard extends StatefulWidget {
@@ -65,7 +65,9 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
 
   Future<void> _openPdfNoApp(int numero) async {
     if (!mounted) return;
-    await openPreviewFromNumero(context, numero);
+    //await openPreviewFromNumero(context, numero);
+    await openPreviewFromNumeroExame(context, numero, useRootNavigator: true);
+
   }
 
   void _abrirDetalhe(ExameResumo a) async {
@@ -85,7 +87,7 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         numero: a.numero,
         resumo: a,
         onPdfNoApp: _openPdfNoApp,
-        // vindo de “liberadas” → força o botão habilitado
+        // vindo da lista de "liberadas": força o botão habilitado
         forcePodeImprimir: true,
       ),
     ).then((_) => _load());
@@ -201,7 +203,7 @@ class _LiberadasModalState extends State<_LiberadasModal> {
         numero: a.numero,
         resumo: a,
         onPdfNoApp: widget.onPdfNoApp,
-        // vindo de “liberadas” → força o botão habilitado
+        // vindo da lista de "liberadas": força o botão habilitado
         forcePodeImprimir: true,
       ),
     );
