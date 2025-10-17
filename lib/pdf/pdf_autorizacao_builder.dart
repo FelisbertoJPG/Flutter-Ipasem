@@ -1,4 +1,3 @@
-// lib/pdf/pdf_autorizacao.dart
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
@@ -11,7 +10,7 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
   final doc = pw.Document();
   final nowStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(DateTime.now());
 
-  // Carrega o logo do app como asset (fallback para um box com “LOGO” se não achar)
+  // Logo
   pw.ImageProvider? _logo;
   try {
     final data = await rootBundle.load('assets/images/icons/logo_ipasem.png');
@@ -30,19 +29,7 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
     color: PdfColors.grey600,
   );
 
-  String aviso() {
-    final c = d.codigoEspecialidade;
-    if (c == 100 || c == 140 || c == 570 || c == 700) {
-      return '* AUTORIZAÇÃO VÁLIDA SOMENTE NO MÊS DE EMISSÃO!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
-    } else if (c == 120) {
-      return '* AUTORIZAÇÃO VÁLIDA POR 2 MESES PARA UMA CONSULTA!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
-    } else if (c == 800 || c == 810 || c == 820) {
-      return '* REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
-    }
-    return '* AUTORIZAÇÃO VÁLIDA POR 3 MESES PARA UMA CONSULTA!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
-  }
-
-  // Badge de origem (sem preenchimento, só borda)
+  // Badge de origem
   pw.Widget etiquetaOrigem() => pw.Container(
     padding: const pw.EdgeInsets.symmetric(vertical: 2, horizontal: 6),
     decoration: pw.BoxDecoration(
@@ -55,29 +42,58 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
     ),
   );
 
-  pw.Widget header() => pw.Row(
-    crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: [
-      pw.Expanded(flex: 1, child: pw.Text('*** IPASEM N.H.***', style: _small)),
-      pw.SizedBox(width: 8),
-      pw.Expanded(
-        flex: 3,
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              'AUTORIZAÇÃO DE SERVIÇOS COMPLEMENTARES Nº: ${d.numero}',
-              style: _bold,
-            ),
-            pw.SizedBox(height: 4),
-            pw.Text('Emissão: ${d.dataEmissao}  |  Impressão: $nowStr', style: _small),
-            pw.SizedBox(height: 4),
-            pw.Align(alignment: pw.Alignment.centerRight, child: etiquetaOrigem()),
-          ],
+  // Cabeçalho com título dinâmico
+  pw.Widget header() {
+    final titulo = () {
+      switch (d.tipo) {
+        case AutorizacaoTipo.exames:
+          return 'AUTORIZAÇÃO DE EXAMES Nº: ${d.numero}';
+        case AutorizacaoTipo.complementares:
+          return 'AUTORIZAÇÃO DE SERVIÇOS COMPLEMENTARES Nº: ${d.numero}';
+        case AutorizacaoTipo.odontologica:
+          return 'AUTORIZAÇÃO ODONTOLÓGICA Nº: ${d.numero}';
+        default:
+          return 'AUTORIZAÇÃO Nº: ${d.numero}';
+      }
+    }();
+
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(flex: 1, child: pw.Text('*** IPASEM N.H.***', style: _small)),
+        pw.SizedBox(width: 8),
+        pw.Expanded(
+          flex: 3,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(titulo, style: _bold),
+              pw.SizedBox(height: 4),
+              pw.Text('Emissão: ${d.dataEmissao}  |  Impressão: $nowStr', style: _small),
+              pw.SizedBox(height: 4),
+              pw.Align(alignment: pw.Alignment.centerRight, child: etiquetaOrigem()),
+            ],
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
+
+  // Aviso dinâmico (exames tem regra própria)
+  String aviso() {
+    if (d.tipo == AutorizacaoTipo.exames) {
+      return '* VALIDADE DE 30 DIAS A PARTIR DA DATA DE EMISSÃO!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
+    }
+    final c = d.codigoEspecialidade;
+    if (c == 100 || c == 140 || c == 570 || c == 700) {
+      return '* AUTORIZAÇÃO VÁLIDA SOMENTE NO MÊS DE EMISSÃO!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
+    } else if (c == 120) {
+      return '* AUTORIZAÇÃO VÁLIDA POR 2 MESES PARA UMA CONSULTA!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
+    } else if (c == 800 || c == 810 || c == 820) {
+      return '* REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
+    }
+    return '* AUTORIZAÇÃO VÁLIDA POR 3 MESES PARA UMA CONSULTA!   * REALIZAR O EXAME SOMENTE COM A REQUISIÇÃO MÉDICA ORIGINAL.';
+  }
 
   pw.Widget prestador() => pw.Row(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -164,7 +180,7 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
     ],
   );
 
-  // Procedimentos: sem fundo cinza e sem “1” padrão
+  // Procedimentos
   pw.Widget procedimentos() => pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.stretch,
     children: [
@@ -175,7 +191,6 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
       ),
       pw.SizedBox(height: 6),
       pw.Container(
-        // Removido o 'color: PdfColors.grey300' para economizar toner
         padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
         child: pw.Row(children: [
           pw.Expanded(
@@ -189,7 +204,6 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
               style: _small,
             ),
           ),
-          // Quantidade: só exibe se houver exatamente 1 procedimento e quantidade > 0
           pw.Expanded(
             flex: 10,
             child: pw.Center(
@@ -203,7 +217,6 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
               ),
             ),
           ),
-          // Coparticipação (se existir)
           pw.Expanded(
             flex: 15,
             child: pw.Align(
@@ -261,13 +274,10 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
         ),
         linhaFina(),
         pw.Row(children: [
-          pw.SizedBox(
-              width: 150, child: pw.Text('Cod. Procediment\n\n.............................', style: _small)),
+          pw.SizedBox(width: 150, child: pw.Text('Cod. Procediment\n\n.............................', style: _small)),
           pw.SizedBox(width: 100, child: pw.Text('Dente\n\n................', style: _small)),
           pw.SizedBox(width: 150, child: pw.Text('Faces\n\n...... ...... ...... ...... ......', style: _small)),
-          pw.Expanded(
-              child: pw.Text('Descrição do Procediment\n\n..............................................................',
-                  style: _small)),
+          pw.Expanded(child: pw.Text('Descrição do Procediment\n\n..............................................................', style: _small)),
         ]),
         pw.SizedBox(height: 8),
         pw.Row(children: [
@@ -285,8 +295,7 @@ Future<Uint8List> buildAutorizacaoPdf(AutorizacaoPdfData d) async {
         pw.SizedBox(height: 10),
         pw.Row(children: [
           pw.Expanded(child: pw.Center(child: pw.Text('Data: ___/___/______', style: _small))),
-          pw.Expanded(
-              child: pw.Center(child: pw.Text('Carimbo e Assinatura: ____________________________', style: _small))),
+          pw.Expanded(child: pw.Center(child: pw.Text('Carimbo e Assinatura: ____________________________', style: _small))),
         ])
       ],
     ),

@@ -1,9 +1,11 @@
+// lib/models/exame.dart
+
 class ExameResumo {
   final int numero;
   final String paciente;   // nome_dependente
   final String prestador;  // nome_prestador
   final String dataHora;   // data_emissao + hora_emissao
-  final String? status;    // auditado: 'P' pendente, etc.
+  final String? status;    // auditado: 'P' pendente, 'A' auditado
 
   ExameResumo({
     required this.numero,
@@ -19,8 +21,9 @@ class ExameResumo {
 
     final data = s(j['data_emissao']);
     final hora = s(j['hora_emissao']);
-    final dataHora =
-    (data.isNotEmpty && hora.isNotEmpty) ? '$data $hora' : (data.isNotEmpty ? data : '');
+    final dataHora = (data.isNotEmpty && hora.isNotEmpty)
+        ? '$data $hora'
+        : (data.isNotEmpty ? data : '');
 
     return ExameResumo(
       numero:   toInt(j['nro_autorizacao']),
@@ -37,14 +40,14 @@ class ExameDetalhe {
   final String paciente;
   final String prestador;
   final String especialidade;
-  final String dataEmissao; // pode vir só data; concatenei se tiver hora
+  final String dataEmissao; // pode vir só a data
   final String endereco;
   final String bairro;
   final String cidade;
   final String telefone;
   final String? observacoes;
 
-  ExameDetalhe({
+  const ExameDetalhe({
     required this.numero,
     required this.paciente,
     required this.prestador,
@@ -57,28 +60,65 @@ class ExameDetalhe {
     this.observacoes,
   });
 
-  // `exame_consulta` usa o mesmo SP de detalhes do site,
-  // então os nomes aqui são iguais aos de autorização “geral”.
   factory ExameDetalhe.fromJson(Map<String, dynamic> j) {
-    int toInt(dynamic v) => int.tryParse('${v ?? ''}') ?? 0;
-    String s(dynamic v) => (v ?? '').toString().trim();
+    String _s(dynamic v) => (v ?? '').toString().trim();
 
-    final data = s(j['data_emissao']);
-    final hora = s(j['hora_emissao']);
-    final dataEmissao =
-    (data.isNotEmpty && hora.isNotEmpty) ? '$data $hora' : (data.isNotEmpty ? data : '');
+    String pick(Iterable<String> keys) {
+      for (final k in keys) {
+        if (j.containsKey(k)) {
+          final v = _s(j[k]);
+          if (v.isNotEmpty) return v;
+        }
+      }
+      return '';
+    }
+
+    int pickInt(Iterable<String> keys) {
+      for (final k in keys) {
+        if (j.containsKey(k)) {
+          final v = _s(j[k]);
+          if (v.isNotEmpty) {
+            final n = int.tryParse(v);
+            if (n != null) return n;
+          }
+        }
+      }
+      return 0;
+    }
+
+    final numero      = pickInt(['nro_autorizacao','numero','NRO_AUTORIZACAO','NUMERO']);
+    final paciente    = pick(['nome_dependente','nome_paciente','NOME_DEPENDENTE','NOME_PACIENTE']);
+    final prestador   = pick(['nome_prestador','nome_prestador_exec','NOME_PRESTADOR','NOME_PRESTADOR_EXEC']);
+    final especialid  = pick(['nome_especialidade','NOME_ESPECIALIDADE']);
+
+    final data        = pick(['data_emissao','DATA_EMISSAO']);
+    final hora        = pick(['hora_emissao','HORA_EMISSAO']);
+    final dataEmissao = (data.isNotEmpty && hora.isNotEmpty) ? '$data $hora' : data;
+
+    final endereco    = pick(['endereco_coml','ENDERECO_COML','endereco','ENDERECO']);
+    final bairro      = pick(['bairro_coml','BAIRRO_COML','bairro','BAIRRO']);
+    final cidade      = pick(['cidade_coml','CIDADE_COML','cidade','CIDADE']);
+    final telefone    = pick(['telefone_coml','TELEFONE_COML','telefone','TELEFONE']);
+    final observ      = pick(['observacoes','OBSERVACOES']);
 
     return ExameDetalhe(
-      numero:        toInt(j['nro_autorizacao'] ?? j['numero']),
-      paciente:      s(j['nome_paciente'] ?? j['nome_dependente']),
-      prestador:     s(j['nome_prestador_exec'] ?? j['nome_prestador']),
-      especialidade: s(j['nome_especialidade'] ?? ''),
+      numero:        numero,
+      paciente:      paciente,
+      prestador:     prestador,
+      especialidade: especialid,
       dataEmissao:   dataEmissao,
-      endereco:      s(j['endereco_coml'] ?? ''),
-      bairro:        s(j['bairro_coml'] ?? ''),
-      cidade:        s(j['cidade_coml'] ?? ''),
-      telefone:      s(j['telefone_coml'] ?? ''),
-      observacoes:   j['observacoes'] == null ? null : s(j['observacoes']),
+      endereco:      endereco,
+      bairro:        bairro,
+      cidade:        cidade,
+      telefone:      telefone,
+      observacoes:   observ.isEmpty ? null : observ,
     );
   }
+
+  /// Sinaliza se o JSON trouxe algo útil (para não exibir botão com tudo vazio).
+  bool get hasCoreInfo =>
+      prestador.isNotEmpty ||
+          paciente.isNotEmpty ||
+          especialidade.isNotEmpty ||
+          dataEmissao.isNotEmpty;
 }

@@ -1,7 +1,12 @@
 import '../models/proc_item.dart';
+import '../models/reimpressao.dart'; // ReimpressaoDetalhe
+
+// Enum deve ser top-level
+enum AutorizacaoTipo { medica, odontologica, exames, complementares }
 
 class AutorizacaoPdfData {
   final int numero;
+  final AutorizacaoTipo tipo;
 
   // Prestador
   final String nomePrestador;
@@ -15,22 +20,23 @@ class AutorizacaoPdfData {
   final String nomeVinculo;
 
   // Segurado/Paciente
-  final int idMatricula;        // p/ “6542 - NOME”
-  final String nomeTitular;     // p/ “Segurado”
-  final int idDependente;       // p/ “Dependente”
-  final String nomePaciente;    // idem
-  final String idadePaciente;   // string pronta (“10”, “52”)
+  final int idMatricula;
+  final String nomeTitular;
+  final int idDependente;
+  final String nomePaciente;
+  final String idadePaciente;
 
   // Metadados
-  final String dataEmissao;         // “dd/MM/yyyy”
-  final int codigoEspecialidade;    // p/ regra dos avisos
+  final String dataEmissao;       // “dd/MM/yyyy” (pode vir com hora)
+  final int codigoEspecialidade;
   final String observacoes;
-  final String? percentual;         // ex.: “30”
+  final String? percentual;
   final bool primeiraImpressao;
 
   final List<ProcItem> procedimentos;
 
   const AutorizacaoPdfData({
+    required this.tipo,
     required this.numero,
     required this.nomePrestador,
     required this.codPrestador,
@@ -49,8 +55,47 @@ class AutorizacaoPdfData {
     required this.dataEmissao,
     required this.codigoEspecialidade,
     required this.observacoes,
-    required this.primeiraImpressao,
     this.percentual,
+    this.primeiraImpressao = false,
     this.procedimentos = const [],
   });
+
+  factory AutorizacaoPdfData.fromReimpressaoExame({
+    required ReimpressaoDetalhe det,
+    required int idMatricula,
+    List<ProcItem> procedimentos = const [],
+  }) {
+    final tipo = (det.tipoAutorizacao == 3 && det.codSubtipoAutorizacao == 4)
+        ? AutorizacaoTipo.complementares
+        : AutorizacaoTipo.exames;
+
+    return AutorizacaoPdfData(
+      tipo: tipo,
+      numero: det.numero,
+      dataEmissao: det.dataEmissao,
+      codigoEspecialidade: det.codEspecialidade,
+      // Prestador
+      codPrestador: det.codConselhoExec,
+      nomePrestador: det.nomePrestadorExec,
+      endereco: det.enderecoComl,
+      bairro: det.bairroComl,
+      cidade: det.cidadeComl,
+      telefone: det.telefoneComl,
+      // Especialidade / vínculo
+      especialidade: det.nomeEspecialidade,
+      codigoVinculo: det.codVinculo,
+      nomeVinculo: det.nomeVinculo,
+      // Segurado
+      idMatricula: idMatricula,
+      nomeTitular: det.nomeTitular,
+      idadePaciente: det.idadePaciente,
+      idDependente: det.idDependente,
+      nomePaciente: det.nomePaciente,
+      // Observações / proc / copart
+      observacoes: det.observacoes,
+      procedimentos: procedimentos,
+      percentual: det.percentual,
+      primeiraImpressao: false,
+    );
+  }
 }

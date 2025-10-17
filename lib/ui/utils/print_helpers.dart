@@ -1,15 +1,20 @@
 // lib/ui/utils/print_helpers.dart
 import 'package:flutter/material.dart';
+
 import '../../config/app_config.dart';
-import '../../pdf/pdf_mappers.dart';
-import '../../repositories/reimpressao_repository.dart';
-import '../../screens/pdf_preview_screen.dart';
-import '../../services/dev_api.dart';
 import '../../services/session.dart';
+import '../../services/dev_api.dart';
+
+import '../../repositories/reimpressao_repository.dart';
+
+import '../../pdf/autorizacao_pdf_data.dart';
+import '../../pdf/pdf_mappers.dart';
+import '../../screens/pdf_preview_screen.dart';
 
 /// Abre o preview/print do PDF a partir do número da autorização.
-/// [useRootNavigator] = false -> empilha na navegação atual (dentro da aba).
-/// [useRootNavigator] = true  -> empilha no navigator raiz.
+/// - Para EXAMES/COMPLEMENTARES usa AutorizacaoPdfData.fromReimpressaoExame
+///   (o título do PDF sai correto).
+/// - Para MÉDICA/ODONTOLÓGICA usa mapDetalheToPdfData com `tipo` apropriado.
 Future<void> openPreviewFromNumero(
     BuildContext context,
     int numero, {
@@ -38,14 +43,33 @@ Future<void> openPreviewFromNumero(
       return;
     }
 
-    final data = mapDetalheToPdfData(
-      det: det,
-      idMatricula: profile.id,
-      nomeTitular: profile.nome,
-      procedimentos: const [],
-    );
+    // Decide o "tipo" e mapeia para AutorizacaoPdfData
+    AutorizacaoPdfData data;
+    final isExames = det.tipoAutorizacao == 3; // 3 = exames/complementares
 
-    final fileName = 'ordem_${det.numero}.pdf';
+    if (isExames) {
+      // EXAMES ou COMPLEMENTARES (subtipo 4)
+      data = AutorizacaoPdfData.fromReimpressaoExame(
+        det: det,
+        idMatricula: profile.id,
+        procedimentos: const [], // se tiver endpoint de AMBs, injete aqui
+      );
+    } else {
+      // MÉDICA / ODONTOLÓGICA (heurística pelo código da especialidade)
+      final tipo = (det.codEspecialidade == 700)
+          ? AutorizacaoTipo.odontologica
+          : AutorizacaoTipo.medica;
+
+      data = mapDetalheToPdfData(
+        det: det,
+        nomeTitular: profile.nome,
+        idMatricula: profile.id,
+        procedimentos: const [],
+        tipo: tipo, // <- obrigatório no mapper atualizado
+      );
+    }
+
+    final fileName = 'aut_${det.numero}.pdf';
     if (!context.mounted) return;
 
     Navigator.of(context, rootNavigator: useRootNavigator).push(
@@ -62,4 +86,13 @@ Future<void> openPreviewFromNumero(
       SnackBar(content: Text('Falha ao abrir impressão: $e')),
     );
   }
+}
+
+/// Alias semântica para quem quiser chamar explicitamente “exame”.
+Future<void> openPreviewFromNumeroExame(
+    BuildContext context,
+    int numero, {
+      bool useRootNavigator = false,
+    }) {
+  return openPreviewFromNumero(context, numero, useRootNavigator: useRootNavigator);
 }

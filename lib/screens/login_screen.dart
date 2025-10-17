@@ -210,44 +210,62 @@ class _LoginScreenState extends State<LoginScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.max,
                             children: [
-                              // área dos checkboxes que pode quebrar de linha
+                              // Esquerda: checkbox + rótulo com flex
                               Expanded(
-                                child: Wrap(
-                                  spacing: 12,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.max,
                                   children: [
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        ValueListenableBuilder<bool>(
-                                          valueListenable: _c.staySignedIn,
-                                          builder: (_, val, __) => Checkbox(
-                                            value: val,
-                                            onChanged: (v) async {
-                                              final b = v ?? false;
-                                              await _c.setStaySignedIn(b);  // salva staySignedIn e limpa senha se desmarcar
-                                              await _c.setRememberCpf(b);   // sincroniza CPF com a intenção do usuário
-                                              setState(() {});
-                                            },
-                                          ),
-                                        ),
-                                        const Text('Manter Login'),
-                                      ],
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable: _c.staySignedIn,
+                                      builder: (_, val, __) => Checkbox(
+                                        value: val,
+                                        onChanged: (v) async {
+                                          final b = v ?? false;
+                                          await _c.setStaySignedIn(b); // salva staySignedIn e limpa senha se desmarcar
+                                          await _c.setRememberCpf(b);  // sincroniza CPF
+                                          setState(() {});
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Flexible(
+                                      child: Text(
+                                        'Manter login',
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                              // link fica “fixo” à direita, sem forçar overflow
-                              TextButton(
-                                onPressed: _openFirstAccess,
-                                child: const Text('Primeiro Acesso?'),
+
+                              // Direita: link compacto que não força overflow
+                              Flexible(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: _openFirstAccess,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      minimumSize: const Size(0, 36),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    child: const Text(
+                                      'Primeiro Acesso?',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
                         ),
+
 
                         const SizedBox(height: 8),
 
