@@ -65,7 +65,9 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
 
   Future<void> _openPdfNoApp(int numero) async {
     if (!mounted) return;
-    await openPreviewFromNumero(context, numero);
+    //await openPreviewFromNumero(context, numero);
+    await openPreviewFromNumeroExame(context, numero, useRootNavigator: true);
+
   }
 
   void _abrirDetalhe(ExameResumo a) async {
