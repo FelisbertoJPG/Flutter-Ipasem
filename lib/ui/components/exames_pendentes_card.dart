@@ -1,3 +1,4 @@
+// lib/ui/components/exames_pendentes_card.dart
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -14,11 +15,6 @@ import '../components/loading_placeholder.dart';
 import '../components/section_card.dart';
 import '../sheets/exame_detalhe_sheet.dart';
 
-// >>> para completar endereço/bairro/cidade quando ainda estiver pendente:
-import '../../repositories/prestadores_repository.dart';
-import '../../models/prestador.dart';
-// <<<
-
 // Chave em SharedPreferences onde guardamos o snapshot anterior dos pendentes.
 const _kPrevPendentesKey = 'exames_pendentes_prev_ids';
 
@@ -32,9 +28,6 @@ class ExamesPendentesCard extends StatefulWidget {
 class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
   late DevApi _api;
   late ExamesRepository _repo;
-
-  // repo de prestadores para complementar dados no detalhe pendente
-  late PrestadoresRepository _prestRepo;
 
   bool _ready = false;
 
@@ -61,7 +54,6 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
 
     _api = DevApi(baseUrl);
     _repo = ExamesRepository(_api);
-    _prestRepo = PrestadoresRepository(_api);
 
     _ready = true;
     _load();
@@ -96,7 +88,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       final disappeared = _prevIds.difference(currentIds).toList()..sort();
       final novos = currentIds.difference(_prevIds);
 
-      // Ordena priorizando novos
+      // Ordena priorizando novos, depois por data/hora desc
       final ordered = List<ExameResumo>.from(rows);
       ordered.sort((a, b) {
         final aNovo = novos.contains(a.numero) ? 1 : 0;
@@ -143,19 +135,9 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kPrevPendentesKey, jsonEncode(ids.toList()));
     } catch (_) {
-      // silencia
+      // silencioso
     }
   }
-
-  Future<PrestadorRow?> _resolvePrestador(String nome) async {
-    try {
-      final lista = await _prestRepo.buscarPorNome(nome);
-      return lista.isNotEmpty ? lista.first : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
 
   // Abra o modal com a lista completa de pendentes
   void _openModalPendentes() async {
@@ -172,10 +154,8 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       builder: (_) => _ExamesPendentesModal(
         repo: _repo,
         idMatricula: profile.id,
-        onImprimirViaSite: _onImprimirViaSite,
-        resolvePrestador: _resolvePrestador, // <<< passa o resolver
       ),
-    ).then((_) => _load()); // refresh
+    ).then((_) => _load()); // refresh após fechar
   }
 
   // Abra o modal com as atualizações (itens que sumiram)
@@ -195,18 +175,8 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
         repo: _repo,
         idMatricula: profile.id,
         numeros: _sumiram,
-        onImprimirViaSite: _onImprimirViaSite,
-        resolvePrestador: _resolvePrestador, // <<< idem aqui
       ),
     ).then((_) => _load());
-  }
-
-  // TODO: troque pelo mesmo fluxo/rota que vocês já usam nas “médicas”
-  Future<void> _onImprimirViaSite(int numero) async {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Conecte aqui a rota de impressão do site para a ordem $numero.')),
-    );
   }
 
   // Abre diretamente o detalhe do primeiro item
@@ -227,8 +197,6 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
         idMatricula: profile.id,
         numero: a.numero,
         resumo: a,
-        onImprimirViaSite: _onImprimirViaSite,
-        resolvePrestador: _resolvePrestador, // <<< resolver aqui também
       ),
     );
   }
@@ -337,16 +305,10 @@ class _TileResumo extends StatelessWidget {
 class _ExamesPendentesModal extends StatefulWidget {
   final ExamesRepository repo;
   final int idMatricula;
-  final Future<void> Function(int numero)? onImprimirViaSite;
-
-  // passa resolver para complementar dados no detalhe
-  final Future<PrestadorRow?> Function(String nome)? resolvePrestador;
 
   const _ExamesPendentesModal({
     required this.repo,
     required this.idMatricula,
-    this.onImprimirViaSite,
-    this.resolvePrestador,
   });
 
   @override
@@ -401,8 +363,6 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
         idMatricula: widget.idMatricula,
         numero: a.numero,
         resumo: a,
-        onImprimirViaSite: widget.onImprimirViaSite,
-        resolvePrestador: widget.resolvePrestador, // <<<
       ),
     );
   }
@@ -467,17 +427,11 @@ class _AtualizacoesModal extends StatefulWidget {
   final ExamesRepository repo;
   final int idMatricula;
   final List<int> numeros;
-  final Future<void> Function(int numero)? onImprimirViaSite;
-
-  // resolver também aqui
-  final Future<PrestadorRow?> Function(String nome)? resolvePrestador;
 
   const _AtualizacoesModal({
     required this.repo,
     required this.idMatricula,
     required this.numeros,
-    this.onImprimirViaSite,
-    this.resolvePrestador,
   });
 
   @override
@@ -528,9 +482,7 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
         repo: widget.repo,
         idMatricula: widget.idMatricula,
         numero: s.numero,
-        // se não liberada, não temos resumo, mas o sheet avisa que ainda não está pronta
-        onImprimirViaSite: widget.onImprimirViaSite,
-        resolvePrestador: widget.resolvePrestador, // <<<
+        // se não liberada, não temos resumo; o sheet mostra aviso
       ),
     );
   }

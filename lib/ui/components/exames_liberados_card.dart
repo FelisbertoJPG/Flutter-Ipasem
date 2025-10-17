@@ -1,5 +1,6 @@
+// lib/ui/components/exames_liberados_card.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences; // opcional (não usado aqui)
+
 import '../../config/app_config.dart';
 import '../../models/exame.dart';
 import '../../repositories/exames_repository.dart';
@@ -9,6 +10,9 @@ import '../../services/session.dart';
 import '../components/section_card.dart';
 import '../components/loading_placeholder.dart';
 import '../sheets/exame_detalhe_sheet.dart';
+
+// abre o preview/print do PDF no app
+import '../utils/print_helpers.dart';
 
 class ExamesLiberadosCard extends StatefulWidget {
   const ExamesLiberadosCard({super.key});
@@ -52,20 +56,16 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         return;
       }
       final rows = await _repo.listarLiberadas(idMatricula: profile.id, limit: 0);
-      // mais recentes primeiro
-      rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
+      rows.sort((a, b) => b.dataHora.compareTo(a.dataHora)); // mais recentes primeiro
       setState(() { _itens = rows; _loading = false; });
-    } catch (e) {
+    } catch (_) {
       setState(() { _error = 'Erro ao carregar autorizações.'; _loading = false; });
     }
   }
 
-  Future<void> _onImprimirViaSite(int numero) async {
+  Future<void> _openPdfNoApp(int numero) async {
     if (!mounted) return;
-    // TODO: plugue aqui a mesma rotina de impressão que vocês já usam nas autorizações médicas
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Conecte a rota de impressão do site para a ordem $numero.')),
-    );
+    await openPreviewFromNumero(context, numero);
   }
 
   void _abrirDetalhe(ExameResumo a) async {
@@ -84,12 +84,14 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         idMatricula: profile.id,
         numero: a.numero,
         resumo: a,
-        onImprimirViaSite: _onImprimirViaSite,
+        onPdfNoApp: _openPdfNoApp,
+        // vindo da lista de "liberadas": força o botão habilitado
+        forcePodeImprimir: true,
       ),
     ).then((_) => _load());
   }
 
-  void _verTodos() async {
+  void _verTodas() async {
     final profile = await Session.getProfile();
     if (!mounted || profile == null) return;
 
@@ -103,7 +105,7 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
       builder: (ctx) => _LiberadasModal(
         repo: _repo,
         idMatricula: profile.id,
-        onImprimirViaSite: _onImprimirViaSite,
+        onPdfNoApp: _openPdfNoApp,
       ),
     ).then((_) => _load());
   }
@@ -131,7 +133,7 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
 
     return SectionCard(
       title: 'Autorizações de Exames (liberadas)',
-      trailing: TextButton(onPressed: _verTodos, child: const Text('Ver todas')),
+      trailing: TextButton(onPressed: _verTodas, child: const Text('Ver todas')),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         dense: true,
@@ -151,12 +153,12 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
 class _LiberadasModal extends StatefulWidget {
   final ExamesRepository repo;
   final int idMatricula;
-  final Future<void> Function(int numero)? onImprimirViaSite;
+  final Future<void> Function(int numero)? onPdfNoApp;
 
   const _LiberadasModal({
     required this.repo,
     required this.idMatricula,
-    this.onImprimirViaSite,
+    this.onPdfNoApp,
   });
 
   @override
@@ -180,7 +182,7 @@ class _LiberadasModalState extends State<_LiberadasModal> {
       final rows = await widget.repo.listarLiberadas(idMatricula: widget.idMatricula, limit: 0);
       rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
       setState(() { _rows = rows; _loading = false; });
-    } catch (e) {
+    } catch (_) {
       setState(() { _error = 'Erro ao carregar.'; _loading = false; });
     }
   }
@@ -198,7 +200,9 @@ class _LiberadasModalState extends State<_LiberadasModal> {
         idMatricula: widget.idMatricula,
         numero: a.numero,
         resumo: a,
-        onImprimirViaSite: widget.onImprimirViaSite,
+        onPdfNoApp: widget.onPdfNoApp,
+        // vindo da lista de "liberadas": força o botão habilitado
+        forcePodeImprimir: true,
       ),
     );
   }
