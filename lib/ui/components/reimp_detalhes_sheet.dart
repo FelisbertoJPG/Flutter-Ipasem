@@ -108,15 +108,6 @@ Future<void> showReimpDetalhesSheet({
                     _kv('Observações', det.observacoes),
                   ],
 
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    icon: const Icon(Icons.print),
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      onPrintViaSite();
-                    },
-                    label: const Text('Imprimir via site'),
-                  ),
                   const SizedBox(height: 8),
                 ],
               ),

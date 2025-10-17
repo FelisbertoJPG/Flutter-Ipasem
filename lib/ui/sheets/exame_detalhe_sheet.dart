@@ -28,7 +28,7 @@ class ExameDetalheSheet extends StatefulWidget {
     required this.numero,
     this.resumo,
     this.onImprimirViaSite,
-    this.onPdfNoApp, Future<PrestadorRow?> Function(String nome)? resolvePrestador,
+    this.onPdfNoApp, Future<PrestadorRow?> Function(String nome)? resolvePrestador, required bool forcePodeImprimir,
   });
 
   @override
