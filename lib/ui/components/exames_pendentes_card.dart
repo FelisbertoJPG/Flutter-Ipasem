@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../config/app_config.dart';
 import '../../models/exame.dart';
@@ -11,8 +10,8 @@ import '../../repositories/exames_repository.dart';
 import '../../services/dev_api.dart';
 import '../../services/session.dart';
 
-import '../components/loading_placeholder.dart';
 import '../components/section_card.dart';
+import '../components/loading_placeholder.dart';
 import '../sheets/exame_detalhe_sheet.dart';
 
 // Chave em SharedPreferences onde guardamos o snapshot anterior dos pendentes.
@@ -22,10 +21,10 @@ class ExamesPendentesCard extends StatefulWidget {
   const ExamesPendentesCard({super.key});
 
   @override
-  State<ExamesPendentesCard> createState() => _ExamesPendentesCardState();
+  State<ExamesLiberadosCard> createState() => _ExamesLiberadosCardState();
 }
 
-class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
+class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
   late DevApi _api;
   late ExamesRepository _repo;
 
@@ -33,16 +32,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
 
   bool _loading = true;
   String? _error;
-
-  /// Lista atual exibida.
   List<ExameResumo> _itens = const [];
-
-  /// IDs (números) que sumiram entre a última carga e a atual.
-  /// Sinalizam “mudou de situação”.
-  List<int> _sumiram = const [];
-
-  /// Conjunto do snapshot anterior para comparação.
-  Set<int> _prevIds = {};
 
   @override
   void didChangeDependencies() {
@@ -51,7 +41,6 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
 
     final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
         ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-
     _api = DevApi(baseUrl);
     _repo = ExamesRepository(_api);
 
@@ -60,21 +49,12 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-      _itens = const [];
-      _sumiram = const [];
-    });
-
+    setState(() { _loading = true; _error = null; _itens = const []; });
     try {
-      // Carrega snapshot anterior
-      _prevIds = await _readPrevIds();
-
       final profile = await Session.getProfile();
       if (profile == null) {
         setState(() {
-          _error = 'Faça login para ver seus exames.';
+          _error = 'Faça login para ver suas autorizações.';
           _loading = false;
         });
         return;
@@ -151,18 +131,16 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => _ExamesPendentesModal(
+      builder: (_) => ExameDetalheSheet(
         repo: _repo,
         idMatricula: profile.id,
       ),
     ).then((_) => _load()); // refresh após fechar
   }
 
-  // Abra o modal com as atualizações (itens que sumiram)
-  void _openModalAtualizacoes() async {
+  void _verTodas() async {
     final profile = await Session.getProfile();
     if (!mounted || profile == null) return;
-    if (_sumiram.isEmpty) return;
 
     showModalBottomSheet(
       context: context,
@@ -171,7 +149,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => _AtualizacoesModal(
+      builder: (ctx) => _LiberadasModal(
         repo: _repo,
         idMatricula: profile.id,
         numeros: _sumiram,
@@ -205,104 +183,43 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const SectionCard(
-        title: 'Autorizações de Exames (pendentes)',
+        title: 'Autorizações de Exames (liberadas)',
         child: LoadingPlaceholder(height: 76),
       );
     }
-
     if (_error != null) {
       return SectionCard(
-        title: 'Autorizações de Exames (pendentes)',
+        title: 'Autorizações de Exames (liberadas)',
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Text(_error!, style: const TextStyle(color: Colors.red)),
         ),
       );
     }
+    if (_itens.isEmpty) return const SizedBox.shrink();
 
-    if (_itens.isEmpty) {
-      if (_sumiram.isEmpty) return const SizedBox.shrink();
-      return SectionCard(
-        title: 'Autorizações de Exames',
-        child: _AtualizacoesBanner(
-          quantidade: _sumiram.length,
-          onTap: _openModalAtualizacoes,
-        ),
-      );
-    }
+    final first = _itens.first;
 
     return SectionCard(
-      title: 'Autorizações de Exames (pendentes)',
-      trailing: TextButton(onPressed: _openModalPendentes, child: const Text('Ver todos')),
-      child: Column(
-        children: [
-          if (_sumiram.isNotEmpty)
-            _AtualizacoesBanner(
-              quantidade: _sumiram.length,
-              onTap: _openModalAtualizacoes,
-            ),
-          InkWell(
-            onTap: _openFirstItemDetail,
-            child: _TileResumo(_itens.first),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-class _AtualizacoesBanner extends StatelessWidget {
-  final int quantidade;
-  final VoidCallback onTap;
-
-  const _AtualizacoesBanner({
-    required this.quantidade,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final plural = quantidade > 1 ? 'autorizações' : 'autorização';
-    return Card(
-      color: Colors.amber.shade50,
-      elevation: 0,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      title: 'Autorizações de Exames (liberadas)',
+      trailing: TextButton(onPressed: _verTodas, child: const Text('Ver todas')),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         dense: true,
-        leading: const Icon(Icons.notifications_active_outlined),
+        leading: const Icon(Icons.check_circle_outline),
         title: Text(
-          '$quantidade $plural mudou de situação',
-          style: const TextStyle(fontWeight: FontWeight.w700),
+          '${first.paciente} • ${first.prestador}',
+          maxLines: 1, overflow: TextOverflow.ellipsis,
         ),
-        trailing: TextButton(onPressed: onTap, child: const Text('Ver')),
-        onTap: onTap,
+        subtitle: Text(first.dataHora),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _abrirDetalhe(first),
       ),
     );
   }
 }
 
-class _TileResumo extends StatelessWidget {
-  final ExameResumo a;
-  const _TileResumo(this.a);
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-      dense: true,
-      leading: const Icon(Icons.hourglass_empty_outlined),
-      title: Text(
-        '${a.paciente.isEmpty ? "Paciente" : a.paciente} • ${a.prestador.isEmpty ? "Prestador" : a.prestador}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(a.dataHora),
-    );
-  }
-}
-
-class _ExamesPendentesModal extends StatefulWidget {
+class _LiberadasModal extends StatefulWidget {
   final ExamesRepository repo;
   final int idMatricula;
 
@@ -312,13 +229,12 @@ class _ExamesPendentesModal extends StatefulWidget {
   });
 
   @override
-  State<_ExamesPendentesModal> createState() => _ExamesPendentesModalState();
+  State<_LiberadasModal> createState() => _LiberadasModalState();
 }
 
-class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
+class _LiberadasModalState extends State<_LiberadasModal> {
   bool _loading = true;
   String? _error;
-
   List<ExameResumo> _rows = const [];
 
   @override
@@ -328,29 +244,17 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-      _rows = const [];
-    });
+    setState(() { _loading = true; _error = null; _rows = const []; });
     try {
-      final rows = await widget.repo.listarPendentes(
-        idMatricula: widget.idMatricula,
-        limit: 0,
-      );
-      setState(() {
-        _rows = rows;
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
-        _loading = false;
-      });
+      final rows = await widget.repo.listarLiberadas(idMatricula: widget.idMatricula, limit: 0);
+      rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
+      setState(() { _rows = rows; _loading = false; });
+    } catch (_) {
+      setState(() { _error = 'Erro ao carregar.'; _loading = false; });
     }
   }
 
-  void _openDetail(ExameResumo a) {
+  void _abrirDetalhe(ExameResumo a) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -372,22 +276,18 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
     return SafeArea(
       child: DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.7,
+        initialChildSize: 0.8,
         minChildSize: 0.5,
         maxChildSize: 0.95,
         builder: (ctx, controller) {
           return Column(
             children: [
               const SizedBox(height: 12),
-              Container(
-                width: 40, height: 5,
-                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
-              ),
+              Container(width: 40, height: 5,
+                  decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3))),
               const SizedBox(height: 10),
-              const Text(
-                'Autorizações de Exames (pendentes)',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-              ),
+              const Text('Autorizações de Exames (liberadas)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               Expanded(
                 child: _loading
@@ -395,18 +295,17 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
                     : (_error != null)
                     ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
                     : (_rows.isEmpty)
-                    ? const Center(child: Text('Nenhum exame pendente.'))
+                    ? const Center(child: Text('Nenhuma autorização liberada.'))
                     : ListView.builder(
                   controller: controller,
                   itemCount: _rows.length,
                   itemBuilder: (_, i) {
                     final a = _rows[i];
                     return ListTile(
-                      leading: const Icon(Icons.hourglass_bottom),
+                      leading: const Icon(Icons.check_circle_outline),
                       title: Text(
                         '${a.paciente} • ${a.prestador}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(a.dataHora),
                       trailing: const Icon(Icons.chevron_right),
@@ -547,18 +446,4 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
       ),
     );
   }
-}
-
-class _StatusConsulta {
-  final int numero;
-  final bool liberada;
-  final ExameDetalhe? dados;
-  final String? erro;
-
-  _StatusConsulta({
-    required this.numero,
-    required this.liberada,
-    this.dados,
-    this.erro,
-  });
 }
