@@ -37,13 +37,11 @@ Future<void> openPreviewFromNumero(
     final api  = DevApi(baseUrl);
     final repo = ReimpressaoRepository(api);
 
-    // 1) Tenta via Reimpressão (fluxo “oficial” que já alimenta o PDF)
     final det = await repo.detalhe(numero, idMatricula: profile.id);
 
     AutorizacaoPdfData? data;
-
     if (det != null) {
-      final isExames = det.tipoAutorizacao == 3; // 3 = exames/complementares
+      final isExames = det.tipoAutorizacao == 3;
       if (isExames) {
         data = AutorizacaoPdfData.fromReimpressaoExame(
           det: det,
@@ -54,7 +52,6 @@ Future<void> openPreviewFromNumero(
         final tipo = (det.codEspecialidade == 700)
             ? AutorizacaoTipo.odontologica
             : AutorizacaoTipo.medica;
-
         data = mapDetalheToPdfData(
           det: det,
           nomeTitular: profile.nome,
@@ -65,7 +62,6 @@ Future<void> openPreviewFromNumero(
       }
     }
 
-    // 2) Se não veio nada da Reimpressão e for EXAME, tenta fallback via `exame_consulta`
     if (data == null) {
       data = await _fallbackExameFromConsulta(
         api: api,
@@ -86,13 +82,11 @@ Future<void> openPreviewFromNumero(
     final fileName = 'aut_$numero.pdf';
     if (!context.mounted) return;
 
-    // `data` agora é não-nulo
-    final nonNullData = data;
-
-    Navigator.of(context, rootNavigator: useRootNavigator).push(
+    // >>> AGORA AGUARDA O FECHAMENTO DO PREVIEW <<<
+    await Navigator.of(context, rootNavigator: useRootNavigator).push(
       MaterialPageRoute(
         builder: (_) => PdfPreviewScreen(
-          data: nonNullData,
+          data: data!,
           fileName: fileName,
         ),
       ),
