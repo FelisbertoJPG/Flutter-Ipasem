@@ -1,4 +1,3 @@
-// lib/ui/sheets/exame_detalhe_sheet.dart
 import 'package:flutter/material.dart';
 import '../../repositories/exames_repository.dart';
 import '../../models/exame.dart';
@@ -183,7 +182,10 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
           icon: const Icon(Icons.picture_as_pdf_outlined),
           label: const Text('PDF no app'),
           onPressed: (podeImprimir && widget.onPdfNoApp != null)
-              ? () async => widget.onPdfNoApp!(widget.numero)
+              ? () async {
+            await widget.onPdfNoApp!(widget.numero); // aguarda fechar o PDF
+            if (mounted) Navigator.of(context).maybePop(); // fecha o detalhe para trigger do refresh de quem abriu
+          }
               : null,
         ),
       ),
