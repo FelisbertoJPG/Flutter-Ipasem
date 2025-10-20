@@ -5,7 +5,8 @@ class ExameResumo {
   final String paciente;   // nome_dependente
   final String prestador;  // nome_prestador
   final String dataHora;   // data_emissao + hora_emissao
-  final String? status;    // auditado: 'P' pendente, 'A' auditado
+  /// Status: 'P' = pendente, 'A' = liberada/auditada, 'R' = reimpressão (ou outros).
+  final String? status;
 
   ExameResumo({
     required this.numero,
@@ -25,14 +26,28 @@ class ExameResumo {
         ? '$data $hora'
         : (data.isNotEmpty ? data : '');
 
+    // Aceita múltiplas origens para o status
+    String statusOf(Map<String, dynamic> m) {
+      final candidates = ['auditado', 'status', 'situacao', 'SITUACAO', 'AUDITADO', 'STATUS'];
+      for (final k in candidates) {
+        if (m.containsKey(k)) return s(m[k]).toUpperCase();
+      }
+      return '';
+    }
+
     return ExameResumo(
-      numero:   toInt(j['nro_autorizacao']),
-      paciente: s(j['nome_dependente'] ?? j['nome_paciente']),
-      prestador:s(j['nome_prestador'] ?? j['nome_prestador_exec']),
+      numero:   toInt(j['nro_autorizacao'] ?? j['NRO_AUTORIZACAO'] ?? j['numero'] ?? j['NUMERO']),
+      paciente: s(j['nome_dependente'] ?? j['nome_paciente'] ?? j['NOME_DEPENDENTE'] ?? j['NOME_PACIENTE']),
+      prestador:s(j['nome_prestador'] ?? j['nome_prestador_exec'] ?? j['NOME_PRESTADOR'] ?? j['NOME_PRESTADOR_EXEC']),
       dataHora: dataHora,
-      status:   s(j['auditado']),
+      status:   statusOf(j),
     );
   }
+
+  String get _st => (status ?? '').trim().toUpperCase();
+  bool get isPendente   => _st == 'P';
+  bool get isLiberada   => _st == 'A';
+  bool get isReimpressao=> _st == 'R';
 }
 
 class ExameDetalhe {
