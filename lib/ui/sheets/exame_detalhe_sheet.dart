@@ -1,18 +1,25 @@
+// lib/ui/sheets/exame_detalhe_sheet.dart
 import 'package:flutter/material.dart';
+import 'package:ipasemnhdigital/models/prestador.dart';
 import '../../repositories/exames_repository.dart';
 import '../../models/exame.dart';
 
-/// Detalhe da autorização de exames.
-/// Único botão: “PDF no app”. Habilita quando `status == 'A'`
-/// ou quando `forcePodeImprimir == true`.
+/// BottomSheet de detalhes de uma autorização de exames.
+/// - Se consultarDetalhe() retornar dados completos, exibimos o máximo possível.
+/// - Botões de impressão só aparecem quando o status é 'A' **e** temos detalhe com dados.
 class ExameDetalheSheet extends StatefulWidget {
   final ExamesRepository repo;
   final int idMatricula;
   final int numero;
 
+  /// Resumo vindo da listagem (útil quando ainda está Pendente).
   final ExameResumo? resumo;
+
+  /// Callback para imprimir via site (somente quando podeImprimir = true).
+  final Future<void> Function(int numero)? onImprimirViaSite;
+
+  /// Callback opcional para PDF no app (somente quando podeImprimir = true).
   final Future<void> Function(int numero)? onPdfNoApp;
-  final bool forcePodeImprimir;
 
   const ExameDetalheSheet({
     super.key,
@@ -20,8 +27,8 @@ class ExameDetalheSheet extends StatefulWidget {
     required this.idMatricula,
     required this.numero,
     this.resumo,
-    this.onPdfNoApp,
-    this.forcePodeImprimir = false,
+    this.onImprimirViaSite,
+    this.onPdfNoApp, Future<PrestadorRow?> Function(String nome)? resolvePrestador,
   });
 
   @override
@@ -31,6 +38,7 @@ class ExameDetalheSheet extends StatefulWidget {
 class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
   bool _loading = true;
   String? _error;
+
   ExameDetalhe? _detalhe;
 
   @override
@@ -40,24 +48,37 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; _detalhe = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      _detalhe = null;
+    });
     try {
       final det = await widget.repo.consultarDetalhe(
         numero: widget.numero,
         idMatricula: widget.idMatricula,
       );
-      if (!mounted) return;
-      setState(() { _detalhe = det; _loading = false; });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() { _detalhe = null; _loading = false; _error = null; });
+      setState(() {
+        _detalhe = det;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _detalhe = null;
+        _loading = false;
+        _error = null; // silencioso
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final det = _detalhe;
+    final temDetalhe = det != null;
+
+    // Só permite impressão quando: status == 'A' e temos detalhe com dados.
     final status = (widget.resumo?.status ?? '').trim().toUpperCase();
-    final podeImprimir = widget.forcePodeImprimir || status == 'A';
+    final podeImprimir = status == 'A' && temDetalhe;
 
     return SafeArea(
       child: DraggableScrollableSheet(
@@ -73,8 +94,12 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
               children: [
                 const SizedBox(height: 12),
                 Container(
-                  width: 40, height: 5,
-                  decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Padding(
@@ -82,11 +107,15 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
                   child: Row(
                     children: [
                       const Expanded(
-                        child: Text('Dados da Autorização',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                        child: Text(
+                          'Dados da Autorização',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                        ),
                       ),
-                      IconButton(icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.of(context).pop()),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
                     ],
                   ),
                 ),
@@ -95,7 +124,7 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
                 Expanded(
                   child: _loading
                       ? const Center(child: CircularProgressIndicator())
-                      : _buildBody(controller, podeImprimir),
+                      : _buildBody(controller, temDetalhe, podeImprimir),
                 ),
 
                 if (!_loading) _buildFooter(podeImprimir),
@@ -107,12 +136,14 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
     );
   }
 
-  Widget _buildBody(ScrollController controller, bool podeImprimir) {
-    if (_detalhe == null && widget.resumo == null && _error != null) {
-      return Center(child: Text('Erro ao carregar: $_error',
-          style: const TextStyle(color: Colors.red)));
+  Widget _buildBody(ScrollController controller, bool temDetalhe, bool podeImprimir) {
+    if (!temDetalhe && widget.resumo == null && _error != null) {
+      return Center(
+        child: Text('Erro ao carregar: $_error', style: const TextStyle(color: Colors.red)),
+      );
     }
 
+    // Fallback por campo: prioriza detalhe; se vazio, usa resumo.
     String coalesce(String a, String b) => a.trim().isNotEmpty ? a : b;
 
     final numeroStr = widget.numero.toString();
@@ -126,6 +157,7 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
     final cidade    = _detalhe?.cidade ?? '';
     final telefone  = _detalhe?.telefone ?? '';
     final observ    = _detalhe?.observacoes ?? '';
+
     final bairroCidade = [bairro, cidade].where((s) => s.trim().isNotEmpty).join(' - ');
 
     return ListView(
@@ -139,17 +171,13 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
         _kv('Data de Emissão', dataEmis),
         const Divider(),
 
-        if (endereco.trim().isNotEmpty || bairroCidade.trim().isNotEmpty || telefone.trim().isNotEmpty) ...[
+        if (temDetalhe) ...[
           _kv('Endereço', endereco),
           _kv('Bairro/Cidade', bairroCidade),
-          if (telefone.trim().isNotEmpty) _kv('Telefone', telefone),
-          if (observ.trim().isNotEmpty) ...[
-            const Divider(),
-            _kv('Observações', observ),
-          ],
-        ],
-
-        if (!podeImprimir) ...[
+          _kv('Telefone', telefone),
+          const Divider(),
+          _kv('Observações', observ),
+        ] else ...[
           const SizedBox(height: 8),
           Row(
             children: const [
@@ -174,20 +202,36 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
   }
 
   Widget _buildFooter(bool podeImprimir) {
+    if (!podeImprimir) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        child: SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fechar'),
+          ),
+        ),
+      );
+    }
+
+    // Pode imprimir (status 'A' e detalhe com dados)
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-      child: SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          icon: const Icon(Icons.picture_as_pdf_outlined),
-          label: const Text('PDF no app'),
-          onPressed: (podeImprimir && widget.onPdfNoApp != null)
-              ? () async {
-            await widget.onPdfNoApp!(widget.numero); // aguarda fechar o PDF
-            if (mounted) Navigator.of(context).maybePop(); // fecha o detalhe para trigger do refresh de quem abriu
-          }
-              : null,
-        ),
+      child: Column(
+        children: [
+          if (widget.onPdfNoApp != null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('PDF no app'),
+                onPressed: () async => widget.onPdfNoApp!(widget.numero),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -202,8 +246,10 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
           SizedBox(width: 140, child: Text(k, style: const TextStyle(color: Colors.black54))),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(value.isEmpty ? '—' : value,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
+            child: Text(
+              value.isEmpty ? '—' : value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),

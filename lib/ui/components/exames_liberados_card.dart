@@ -1,3 +1,4 @@
+// lib/ui/components/exames_liberados_card.dart
 import 'package:flutter/material.dart';
 
 import '../../config/app_config.dart';
@@ -62,35 +63,11 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
     }
   }
 
-  /// Abre o PDF no app, aguarda o retorno, marca A->R no servidor,
-  /// remove da lista local e recarrega da API.
   Future<void> _openPdfNoApp(int numero) async {
     if (!mounted) return;
-
-    // 1) Abre o PDF e aguarda fechar
+    //await openPreviewFromNumero(context, numero);
     await openPreviewFromNumeroExame(context, numero, useRootNavigator: true);
 
-    // 2) Marca como reimpressão no servidor (A -> R)
-    try {
-      final profile = await Session.getProfile();
-      if (profile != null) {
-        await _repo.registrarPrimeiraImpressao(
-          numero: numero,
-          idMatricula: profile.id,
-        );
-      }
-    } catch (_) {
-      // silencioso para não travar UX; o fallback do repo já tentou `exame_concluir`
-    }
-
-    // 3) Remoção otimista local
-    if (!mounted) return;
-    setState(() {
-      _itens = _itens.where((x) => x.numero != numero).toList();
-    });
-
-    // 4) Recarrega para consolidar estado vindo do backend
-    await _load();
   }
 
   void _abrirDetalhe(ExameResumo a) async {
@@ -111,7 +88,7 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         resumo: a,
         onPdfNoApp: _openPdfNoApp,
         // vindo da lista de "liberadas": força o botão habilitado
-        forcePodeImprimir: true,
+        //forcePodeImprimir: true,
       ),
     ).then((_) => _load());
   }
@@ -227,9 +204,9 @@ class _LiberadasModalState extends State<_LiberadasModal> {
         resumo: a,
         onPdfNoApp: widget.onPdfNoApp,
         // vindo da lista de "liberadas": força o botão habilitado
-        forcePodeImprimir: true,
+        //forcePodeImprimir: true,
       ),
-    ).then((_) => _load());
+    );
   }
 
   @override
