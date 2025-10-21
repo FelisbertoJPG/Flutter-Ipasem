@@ -37,11 +37,13 @@ Future<void> openPreviewFromNumero(
     final api  = DevApi(baseUrl);
     final repo = ReimpressaoRepository(api);
 
+    // 1) Tenta via Reimpressão (fluxo “oficial” que já alimenta o PDF)
     final det = await repo.detalhe(numero, idMatricula: profile.id);
 
     AutorizacaoPdfData? data;
+
     if (det != null) {
-      final isExames = det.tipoAutorizacao == 3;
+      final isExames = det.tipoAutorizacao == 3; // 3 = exames/complementares
       if (isExames) {
         data = AutorizacaoPdfData.fromReimpressaoExame(
           det: det,
@@ -52,6 +54,7 @@ Future<void> openPreviewFromNumero(
         final tipo = (det.codEspecialidade == 700)
             ? AutorizacaoTipo.odontologica
             : AutorizacaoTipo.medica;
+
         data = mapDetalheToPdfData(
           det: det,
           nomeTitular: profile.nome,
@@ -62,14 +65,13 @@ Future<void> openPreviewFromNumero(
       }
     }
 
-    if (data == null) {
-      data = await _fallbackExameFromConsulta(
+    // 2) Se não veio nada da Reimpressão e for EXAME, tenta fallback via `exame_consulta`
+    data ??= await _fallbackExameFromConsulta(
         api: api,
         numero: numero,
         idMatricula: profile.id,
         nomeTitular: profile.nome,
       );
-    }
 
     if (data == null) {
       if (!context.mounted) return;
@@ -82,11 +84,32 @@ Future<void> openPreviewFromNumero(
     final fileName = 'aut_$numero.pdf';
     if (!context.mounted) return;
 
-    // >>> AGORA AGUARDA O FECHAMENTO DO PREVIEW <<<
-    await Navigator.of(context, rootNavigator: useRootNavigator).push(
+    // === Correção: concluir ordem de EXAMES (A -> R) em background ===
+    // Não bloqueia a abertura do PDF.
+    try {
+      if (data.tipo == AutorizacaoTipo.exames) {
+        final exRepo = ExamesRepository(api);
+        // fire-and-forget
+        Future(() async {
+          try {
+            await exRepo.registrarPrimeiraImpressao(numero);
+          } catch (_) {
+            // silencioso: não impacta a abertura do PDF
+          }
+        });
+      }
+    } catch (_) {
+      // silencioso
+    }
+    // =================================================================
+
+    // `data` agora é não-nulo
+    final nonNullData = data;
+
+    Navigator.of(context, rootNavigator: useRootNavigator).push(
       MaterialPageRoute(
         builder: (_) => PdfPreviewScreen(
-          data: data!,
+          data: nonNullData,
           fileName: fileName,
         ),
       ),

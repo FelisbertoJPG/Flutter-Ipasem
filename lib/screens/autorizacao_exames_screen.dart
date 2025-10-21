@@ -252,36 +252,31 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     setState(() => _saving = true);
     try {
       final numero = await _autRepo.gravarExame(
-        idMatricula:  _selBenef!.idMat,
+        idMatricula: _selBenef!.idMat,
         idDependente: _selBenef!.idDep,
-        idPrestador:  _toInt(_selPrest!.registro),
+        idPrestador: _toInt(_selPrest!.registro),
         tipoPrestador: _selPrest!.tipoPrestador,
       );
 
-      // Atualiza a Home (histórico/cards) imediatamente após gerar a autorização
-      // — segue o mesmo padrão da tela médica.
-      AuthEvents.instance.emitIssued(numero);
-
-      // Tentativa de envio das imagens; se falhar, exibe erro e mantém na tela
-      // para o usuário tentar reenviar, mas a Home já foi notificada acima.
       try {
         await _autRepo.enviarImagensExame(
           numero: numero,
           files: _imagens,
         );
       } catch (e) {
-        if (!mounted) return;
         await AppAlert.show(
           context,
           title: 'Falha no envio das imagens',
-          message: 'A autorização nº $numero foi gerada, mas não conseguimos anexar as fotos. Tente reenviar agora.',
+          message:
+          'A autorização nº $numero foi gerada, mas não conseguimos anexar as fotos. Tente reenviar agora.',
           type: AppAlertType.error,
           useRootNavigator: false,
         );
         return;
       }
 
-      // Sucesso: limpa seleções e imagens locais
+      AuthEvents.instance.emitIssued(numero);
+
       setState(() {
         _selEsp = null;
         _selCidade = null;
@@ -312,12 +307,14 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
         useRootNavigator: false,
       );
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map && (e.response!.data['error']?['message'] is String))
+      final msg = (e.response?.data is Map &&
+          (e.response!.data['error']?['message'] is String))
           ? e.response!.data['error']['message'] as String
           : 'Falha ao gravar autorização';
 
       if (!mounted) return;
-      final isBusiness = (e.response?.data is Map) && ((e.response!.data['error']?['code'] ?? '') == 'BUSINESS_RULE');
+      final isBusiness = (e.response?.data is Map) &&
+          ((e.response!.data['error']?['code'] ?? '') == 'BUSINESS_RULE');
       await AppAlert.show(
         context,
         title: isBusiness ? 'Atenção' : 'Erro',
@@ -346,7 +343,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       nav.pop({'issued': true, 'numero': numero});
     }
   }
-
 
   // ===== UI =====
 
