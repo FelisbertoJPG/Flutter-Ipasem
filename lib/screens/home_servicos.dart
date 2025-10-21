@@ -1,3 +1,4 @@
+// lib/screens/home_servicos.dart
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,19 +13,23 @@ import '../ui/components/services_visitor.dart';
 import '../ui/widgets/history_list.dart';
 import '../ui/utils/webview_warmup.dart';
 import '../ui/utils/service_launcher.dart';
-import '../ui/utils/print_helpers.dart'; // openPreviewFromNumero
+import '../ui/utils/print_helpers.dart';
 
 import '../models/reimpressao.dart';
 import '../controllers/home_servicos_controller.dart';
 import '../ui/components/reimp_action_sheet.dart';
 import '../ui/components/reimp_detalhes_sheet.dart';
 
-import '../state/auth_events.dart'; // <=== ouvimos emits para auto-refresh
+import '../state/auth_events.dart';
 
 import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
 import 'autorizacao_odontologica_screen.dart';
-import 'autorizacao_exames_screen.dart'; // <<< NOVA TELA
+import 'autorizacao_exames_screen.dart';
+
+// >>> NOVO IMPORT
+import 'historico_autorizacoes_screen.dart';
+// <<<
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
@@ -48,23 +53,17 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   HomeServicosController? _controller;
 
   VoidCallback? _issuedListener;
-  VoidCallback? _printedListener; // <=== NOVO
+  VoidCallback? _printedListener;
 
   @override
   void initState() {
     super.initState();
     warmupInit();
 
-    // Quando sair uma nova autorização, recarrega o histórico aqui
-    _issuedListener = () {
-      Future.microtask(_refreshAfterIssue);
-    };
+    _issuedListener = () => Future.microtask(_refreshAfterIssue);
     AuthEvents.instance.lastIssued.addListener(_issuedListener!);
 
-    // Quando a PRIMEIRA impressão acontecer (A->R), recarrega o histórico
-    _printedListener = () {
-      Future.microtask(_refreshAfterPrint);
-    };
+    _printedListener = () => Future.microtask(_refreshAfterPrint);
     AuthEvents.instance.lastPrinted.addListener(_printedListener!);
 
     _bootstrap();
@@ -85,7 +84,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     final numero = AuthEvents.instance.lastPrinted.value;
     if (!mounted || numero == null) return;
 
-    // Garante que o número já esteja visível no histórico de reimpressão.
     if (_controller != null) {
       await _controller!.waitUntilInHistorico(numero);
     }
@@ -105,6 +103,26 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     super.dispose();
   }
 
+  DateTime _parseDateTime(String d, String h) {
+    try {
+      final ds = d.trim();
+      final hs = (h.trim().isEmpty) ? '00:00' : h.trim();
+      final parts = ds.split('/');
+      if (parts.length == 3) {
+        final day = int.tryParse(parts[0]) ?? 1;
+        final mon = int.tryParse(parts[1]) ?? 1;
+        final yr = int.tryParse(parts[2]) ?? 1970;
+        final tparts = hs.split(':');
+        final hh = (tparts.length > 0) ? int.tryParse(tparts[0]) ?? 0 : 0;
+        final mm = (tparts.length > 1) ? int.tryParse(tparts[1]) ?? 0 : 0;
+        return DateTime(yr, mon, day, hh, mm);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    } catch (_) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+  }
+
   Future<void> _bootstrap() async {
     setState(() => _loading = true);
 
@@ -118,24 +136,30 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       try {
         _controller = await HomeServicosController.init(context);
 
-        // pega o nome do titular para fallback do "paciente"
         final titularNome = await _controller!.profileName();
 
         final rows = await _controller!.loadHistorico();
-        _histRows = rows;
 
-        _historico = rows.map((h) {
-          // paciente com fallback (quando é o titular, a API pode vir vazio)
+        // Ordena por data/hora (mais recentes primeiro)
+        rows.sort((a, b) {
+          final ta = _parseDateTime(a.dataEmissao, a.horaEmissao);
+          final tb = _parseDateTime(b.dataEmissao, b.horaEmissao);
+          return tb.compareTo(ta);
+        });
+
+        // Limita às 5 mais recentes
+        final top5 = rows.take(5).toList();
+        _histRows = top5;
+
+        _historico = top5.map((h) {
           final paciente = (h.paciente.trim().isNotEmpty)
               ? h.paciente.trim()
               : (titularNome?.trim() ?? '');
 
-          // título: se tiver prestador usa, senão cai para paciente, e por fim nº
           final titulo = h.prestadorExec.isNotEmpty
               ? h.prestadorExec
               : (paciente.isNotEmpty ? paciente : 'Autorização ${h.numero}');
 
-          // subtítulo: data/hora + • paciente (se houver)
           final subParts = <String>[];
           if (h.dataEmissao.isNotEmpty && h.horaEmissao.isNotEmpty) {
             subParts.add('${h.dataEmissao} • ${h.horaEmissao}');
@@ -165,7 +189,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     if (mounted) setState(() => _loading = false);
   }
 
-  // ====== AÇÕES RÁPIDAS (logado) ======
   List<QuickActionItem> _loggedActions() {
     return [
       QuickActionItem(
@@ -202,7 +225,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         audience: QaAudience.loggedIn,
         requiresLogin: false,
       ),
-      // <<< NOVO BOTÃO
       QuickActionItem(
         id: 'aut_exames',
         label: 'Autorização de Exames',
@@ -220,7 +242,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         audience: QaAudience.loggedIn,
         requiresLogin: false,
       ),
-      // >>>
       QuickActionItem(
         id: 'carteirinha',
         label: 'Carteirinha Digital',
@@ -243,7 +264,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     ];
   }
 
-  // ====== ACTIONS ======
   Future<void> _onTapHistorico(ReimpressaoResumo a) async {
     if (!mounted) return;
 
@@ -252,10 +272,13 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
     switch (action) {
       case ReimpAction.detalhes:
-        await _showDetalhes(a.numero, pacienteFallback: a.paciente.isNotEmpty ? a.paciente : null);
+        await _showDetalhes(
+          a.numero,
+          pacienteFallback: a.paciente.isNotEmpty ? a.paciente : null,
+        );
         break;
       case ReimpAction.pdfLocal:
-        await openPreviewFromNumero(context, a.numero); // helper centralizado
+        await openPreviewFromNumero(context, a.numero);
         break;
     }
   }
@@ -303,7 +326,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     );
   }
 
-  // ====== VISITOR VIEW ======
   Widget _buildVisitorView() {
     return Column(
       children: [
@@ -332,7 +354,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     );
   }
 
-  // ====== MEMBER VIEW ======
   Widget _buildMemberView() {
     return Column(
       children: [
@@ -354,10 +375,11 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
           child: HistoryList(
             loading: _loading,
             isLoggedIn: true,
-            items: _historico,
+            items: _historico,// já limitado a 5
+            maxItems: 5,
             onSeeAll: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Implementar tela de histórico completo.')),
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HistoricoAutorizacoesScreen()),
               );
             },
           ),
