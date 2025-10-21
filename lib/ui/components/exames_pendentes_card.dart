@@ -15,7 +15,7 @@ import '../components/loading_placeholder.dart';
 import '../components/section_card.dart';
 import '../sheets/exame_detalhe_sheet.dart';
 
-import '../../state/auth_events.dart'; // <-- para auto-refresh
+import '../../state/auth_events.dart'; // <-- auto-refresh por eventos
 
 // Chave em SharedPreferences para snapshot anterior dos PENDENTES.
 const _kPrevPendentesKey = 'exames_pendentes_prev_ids';
@@ -81,6 +81,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -93,6 +94,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       _prevIds = await _readPrevIds();
 
       final profile = await Session.getProfile();
+      if (!mounted) return;
       if (profile == null) {
         setState(() {
           _error = 'Faça login para ver seus exames.';
@@ -124,12 +126,14 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       // Persiste snapshot atual
       await _writePrevIds(currentIds);
 
+      if (!mounted) return;
       setState(() {
         _itens = ordered;
         _sumiram = disappeared;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = kDebugMode ? 'Erro ao carregar pendentes: $e' : 'Erro ao carregar pendentes.';
         _loading = false;
@@ -357,6 +361,7 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -367,11 +372,13 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
         idMatricula: widget.idMatricula,
         limit: 0,
       );
+      if (!mounted) return;
       setState(() {
         _rows = rows;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
         _loading = false;

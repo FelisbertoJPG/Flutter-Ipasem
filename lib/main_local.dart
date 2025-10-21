@@ -20,15 +20,18 @@ import 'screens/termos_screen.dart';
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
 
-// Base local: por padrão .18; pode sobrescrever com --dart-define=API_BASE=http://host
-const String kLocalBase =
-String.fromEnvironment(
+// <<< NOTIFICAÇÕES
+import 'state/notification_bridge.dart';
+// >>>
+
+// Base local: por padrão .98; pode sobrescrever com --dart-define=API_BASE=http://host
+const String kLocalBase = String.fromEnvironment(
   'API_BASE',
   defaultValue: 'http://192.9.200.98',
 );
-//String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');https://assistweb.ipasemnh.com.br
+// String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Registra implementação da WebView no Web (no-op nas outras plataformas)
@@ -37,9 +40,14 @@ void main() async {
   // Warm-up do SharedPreferences
   await SharedPreferences.getInstance();
 
+  // Anexa o bridge de notificações (idempotente).
+  // Inicializa canais + pede permissão (iOS). No Android 13+, a permissão
+  // já foi declarada no Manifest.
+  await NotificationBridge.I.attach();
+
   // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
   final params = AppParams(
-    baseApiUrl: kLocalBase, // <- Só o 18 por padrão
+    baseApiUrl: kLocalBase,
     passwordMinLength: 4,
     firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
   );
@@ -69,8 +77,7 @@ class MyAppLocal extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
       // Suaviza as primeiras animações
-      builder: (context, child) =>
-          AnimationWarmUp(child: child ?? const SizedBox()),
+      builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
       initialRoute: '/__splash_login',
       routes: {
         '/__splash_login': (_) => const _SplashRouteWrapper(),
@@ -115,12 +122,10 @@ class LoginSlidesOverSplashLocal extends StatefulWidget {
   });
 
   @override
-  State<LoginSlidesOverSplashLocal> createState() =>
-      _LoginSlidesOverSplashLocalState();
+  State<LoginSlidesOverSplashLocal> createState() => _LoginSlidesOverSplashLocalState();
 }
 
-class _LoginSlidesOverSplashLocalState
-    extends State<LoginSlidesOverSplashLocal>
+class _LoginSlidesOverSplashLocalState extends State<LoginSlidesOverSplashLocal>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));
@@ -177,5 +182,4 @@ class _LoginSlidesOverSplashLocalState
       ],
     );
   }
-
 }
