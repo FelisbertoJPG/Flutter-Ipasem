@@ -1,4 +1,3 @@
-// lib/repositories/exames_repository.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 
@@ -83,10 +82,7 @@ class ExamesRepository {
   /// `SpConcluiAutorizacaoExamesRepository`.
   Future<void> registrarPrimeiraImpressao(int numero) async {
     try {
-      final res = await _api.postAction('exame_concluir', data: {
-        'numero': numero,
-      });
-
+      final res = await _api.postAction('exame_concluir', data: {'numero': numero});
       final body = res.data as Map?;
       if (body != null && body['ok'] != true) {
         throw DioException(
@@ -97,14 +93,13 @@ class ExamesRepository {
         );
       }
     } on DioException {
-      rethrow; // deixe estourar para a UI tratar se necessário
+      rethrow; // se quiser tratar na UI
     } catch (e) {
       if (kDebugMode) {
-        // Em release, silencioso; em debug, útil para diagnóstico.
         // ignore: avoid_print
         print('registrarPrimeiraImpressao falhou: $e');
       }
-      // Não rethrow em erro genérico para não travar o fluxo de impressão.
+      // silencioso em erro genérico pra não travar o fluxo
     }
   }
 
@@ -127,10 +122,11 @@ class ExamesRepository {
       );
     }
 
-    // o endpoint retorna algo como { ok: true, data: { dados: {...} } } ou { ok, data: {...} }
     final data = (body['data'] as Map).cast<String, dynamic>();
-    final map =
-    (data['dados'] is Map) ? (data['dados'] as Map).cast<String, dynamic>() : data;
+    final map = (data['dados'] is Map)
+        ? (data['dados'] as Map).cast<String, dynamic>()
+        : data;
+
     return ExameDetalhe.fromJson(map);
   }
 }

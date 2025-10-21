@@ -1,4 +1,3 @@
-// lib/screens/home_servicos.dart
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,7 +19,7 @@ import '../controllers/home_servicos_controller.dart';
 import '../ui/components/reimp_action_sheet.dart';
 import '../ui/components/reimp_detalhes_sheet.dart';
 
-import '../state/auth_events.dart'; // escuta emissões para auto-refresh
+import '../state/auth_events.dart'; // <=== ouvimos emits para auto-refresh
 
 import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
@@ -48,7 +47,8 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
   HomeServicosController? _controller;
 
-  VoidCallback? _authListener;
+  VoidCallback? _issuedListener;
+  VoidCallback? _printedListener; // <=== NOVO
 
   @override
   void initState() {
@@ -56,11 +56,16 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     warmupInit();
 
     // Quando sair uma nova autorização, recarrega o histórico aqui
-    _authListener = () {
-      // dispara de forma assíncrona para não conflitar com o frame atual
+    _issuedListener = () {
       Future.microtask(_refreshAfterIssue);
     };
-    AuthEvents.instance.lastIssued.addListener(_authListener!);
+    AuthEvents.instance.lastIssued.addListener(_issuedListener!);
+
+    // Quando a PRIMEIRA impressão acontecer (A->R), recarrega o histórico
+    _printedListener = () {
+      Future.microtask(_refreshAfterPrint);
+    };
+    AuthEvents.instance.lastPrinted.addListener(_printedListener!);
 
     _bootstrap();
   }
@@ -76,10 +81,26 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     await _bootstrap();
   }
 
+  Future<void> _refreshAfterPrint() async {
+    final numero = AuthEvents.instance.lastPrinted.value;
+    if (!mounted || numero == null) return;
+
+    // Garante que o número já esteja visível no histórico de reimpressão.
+    if (_controller != null) {
+      await _controller!.waitUntilInHistorico(numero);
+    }
+    if (!mounted) return;
+
+    await _bootstrap();
+  }
+
   @override
   void dispose() {
-    if (_authListener != null) {
-      AuthEvents.instance.lastIssued.removeListener(_authListener!);
+    if (_issuedListener != null) {
+      AuthEvents.instance.lastIssued.removeListener(_issuedListener!);
+    }
+    if (_printedListener != null) {
+      AuthEvents.instance.lastPrinted.removeListener(_printedListener!);
     }
     super.dispose();
   }
@@ -143,7 +164,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     }
     if (mounted) setState(() => _loading = false);
   }
-
 
   // ====== AÇÕES RÁPIDAS (logado) ======
   List<QuickActionItem> _loggedActions() {

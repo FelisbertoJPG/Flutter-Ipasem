@@ -1,14 +1,16 @@
-// lib/state/auth_events.dart
 import 'package:flutter/foundation.dart';
 
+/// Barramento simples de eventos entre features da app.
 class AuthEvents {
   AuthEvents._();
   static final AuthEvents instance = AuthEvents._();
 
-  // último número emitido (null quando não há)
+  /// Última autorização emitida (Acontece ao gravar/emitir).
   final ValueNotifier<int?> lastIssued = ValueNotifier<int?>(null);
 
-  void emitIssued(int numero) {
-    lastIssued.value = numero; // ValueNotifier já notifica os listeners
-  }
+  /// Última autorização que teve a PRIMEIRA impressão (A -> R).
+  final ValueNotifier<int?> lastPrinted = ValueNotifier<int?>(null);
+
+  void emitIssued(int numero)  => lastIssued.value  = numero;
+  void emitPrinted(int numero) => lastPrinted.value = numero;
 }

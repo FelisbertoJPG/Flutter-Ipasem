@@ -12,6 +12,9 @@ import '../../pdf/autorizacao_pdf_data.dart';
 import '../../pdf/pdf_mappers.dart';
 import '../../screens/pdf_preview_screen.dart';
 
+// Eventos globais (home/histórico escutam isso)
+import '../../state/auth_events.dart';
+
 /// Abre o preview/print do PDF a partir do número da autorização.
 /// - EXAMES/COMPLEMENTARES: tenta Reimpressão; se vier vazio, faz fallback
 ///   para `exame_consulta` e ainda assim gera o PDF no app.
@@ -67,11 +70,11 @@ Future<void> openPreviewFromNumero(
 
     // 2) Se não veio nada da Reimpressão e for EXAME, tenta fallback via `exame_consulta`
     data ??= await _fallbackExameFromConsulta(
-        api: api,
-        numero: numero,
-        idMatricula: profile.id,
-        nomeTitular: profile.nome,
-      );
+      api: api,
+      numero: numero,
+      idMatricula: profile.id,
+      nomeTitular: profile.nome,
+    );
 
     if (data == null) {
       if (!context.mounted) return;
@@ -81,18 +84,16 @@ Future<void> openPreviewFromNumero(
       return;
     }
 
-    final fileName = 'aut_$numero.pdf';
-    if (!context.mounted) return;
-
-    // === Correção: concluir ordem de EXAMES (A -> R) em background ===
-    // Não bloqueia a abertura do PDF.
+    // === Marca EXAMES como concluída (A -> R) em segundo plano e emite evento ===
     try {
       if (data.tipo == AutorizacaoTipo.exames) {
         final exRepo = ExamesRepository(api);
-        // fire-and-forget
+        // fire-and-forget (não bloqueia o preview)
         Future(() async {
           try {
             await exRepo.registrarPrimeiraImpressao(numero);
+            // dispara evento global para auto-refresh dos cards/histórico
+            AuthEvents.instance.emitPrinted(numero);
           } catch (_) {
             // silencioso: não impacta a abertura do PDF
           }
@@ -101,19 +102,26 @@ Future<void> openPreviewFromNumero(
     } catch (_) {
       // silencioso
     }
-    // =================================================================
+    // ============================================================================
 
-    // `data` agora é não-nulo
-    final nonNullData = data;
+    final fileName = 'aut_$numero.pdf';
+    if (!context.mounted) return;
 
-    Navigator.of(context, rootNavigator: useRootNavigator).push(
+    // Abre o preview e, quando FECHAR, re-emite o evento para garantir refresh na volta.
+    final routeFuture = Navigator.of(context, rootNavigator: useRootNavigator).push(
       MaterialPageRoute(
         builder: (_) => PdfPreviewScreen(
-          data: nonNullData,
+          data: data!,
           fileName: fileName,
         ),
       ),
     );
+
+    // Quando o usuário fechar o preview, dispare novamente o evento:
+    routeFuture.whenComplete(() {
+      // Emite de novo para forçar a HomeServicos a recarregar o histórico
+      AuthEvents.instance.emitPrinted(numero);
+    });
   } catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
