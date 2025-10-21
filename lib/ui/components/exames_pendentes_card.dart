@@ -1,4 +1,3 @@
-// lib/ui/components/exames_pendentes_card.dart
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -14,8 +13,10 @@ import '../../services/session.dart';
 import '../components/loading_placeholder.dart';
 import '../components/section_card.dart';
 import '../sheets/exame_detalhe_sheet.dart';
+import '../../state/auth_events.dart';
 
-import '../../state/auth_events.dart'; // <-- auto-refresh por eventos
+// NOVO: ring reutilizável
+import 'ring_update.dart';
 
 // Chave em SharedPreferences para snapshot anterior dos PENDENTES.
 const _kPrevPendentesKey = 'exames_pendentes_prev_ids';
@@ -81,7 +82,6 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
   }
 
   Future<void> _load() async {
-    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -94,7 +94,6 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       _prevIds = await _readPrevIds();
 
       final profile = await Session.getProfile();
-      if (!mounted) return;
       if (profile == null) {
         setState(() {
           _error = 'Faça login para ver seus exames.';
@@ -126,14 +125,12 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       // Persiste snapshot atual
       await _writePrevIds(currentIds);
 
-      if (!mounted) return;
       setState(() {
         _itens = ordered;
         _sumiram = disappeared;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _error = kDebugMode ? 'Erro ao carregar pendentes: $e' : 'Erro ao carregar pendentes.';
         _loading = false;
@@ -249,19 +246,19 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       );
     }
 
-    // Quando não há pendentes, mas houve mudanças (sino/aviso)
+    // Quando não há pendentes, mas houve mudanças (ring/aviso)
     if (_itens.isEmpty) {
       if (_sumiram.isEmpty) return const SizedBox.shrink();
       return SectionCard(
         title: 'Autorizações de Exames',
-        child: _AtualizacoesBanner(
+        child: RingUpdateBanner(
           quantidade: _sumiram.length,
           onTap: _openModalAtualizacoes,
         ),
       );
     }
 
-    // Há pendentes: mostra banner (se houver) + primeiro item
+    // Há pendentes: mostra ring (se houver) + primeiro item
     return SectionCard(
       title: 'Autorizações de Exames (pendentes)',
       trailing: TextButton(
@@ -271,7 +268,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       child: Column(
         children: [
           if (_sumiram.isNotEmpty)
-            _AtualizacoesBanner(
+            RingUpdateBanner(
               quantidade: _sumiram.length,
               onTap: _openModalAtualizacoes,
             ),
@@ -281,36 +278,6 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
           ),
           const SizedBox(height: 8),
         ],
-      ),
-    );
-  }
-}
-
-class _AtualizacoesBanner extends StatelessWidget {
-  final int quantidade;
-  final VoidCallback onTap;
-
-  const _AtualizacoesBanner({
-    required this.quantidade,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final plural = quantidade > 1 ? 'autorizações' : 'autorização';
-    return Card(
-      color: Colors.amber.shade50,
-      elevation: 0,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: ListTile(
-        dense: true,
-        leading: const Icon(Icons.notifications_active_outlined), // sino
-        title: Text(
-          '$quantidade $plural mudou de situação',
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        trailing: TextButton(onPressed: onTap, child: const Text('Ver')),
-        onTap: onTap,
       ),
     );
   }
@@ -361,7 +328,6 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
   }
 
   Future<void> _load() async {
-    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -372,13 +338,11 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
         idMatricula: widget.idMatricula,
         limit: 0,
       );
-      if (!mounted) return;
       setState(() {
         _rows = rows;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _error = kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
         _loading = false;
@@ -416,12 +380,8 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.black12,
-                  borderRadius: BorderRadius.circular(3),
-                ),
+                width: 40, height: 5,
+                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
               ),
               const SizedBox(height: 10),
               const Text(
@@ -487,7 +447,19 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
     _future = _load();
   }
 
+  /// Nova heurística:
+  /// - Primeiro buscamos TODAS as liberadas e montamos um Set<int>.
+  /// - O número só é marcado como "liberada" se estiver nesse Set.
+  /// - Ainda assim buscamos detalhe para abrir o sheet.
   Future<List<_StatusConsulta>> _load() async {
+    // 1) Quais números estão de fato em "liberadas"?
+    final libRows = await widget.repo.listarLiberadas(
+      idMatricula: widget.idMatricula,
+      limit: 0,
+    );
+    final liberadasSet = libRows.map((e) => e.numero).toSet();
+
+    // 2) Monta a lista final
     final out = <_StatusConsulta>[];
     for (final n in widget.numeros) {
       try {
@@ -500,15 +472,23 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
         } catch (_) {
           dados = null;
         }
+
+        final isLiberada = liberadasSet.contains(n);
+
         out.add(_StatusConsulta(
           numero: n,
-          liberada: dados != null,
+          liberada: isLiberada,
           dados: dados,
         ));
       } catch (e) {
-        out.add(_StatusConsulta(numero: n, liberada: false, erro: e.toString()));
+        out.add(_StatusConsulta(
+          numero: n,
+          liberada: false,
+          erro: e.toString(),
+        ));
       }
     }
+    // Ordena: liberadas primeiro
     out.sort((a, b) => (b.liberada ? 1 : 0).compareTo(a.liberada ? 1 : 0));
     return out;
   }
@@ -525,7 +505,7 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
         repo: widget.repo,
         idMatricula: widget.idMatricula,
         numero: s.numero,
-        // se não liberada, não temos resumo; o sheet mostra aviso
+        // se não liberada, pode não haver resumo; o sheet mostra aviso
       ),
     );
   }
@@ -545,12 +525,8 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.black12,
-                  borderRadius: BorderRadius.circular(3),
-                ),
+                width: 40, height: 5,
+                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
               ),
               const SizedBox(height: 10),
               Text(
@@ -571,9 +547,7 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final rows = snap.data!;
-                    if (rows.isEmpty) {
-                      return const Center(child: Text('Nada a mostrar.'));
-                    }
+                    if (rows.isEmpty) return const Center(child: Text('Nada a mostrar.'));
                     return ListView.builder(
                       controller: controller,
                       itemCount: rows.length,
@@ -581,7 +555,9 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
                         final s = rows[i];
                         final subt = s.liberada
                             ? 'Liberada para impressão'
-                            : (s.erro != null ? 'Falha ao consultar' : 'Ainda não liberada / negada');
+                            : (s.erro != null
+                            ? 'Falha ao consultar'
+                            : 'Atualizada — toque para verificar');
                         return ListTile(
                           leading: Icon(s.liberada ? Icons.check_circle_outline : Icons.info_outline),
                           title: Text('Autorização nº ${s.numero}'),
