@@ -61,16 +61,17 @@ Future<void> main() async {
 
     // Android impõe ~15min como mínimo para tarefas periódicas.
     await Workmanager().registerPeriodicTask(
-      kExameBgUniqueName, // uniqueName
-      kExameBgUniqueName, // taskName
+      kExameBgUniqueName,                 // uniqueName
+      kExameBgUniqueName,                 // taskName
       frequency: const Duration(minutes: 15),
-      existingWorkPolicy: ExistingWorkPolicy.keep,
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep, // <- AQUI
       constraints: Constraints(networkType: NetworkType.connected),
       backoffPolicy: BackoffPolicy.exponential,
       backoffPolicyDelay: const Duration(minutes: 5),
+      // tag: 'exame-status', // opcional
     );
-  }
-  // ==========================================================
+
+    // ==========================================================
 
   // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
   final params = AppParams(
@@ -86,6 +87,7 @@ Future<void> main() async {
       child: const MyAppLocal(),
     ),
   );
+}
 }
 
 class MyAppLocal extends StatelessWidget {
