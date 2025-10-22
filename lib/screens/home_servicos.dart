@@ -58,9 +58,8 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   VoidCallback? _printedListener;
 
   // >>> NOVO: refresh quando o poller sinaliza mudança de status
-  VoidCallback? _statusChangedListener; // <<<
-  DateTime? _lastAutoRefresh;           // throttle básico (opcional) <<<
-  // <<<
+  VoidCallback? _statusChangedListener;
+  DateTime? _lastAutoRefresh;
 
   @override
   void initState() {
