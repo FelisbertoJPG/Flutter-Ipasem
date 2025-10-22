@@ -31,7 +31,7 @@ class ExameStatusPoller {
 
   ExameStatusPoller({
     required this.api,
-    this.interval = const Duration(seconds: 90),
+    this.interval = const Duration(seconds: 30), //duração
     this.contextProvider,
   });
 
