@@ -9,8 +9,10 @@ class NotificationBridge {
   static final NotificationBridge I = NotificationBridge._();
 
   bool _attached = false;
+
   VoidCallback? _issuedL;
   VoidCallback? _printedL;
+  VoidCallback? _statusL; // <- novo
 
   Future<void> attach() async {
     if (_attached) return;
@@ -29,12 +31,30 @@ class NotificationBridge {
     _printedL = () {
       final n = AuthEvents.instance.lastPrinted.value;
       if (n != null) {
+        // se quiser notificar ao imprimir pela 1ª vez
         AppNotifier.I.notifyExameLiberado(numero: n);
       }
     };
 
+    _statusL = () {
+      final evt = AuthEvents.instance.exameStatusChanged.value;
+      if (evt == null) return;
+      if (evt.status == 'A') {
+        // liberada
+        AppNotifier.I.notifyExameLiberado(numero: evt.numero);
+      } else if (evt.status == 'I') {
+        // negada
+        AppNotifier.I.showSimple(
+          title: 'Autorização negada',
+          body: 'A autorização #${evt.numero} foi negada.',
+        );
+      } // outros status: ignore
+    };
+
     AuthEvents.instance.lastIssued.addListener(_issuedL!);
     AuthEvents.instance.lastPrinted.addListener(_printedL!);
+    AuthEvents.instance.exameStatusChanged.addListener(_statusL!); // <- novo
+
     _attached = true;
   }
 
@@ -45,6 +65,9 @@ class NotificationBridge {
     }
     if (_printedL != null) {
       AuthEvents.instance.lastPrinted.removeListener(_printedL!);
+    }
+    if (_statusL != null) {
+      AuthEvents.instance.exameStatusChanged.removeListener(_statusL!);
     }
     _attached = false;
   }

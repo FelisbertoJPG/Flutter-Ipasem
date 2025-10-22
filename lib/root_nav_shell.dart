@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ipasemnhdigital/screens/autorizacao_exames_screen.dart';
+import 'package:ipasemnhdigital/state/notification_bridge.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'config/app_config.dart';
+import 'services/dev_api.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/home_servicos.dart';
 import 'screens/profile_screen.dart';
 import 'screens/autorizacao_medica_screen.dart';
-import 'screens/autorizacao_odontologica_screen.dart'; // <- NOVO
+import 'screens/autorizacao_odontologica_screen.dart';
+
+import 'services/polling/exame_status_poller.dart';
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});
@@ -19,12 +24,13 @@ class RootNavShell extends StatefulWidget {
   State<RootNavShell> createState() => _RootNavShellState();
 }
 
-class _RootNavShellState extends State<RootNavShell> {
+class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserver {
   final _tabKeys = <int, GlobalKey<NavigatorState>>{
     0: GlobalKey<NavigatorState>(), // Início
     1: GlobalKey<NavigatorState>(), // Serviços
     2: GlobalKey<NavigatorState>(), // Perfil
   };
+  ExameStatusPoller? _poller;
 
   int _currentIndex = 0;
   bool _handledArgs = false;
@@ -36,6 +42,16 @@ class _RootNavShellState extends State<RootNavShell> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    NotificationBridge.I.attach();
+    if (_poller == null) {
+      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
+          ?? const String.fromEnvironment('API_BASE', defaultValue: 'https://assistweb.ipasemnh.com.br');
+      _poller = ExameStatusPoller(
+        api: DevApi(baseUrl),
+        contextProvider: () => context, // <- sempre não-nulo
+      );
+      _poller!.start();
+    }
     if (_handledArgs) return;
 
     final args = ModalRoute.of(context)?.settings.arguments;
@@ -48,9 +64,17 @@ class _RootNavShellState extends State<RootNavShell> {
     }
     _handledArgs = true;
   }
-
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // ao voltar pro app → force um poll imediato
+      _poller?.pollNow();
+    }
+  }
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _poller?.stop();
     _pageController.dispose();
     super.dispose();
   }
