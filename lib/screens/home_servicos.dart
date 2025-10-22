@@ -4,6 +4,9 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../ui/components/exames_liberados_card.dart';
 
+import '../ui/components/exames_negadas_card.dart';
+
+
 import '../root_nav_shell.dart';
 import '../ui/app_shell.dart';
 import '../ui/components/exames_pendentes_card.dart';
@@ -369,6 +372,9 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         const ExamesLiberadosCard(),
         const SizedBox(height: 12),
         const ExamesPendentesCard(),
+        const SizedBox(height: 12),
+        //exames negados
+        const ExamesNegadasCard(),
         const SizedBox(height: 12),
         SectionCard(
           title: 'Histórico de Autorizações',
