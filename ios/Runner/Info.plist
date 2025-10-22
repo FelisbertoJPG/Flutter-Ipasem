@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
+	    <key>NSCameraUsageDescription</key>
+        <string>Precisamos da câmera para fotografar a requisição.</string>
+        <key>NSPhotoLibraryUsageDescription</key>
+        <string>Precisamos acessar sua galeria para anexar imagens.</string>
+        <key>NSPhotoLibraryAddUsageDescription</key>
+        <string>Precisamos gravar as imagens selecionadas para envio.</string>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>

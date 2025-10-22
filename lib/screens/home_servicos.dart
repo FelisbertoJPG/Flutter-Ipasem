@@ -4,6 +4,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../ui/components/exames_liberados_card.dart';
 
+import '../ui/components/exames_negadas_card.dart';
+
 import '../root_nav_shell.dart';
 import '../ui/app_shell.dart';
 import '../ui/components/exames_pendentes_card.dart';
@@ -55,6 +57,10 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   VoidCallback? _issuedListener;
   VoidCallback? _printedListener;
 
+  // >>> NOVO: refresh quando o poller sinaliza mudança de status
+  VoidCallback? _statusChangedListener;
+  DateTime? _lastAutoRefresh;
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +71,11 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
     _printedListener = () => Future.microtask(_refreshAfterPrint);
     AuthEvents.instance.lastPrinted.addListener(_printedListener!);
+
+    // >>> NOVO: escuta mudanças detectadas pelo poller (A/I)
+    _statusChangedListener = () => Future.microtask(_refreshAfterStatusChange);
+    AuthEvents.instance.exameStatusChanged.addListener(_statusChangedListener!);
+    // <<<
 
     _bootstrap();
   }
@@ -92,6 +103,29 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     await _bootstrap();
   }
 
+  // >>> NOVO: chamado quando o poller emite AuthEvents.exameStatusChanged
+  Future<void> _refreshAfterStatusChange() async {
+    final evt = AuthEvents.instance.exameStatusChanged.value;
+    if (!mounted || evt == null) return;
+
+    // throttle simples para evitar cascata de refresh
+    final now = DateTime.now();
+    if (_lastAutoRefresh != null &&
+        now.difference(_lastAutoRefresh!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastAutoRefresh = now;
+
+    // garante que a linha já “apareceu”/atualizou no backend antes de recarregar
+    if (_controller != null) {
+      await _controller!.waitUntilInHistorico(evt.numero);
+    }
+    if (!mounted) return;
+
+    await _bootstrap();
+  }
+  // <<<
+
   @override
   void dispose() {
     if (_issuedListener != null) {
@@ -100,6 +134,11 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     if (_printedListener != null) {
       AuthEvents.instance.lastPrinted.removeListener(_printedListener!);
     }
+    // >>> NOVO
+    if (_statusChangedListener != null) {
+      AuthEvents.instance.exameStatusChanged.removeListener(_statusChangedListener!);
+    }
+    // <<<
     super.dispose();
   }
 
@@ -366,9 +405,12 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             onRequireLogin: null,
           ),
         ),
+        const ExamesPendentesCard(),
         const ExamesLiberadosCard(),
         const SizedBox(height: 12),
-        const ExamesPendentesCard(),
+        const SizedBox(height: 12),
+        //exames negados
+        const ExamesNegadasCard(),
         const SizedBox(height: 12),
         SectionCard(
           title: 'Histórico de Autorizações',

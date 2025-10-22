@@ -23,10 +23,11 @@ class AppScaffold extends StatelessWidget {
       return Scaffold(body: body);
     }
 
-    // Estamos dentro da RootNavShell?
-    final inShell = RootNavShell.maybeOf(context) != null;
+    // Dentro da RootNavShell?
+    final shell = RootNavShell.maybeOf(context);
+    final inShell = shell != null;
 
-    // Nome da rota atual (definido pela shell para as abas raiz)
+    // Nome da rota atual (definido pela shell nas abas raiz)
     final routeName = ModalRoute.of(context)?.settings.name ?? '';
 
     // Conjunto de rotas RAIZ das abas (nessas, queremos SEMPRE hambúrguer)
@@ -36,17 +37,25 @@ class AppScaffold extends StatelessWidget {
     // Pode dar pop neste Navigator local?
     final canPopHere = Navigator.of(context).canPop();
 
-    // Regra final: mostra voltar somente se NÃO for raiz de aba
-    // - fora da shell: seta
-    // - dentro da shell: seta só se não for root da aba
+    // Regra final: mostra "voltar" apenas se NÃO for raiz de aba
     final showBack = !inShell || (!isTabRoot && canPopHere);
 
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: false, // evita seta automática
+        automaticallyImplyLeading: false,
         title: Text(title),
         leading: showBack
-            ? BackButton(onPressed: () => Navigator.of(context).maybePop())
+            ? BackButton(
+          onPressed: () {
+            // Back centralizado (se estiver na Shell)
+            final scope = RootNavShell.maybeOf(context);
+            if (scope != null) {
+              scope.safeBack(); // ignorar Future é ok aqui
+            } else {
+              Navigator.of(context).maybePop();
+            }
+          },
+        )
             : Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu),
@@ -78,9 +87,8 @@ class _AppDrawer extends StatelessWidget {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Lê a flag do “manter login”
+      // Flag “manter login” (se não existir, default true)
       final remember = prefs.getBool('remember_login') ?? true;
-      // ^ se ainda não usa a flag, deixar default = true mantém comportamento “lembrar”
 
       // Sempre encerra a sessão
       await prefs.setBool('is_logged_in', false);
@@ -89,12 +97,11 @@ class _AppDrawer extends StatelessWidget {
       // Só limpa credenciais se NÃO quiser manter login
       if (!remember) {
         await prefs.remove('saved_cpf');
-        await prefs.remove('saved_pwd');        // ajuste se usa outro nome
-        await prefs.remove('saved_password');   // alternativa comum
+        await prefs.remove('saved_pwd');
+        await prefs.remove('saved_password');
       }
 
       if (!context.mounted) return;
-      // Volta para o login limpando a pilha, via ROOT navigator (sem hotbar)
       Navigator.of(context, rootNavigator: true)
           .pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (_) {
@@ -105,15 +112,12 @@ class _AppDrawer extends StatelessWidget {
     }
   }
 
-
-
   void _goTab(BuildContext context, int index) {
     Navigator.of(context).pop(); // fecha o drawer
     final shell = RootNavShell.maybeOf(context);
     if (shell != null) {
       shell.setTab(index);
     } else {
-      // Fallback: reabre a shell já na aba solicitada
       Navigator.of(context, rootNavigator: true)
           .pushNamedAndRemoveUntil('/', (r) => false, arguments: {'tab': index});
     }
