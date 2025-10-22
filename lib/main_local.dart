@@ -24,6 +24,12 @@ if (dart.library.html) 'web/webview_initializer_web.dart';
 import 'state/notification_bridge.dart';
 // >>>
 
+// ==== NOVO: background polling (workmanager) ====
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:workmanager/workmanager.dart';
+import 'services/polling/exame_bg_worker.dart';
+// ===============================================
+
 // Base local: por padrão .98; pode sobrescrever com --dart-define=API_BASE=http://host
 const String kLocalBase = String.fromEnvironment(
   'API_BASE',
@@ -44,6 +50,27 @@ Future<void> main() async {
   // Inicializa canais + pede permissão (iOS). No Android 13+, a permissão
   // já foi declarada no Manifest.
   await NotificationBridge.I.attach();
+
+  // ==== NOVO: inicializa e agenda o worker em background ====
+  // Observação: o plugin não é suportado no Web.
+  if (!kIsWeb) {
+    await Workmanager().initialize(
+      exameBgDispatcher, // entrypoint @pragma('vm:entry-point') no arquivo do worker
+      isInDebugMode: kDebugMode,
+    );
+
+    // Android impõe ~15min como mínimo para tarefas periódicas.
+    await Workmanager().registerPeriodicTask(
+      kExameBgUniqueName, // uniqueName
+      kExameBgUniqueName, // taskName
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+      constraints: Constraints(networkType: NetworkType.connected),
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 5),
+    );
+  }
+  // ==========================================================
 
   // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
   final params = AppParams(
