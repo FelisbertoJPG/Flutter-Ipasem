@@ -1,18 +1,20 @@
+// lib/root_nav_shell.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ipasemnhdigital/screens/autorizacao_exames_screen.dart';
-import 'package:ipasemnhdigital/state/notification_bridge.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import 'config/app_config.dart';
 import 'services/dev_api.dart';
+import 'services/polling/exame_status_poller.dart';
+
+import 'state/notification_bridge.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/home_servicos.dart';
 import 'screens/profile_screen.dart';
 import 'screens/autorizacao_medica_screen.dart';
 import 'screens/autorizacao_odontologica_screen.dart';
-
-import 'services/polling/exame_status_poller.dart';
+import 'screens/autorizacao_exames_screen.dart';
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});
@@ -24,12 +26,13 @@ class RootNavShell extends StatefulWidget {
   State<RootNavShell> createState() => _RootNavShellState();
 }
 
-class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserver {
+class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver {
   final _tabKeys = <int, GlobalKey<NavigatorState>>{
     0: GlobalKey<NavigatorState>(), // Início
     1: GlobalKey<NavigatorState>(), // Serviços
     2: GlobalKey<NavigatorState>(), // Perfil
   };
+
   ExameStatusPoller? _poller;
 
   int _currentIndex = 0;
@@ -40,18 +43,28 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
   PageController(initialPage: _currentIndex);
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // idempotente e no-op no Web
+    NotificationBridge.I.attach();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    NotificationBridge.I.attach();
+
     if (_poller == null) {
       final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
           ?? const String.fromEnvironment('API_BASE', defaultValue: 'https://assistweb.ipasemnh.com.br');
+
       _poller = ExameStatusPoller(
         api: DevApi(baseUrl),
-        contextProvider: () => context, // <- sempre não-nulo
+        contextProvider: () => context, // sempre não-nulo aqui
       );
-      _poller!.start();
+      _poller!.start(); // async, não bloqueia o frame
     }
+
     if (_handledArgs) return;
 
     final args = ModalRoute.of(context)?.settings.arguments;
@@ -64,6 +77,7 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
     }
     _handledArgs = true;
   }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -71,6 +85,7 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
       _poller?.pollNow();
     }
   }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -110,10 +125,6 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
     return nav.pushNamed<T>(name, arguments: arguments);
   }
 
-  /// BACK centralizado (físico/sistema):
-  /// 1) Se a aba atual tem rotas para voltar, faz pop nela.
-  /// 2) Caso contrário, muda para Serviços (aba 1). Se já estiver em Serviços,
-  ///    muda para Início (aba 0). Nunca fecha o app.
   Future<bool> _handleSystemBack() async {
     final currentNav = _tabKeys[_currentIndex]!.currentState!;
     if (currentNav.canPop()) {
@@ -121,7 +132,6 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
       return false; // impede o pop global
     }
 
-    // Fallbacks de navegação entre abas
     if (_currentIndex != 1) {
       _setTab(1); // prioriza Serviços
       return false;
@@ -130,12 +140,9 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
       _setTab(0); // depois Início
       return false;
     }
-
-    // Já está no root de Início. Não fecha o app.
-    return false;
+    return false; // nunca fecha o app
   }
 
-  // Exposto via InheritedWidget para uso opcional (ex.: no leading de AppBars)
   Future<void> _safeBack() async {
     await _handleSystemBack();
   }
@@ -160,12 +167,12 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
           builder: (_) => const AutorizacaoMedicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-medica'),
         );
-      case 'autorizacao-odontologica': // <- NOVO
+      case 'autorizacao-odontologica':
         return MaterialPageRoute(
           builder: (_) => const AutorizacaoOdontologicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-odontologica'),
         );
-      case 'autorizacao-exames': // <- NOVO
+      case 'autorizacao-exames':
         return MaterialPageRoute(
           builder: (_) => const AutorizacaoExamesScreen(),
           settings: const RouteSettings(name: 'autorizacao-exames'),
@@ -247,20 +254,18 @@ class _RootNavShellState extends State<RootNavShell>  with WidgetsBindingObserve
       ),
     );
 
-    return WillPopScope( // <- back centralizado
+    return WillPopScope(
       onWillPop: _handleSystemBack,
       child: RootNavScope(
         setTab: _setTab,
         currentIndex: _currentIndex,
         pushInServicos: _pushInServicos,
-        safeBack: _safeBack, // expõe para quem quiser usar
+        safeBack: _safeBack,
         child: Scaffold(
           body: PageView(
             controller: _pageController,
             physics: const PageScrollPhysics(),
-            onPageChanged: (i) {
-              setState(() => _currentIndex = i);
-            },
+            onPageChanged: (i) => setState(() => _currentIndex = i),
             children: [
               _tabNavigator(index: 0, onGenerateRoute: _routeHome),
               _tabNavigator(index: 1, onGenerateRoute: _routeServicos),
@@ -389,6 +394,7 @@ class RootNavScope extends InheritedWidget {
 
   static RootNavScope? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<RootNavScope>();
+    // ignore: unreachable_code
   }
 
   @override

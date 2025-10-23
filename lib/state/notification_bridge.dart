@@ -1,9 +1,12 @@
 // lib/state/notification_bridge.dart
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'; // kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint
 import '../services/notifier.dart';
 import 'auth_events.dart';
 
-/// Escuta AuthEvents e dispara AppNotifier. Anexe 1x no app.
+/// Faz a ponte entre eventos de autorização (AuthEvents) e notificações locais
+/// (AppNotifier). Em plataformas sem suporte (Web/desktop), vira NO-OP seguro.
+///
+/// Use: chame `NotificationBridge.I.attach()` UMA vez na inicialização do app.
 class NotificationBridge {
   NotificationBridge._();
   static final NotificationBridge I = NotificationBridge._();
@@ -12,12 +15,36 @@ class NotificationBridge {
 
   VoidCallback? _issuedL;
   VoidCallback? _printedL;
-  VoidCallback? _statusL; // <- novo
+  VoidCallback? _statusL;
+
+  bool get _supportsLocalNotifications {
+    if (kIsWeb) return false;
+    // Ajuste se você suportar mais plataformas no AppNotifier
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
 
   Future<void> attach() async {
     if (_attached) return;
-    await AppNotifier.I.init(); // garante canal e permissão
 
+    // Sem suporte? Apenas marca como anexado e sai (não registra listeners).
+    if (!_supportsLocalNotifications) {
+      _attached = true;
+      debugPrint('NotificationBridge: no-op (platform not supported).');
+      return;
+    }
+
+    // Inicializa o AppNotifier com proteção contra falhas.
+    try {
+      await AppNotifier.I.init(); // canais/permissões (Android/iOS)
+    } catch (e, st) {
+      debugPrint('NotificationBridge: AppNotifier.init() falhou. '
+          'Seguindo sem notificações. $e\n$st');
+      _attached = true; // evita tentar de novo e travar bootstrap
+      return;
+    }
+
+    // Listeners protegidos — só chegam aqui se init() ok.
     _issuedL = () {
       final n = AuthEvents.instance.lastIssued.value;
       if (n != null) {
@@ -31,7 +58,7 @@ class NotificationBridge {
     _printedL = () {
       final n = AuthEvents.instance.lastPrinted.value;
       if (n != null) {
-        // se quiser notificar ao imprimir pela 1ª vez
+        // notifica ao imprimir pela 1ª vez (A -> R), se desejado
         AppNotifier.I.notifyExameLiberado(numero: n);
       }
     };
@@ -40,20 +67,18 @@ class NotificationBridge {
       final evt = AuthEvents.instance.exameStatusChanged.value;
       if (evt == null) return;
       if (evt.status == 'A') {
-        // liberada
         AppNotifier.I.notifyExameLiberado(numero: evt.numero);
       } else if (evt.status == 'I') {
-        // negada
         AppNotifier.I.showSimple(
           title: 'Autorização negada',
           body: 'A autorização #${evt.numero} foi negada.',
         );
-      } // outros status: ignore
+      } // outros status: ignora
     };
 
     AuthEvents.instance.lastIssued.addListener(_issuedL!);
     AuthEvents.instance.lastPrinted.addListener(_printedL!);
-    AuthEvents.instance.exameStatusChanged.addListener(_statusL!); // <- novo
+    AuthEvents.instance.exameStatusChanged.addListener(_statusL!);
 
     _attached = true;
   }
@@ -69,6 +94,9 @@ class NotificationBridge {
     if (_statusL != null) {
       AuthEvents.instance.exameStatusChanged.removeListener(_statusL!);
     }
+    _issuedL = null;
+    _printedL = null;
+    _statusL = null;
     _attached = false;
   }
 }

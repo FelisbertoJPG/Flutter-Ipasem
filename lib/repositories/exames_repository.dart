@@ -8,6 +8,70 @@ class ExamesRepository {
   final DevApi _api;
   ExamesRepository(this._api);
 
+  /// Retorna os últimos exames em status 'A' (liberado) ou 'P' (pendente),
+  /// ordenados por data/hora de emissão (mais recentes primeiro).
+  /// Usa a mesma action `exames_historico`.
+  Future<List<ExameResumo>> listarUltimosAP({
+    required int idMatricula,
+    int limit = 3,
+  }) async {
+    final res = await _api.postAction('exames_historico', data: {
+      'id_matricula': idMatricula,
+    });
+
+    final body = res.data as Map;
+    if (body['ok'] != true) {
+      throw DioException(
+        requestOptions: res.requestOptions,
+        response: res,
+        type: DioExceptionType.badResponse,
+        error: body['error'],
+      );
+    }
+
+    final rows = ((body['data'] as Map?)?['rows'] as List?) ?? const [];
+
+    DateTime _parse(Map r) {
+      try {
+        final d = (r['data_emissao'] ?? '').toString().trim(); // dd/MM/yyyy
+        final h = (r['hora_emissao'] ?? '').toString().trim(); // HH:mm
+        if (d.isEmpty && h.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
+        final p = d.split('/');
+        int dd = 1, mm = 1, yy = 1970;
+        if (p.length == 3) {
+          dd = int.tryParse(p[0]) ?? 1;
+          mm = int.tryParse(p[1]) ?? 1;
+          yy = int.tryParse(p[2]) ?? 1970;
+          if (yy < 100) yy += 2000;
+        }
+        int hh = 0, mi = 0;
+        if (h.isNotEmpty) {
+          final th = h.split(':');
+          hh = int.tryParse(th[0]) ?? 0;
+          mi = th.length > 1 ? int.tryParse(th[1]) ?? 0 : 0;
+        }
+        return DateTime(yy, mm, dd, hh, mi);
+      } catch (_) {
+        return DateTime.fromMillisecondsSinceEpoch(0);
+      }
+    }
+
+    final ap = rows.where((raw) {
+      final st = (raw is Map ? raw['auditado'] : null)?.toString().trim().toUpperCase() ?? '';
+      return st == 'A' || st == 'P';
+    }).cast<Map>().toList();
+
+    ap.sort((a, b) => _parse(b).compareTo(_parse(a)));
+
+    final mapped = ap
+        .map((m) => ExameResumo.fromJson(m.cast<String, dynamic>()))
+        .toList();
+
+    return (limit > 0 && mapped.length > limit)
+        ? mapped.take(limit).toList()
+        : mapped;
+  }
+
   Future<List<ExameResumo>> listarPendentes({
     required int idMatricula,
     int limit = 4,

@@ -44,7 +44,6 @@ class MinhaSituacaoCard extends StatelessWidget {
 
     return SectionCard(
       title: 'Minha Situação',
-      // 👇 Apenas padding interno; a largura externa do card permanece igual
       child: Padding(
         padding: EdgeInsets.all(inPad),
         child: inner,
@@ -73,11 +72,7 @@ class _Resumo extends StatelessWidget {
           label: 'Situação',
           value: situacao,
         ),
-        ResumoRow(
-          icon: Icons.medical_services_outlined,
-          label: 'Plano de saúde',
-          value: plano,
-        ),
+
         ResumoRow(
           icon: Icons.group_outlined,
           label: 'Dependentes',
