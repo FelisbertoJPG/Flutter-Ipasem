@@ -143,24 +143,47 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   }
 
   DateTime _parseDateTime(String d, String h) {
-    try {
-      final ds = d.trim();
-      final hs = (h.trim().isEmpty) ? '00:00' : h.trim();
-      final parts = ds.split('/');
-      if (parts.length == 3) {
-        final day = int.tryParse(parts[0]) ?? 1;
-        final mon = int.tryParse(parts[1]) ?? 1;
-        final yr = int.tryParse(parts[2]) ?? 1970;
-        final tparts = hs.split(':');
-        final hh = (tparts.length > 0) ? int.tryParse(tparts[0]) ?? 0 : 0;
-        final mm = (tparts.length > 1) ? int.tryParse(tparts[1]) ?? 0 : 0;
-        return DateTime(yr, mon, day, hh, mm);
-      }
-      return DateTime.fromMillisecondsSinceEpoch(0);
-    } catch (_) {
-      return DateTime.fromMillisecondsSinceEpoch(0);
+    final ds = d.trim();
+    final hs = h.trim();
+
+    if (ds.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
+
+    // 1) ISO-like: yyyy-MM-dd (opcional HH:mm[:ss])
+    if (ds.contains('-')) {
+      // normaliza hora (00:00:00 se vier vazia)
+      final hh = hs.isEmpty
+          ? '00:00:00'
+          : (hs.split(':').length == 2 ? '${hs}:00' : hs); // garante segundos
+      final iso = '${ds}T$hh'; // <-- correção aqui
+      final isoParsed = DateTime.tryParse(iso);
+      if (isoParsed != null) return isoParsed;
     }
+
+    // 2) Brasileiro: dd/MM/yyyy (opcional HH:mm[:ss])
+    if (ds.contains('/')) {
+      try {
+        final parts = ds.split('/');
+        if (parts.length == 3) {
+          final day = int.tryParse(parts[0]) ?? 1;
+          final mon = int.tryParse(parts[1]) ?? 1;
+          var yr = int.tryParse(parts[2]) ?? 1970;
+          if (yr < 100) yr += 2000;
+          final t = hs.isEmpty ? '00:00' : hs;
+          final tp = t.split(':');
+          final hh = int.tryParse(tp[0]) ?? 0;
+          final mm = (tp.length > 1) ? int.tryParse(tp[1]) ?? 0 : 0;
+          final ss = (tp.length > 2) ? int.tryParse(tp[2]) ?? 0 : 0;
+          return DateTime(yr, mon, day, hh, mm, ss);
+        }
+      } catch (_) {/* fallback abaixo */}
+    }
+
+    // 3) Último recurso
+    final fallback = DateTime.tryParse(ds);
+    return fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
+
+
 
   Future<void> _bootstrap() async {
     setState(() => _loading = true);
@@ -183,12 +206,12 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         rows.sort((a, b) {
           final ta = _parseDateTime(a.dataEmissao, a.horaEmissao);
           final tb = _parseDateTime(b.dataEmissao, b.horaEmissao);
-          return tb.compareTo(ta);
+          return tb.compareTo(ta); // mais recente primeiro
         });
 
-        // Limita às 5 mais recentes
+        // Limita às 5 mais recentes depois de ordenar
         final top5 = rows.take(5).toList();
-        _histRows = top5;
+        _histRows  = top5;
 
         _historico = top5.map((h) {
           final paciente = (h.paciente.trim().isNotEmpty)
@@ -406,8 +429,8 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
           ),
         ),
         const ExamesPendentesCard(),
-        const ExamesLiberadosCard(),
         const SizedBox(height: 12),
+        const ExamesLiberadosCard(),
         const SizedBox(height: 12),
         //exames negados
         const ExamesNegadasCard(),

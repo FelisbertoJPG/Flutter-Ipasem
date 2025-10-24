@@ -8,6 +8,7 @@ import '../../services/session.dart';
 import '../../repositories/reimpressao_repository.dart';
 import '../../repositories/exames_repository.dart';
 
+import '../../models/reimpressao.dart';
 import '../../pdf/autorizacao_pdf_data.dart';
 import '../../pdf/pdf_mappers.dart';
 import '../../screens/pdf_preview_screen.dart';
@@ -16,9 +17,10 @@ import '../../screens/pdf_preview_screen.dart';
 import '../../state/auth_events.dart';
 
 /// Abre o preview/print do PDF a partir do número da autorização.
-/// - EXAMES/COMPLEMENTARES: tenta Reimpressão; se vier vazio, faz fallback
-///   para `exame_consulta` e ainda assim gera o PDF no app.
-/// - MÉDICA/ODONTOLÓGICA: usa o mapper `mapDetalheToPdfData` com `tipo` correto.
+/// Regras:
+/// - Gera o PDF localmente (sem acessar reimpressao_pdf no servidor).
+/// - Se for EXAMES, marca A→R apenas quando o usuário FECHAR o preview.
+/// - Emite eventos globais ao concluir, para forçar atualização dos cards.
 Future<void> openPreviewFromNumero(
     BuildContext context,
     int numero, {
@@ -34,20 +36,24 @@ Future<void> openPreviewFromNumero(
       return;
     }
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl ??
+        const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
 
-    final api  = DevApi(baseUrl);
-    final repo = ReimpressaoRepository(api);
+    final api       = DevApi(baseUrl);
+    final reimpRepo = ReimpressaoRepository(api);
+    final exRepo    = ExamesRepository(api);
 
-    // 1) Tenta via Reimpressão (fluxo “oficial” que já alimenta o PDF)
-    final det = await repo.detalhe(numero, idMatricula: profile.id);
+    // 1) Tenta obter os dados completos pela Reimpressão
+    final det = await reimpRepo.detalhe(numero, idMatricula: profile.id);
 
     AutorizacaoPdfData? data;
+    bool isExame = false;
 
     if (det != null) {
-      final isExames = det.tipoAutorizacao == 3; // 3 = exames/complementares
-      if (isExames) {
+      // Heurística de “exames/complementares”
+      isExame = _ehExamesPeloDetalhe(det);
+
+      if (isExame) {
         data = AutorizacaoPdfData.fromReimpressaoExame(
           det: det,
           idMatricula: profile.id,
@@ -68,47 +74,27 @@ Future<void> openPreviewFromNumero(
       }
     }
 
-    // 2) Se não veio nada da Reimpressão e for EXAME, tenta fallback via `exame_consulta`
+    // 2) Se não achou nada na Reimpressão e a ordem for de Exames, usa o fallback
     data ??= await _fallbackExameFromConsulta(
       api: api,
       numero: numero,
       idMatricula: profile.id,
       nomeTitular: profile.nome,
     );
+    isExame = isExame || (data?.tipo == AutorizacaoTipo.exames);
 
     if (data == null) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível carregar os detalhes desta ordem.')),
+        const SnackBar(content: Text('Não foi possível carregar os detalhes desta autorização.')),
       );
       return;
     }
 
-    // === Marca EXAMES como concluída (A -> R) em segundo plano e emite evento ===
-    try {
-      if (data.tipo == AutorizacaoTipo.exames) {
-        final exRepo = ExamesRepository(api);
-        // fire-and-forget (não bloqueia o preview)
-        Future(() async {
-          try {
-            await exRepo.registrarPrimeiraImpressao(numero);
-            // dispara evento global para auto-refresh dos cards/histórico
-            AuthEvents.instance.emitPrinted(numero);
-          } catch (_) {
-            // silencioso: não impacta a abertura do PDF
-          }
-        });
-      }
-    } catch (_) {
-      // silencioso
-    }
-    // ============================================================================
-
     final fileName = 'aut_$numero.pdf';
-    if (!context.mounted) return;
 
-    // Abre o preview e, quando FECHAR, re-emite o evento para garantir refresh na volta.
-    final routeFuture = Navigator.of(context, rootNavigator: useRootNavigator).push(
+    // 3) Abre o preview local (sem alterar status ainda)
+    await Navigator.of(context, rootNavigator: useRootNavigator).push(
       MaterialPageRoute(
         builder: (_) => PdfPreviewScreen(
           data: data!,
@@ -117,11 +103,19 @@ Future<void> openPreviewFromNumero(
       ),
     );
 
-    // Quando o usuário fechar o preview, dispare novamente o evento:
-    routeFuture.whenComplete(() {
-      // Emite de novo para forçar a HomeServicos a recarregar o histórico
+    // 4) Ao FECHAR o preview: se for EXAMES, marca A→R e emite eventos
+    if (isExame) {
+      try {
+        await exRepo.registrarPrimeiraImpressao(numero);
+        AuthEvents.instance.emitPrinted(numero);
+        AuthEvents.instance.emitStatusChanged(numero, 'R');
+      } catch (_) {
+        // silencioso: não bloquear a volta da tela
+      }
+    } else {
+      // Para os demais tipos, ainda assim força refresh visual do histórico
       AuthEvents.instance.emitPrinted(numero);
-    });
+    }
   } catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -130,7 +124,7 @@ Future<void> openPreviewFromNumero(
   }
 }
 
-/// Alias semântica para quem quiser chamar explicitamente “exame”.
+/// Alias semântico quando a chamada for explicitamente de exame.
 Future<void> openPreviewFromNumeroExame(
     BuildContext context,
     int numero, {
@@ -139,8 +133,18 @@ Future<void> openPreviewFromNumeroExame(
   return openPreviewFromNumero(context, numero, useRootNavigator: useRootNavigator);
 }
 
+/// Heurística compatível com backend para classificar EXAMES.
+/// - tipo_autorizacao == 2      -> exames
+/// - tipo_autorizacao == 7      -> fisioterapia (usa regra de exames)
+/// - tipo_autorizacao == 3 && codsubtipo_autorizacao == 4 -> complementares (exames)
+bool _ehExamesPeloDetalhe(ReimpressaoDetalhe det) {
+  final t = det.tipoAutorizacao;
+  final sub = det.codSubtipoAutorizacao;
+  return t == 2 || t == 7 || (t == 3 && sub == 4);
+}
+
 /// Fallback para EXAMES quando o endpoint de Reimpressão não retorna dados.
-/// Usa `exame_consulta` e monta um PDF mínimo de Exames.
+/// Usa `exame_consulta` e monta um PDF mínimo de Exames (preview interno).
 Future<AutorizacaoPdfData?> _fallbackExameFromConsulta({
   required DevApi api,
   required int numero,
@@ -160,7 +164,7 @@ Future<AutorizacaoPdfData?> _fallbackExameFromConsulta({
 
       // Prestador
       nomePrestador: det.prestador,
-      codPrestador: '', // não disponível neste endpoint
+      codPrestador: '',
       especialidade: det.especialidade.isEmpty ? 'EXAMES' : det.especialidade,
       endereco: det.endereco,
       bairro: det.bairro,
