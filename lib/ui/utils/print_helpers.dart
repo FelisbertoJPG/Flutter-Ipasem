@@ -8,17 +8,13 @@ import '../../services/session.dart';
 import '../../repositories/reimpressao_repository.dart';
 import '../../repositories/exames_repository.dart';
 
+import '../../models/reimpressao.dart';
+import '../../models/proc_item.dart';
 import '../../pdf/autorizacao_pdf_data.dart';
 import '../../pdf/pdf_mappers.dart';
 import '../../screens/pdf_preview_screen.dart';
-
-// Eventos globais (home/histórico escutam isso)
 import '../../state/auth_events.dart';
 
-/// Abre o preview/print do PDF a partir do número da autorização.
-/// - EXAMES/COMPLEMENTARES: tenta Reimpressão; se vier vazio, faz fallback
-///   para `exame_consulta` e ainda assim gera o PDF no app.
-/// - MÉDICA/ODONTOLÓGICA: usa o mapper `mapDetalheToPdfData` com `tipo` correto.
 Future<void> openPreviewFromNumero(
     BuildContext context,
     int numero, {
@@ -34,94 +30,86 @@ Future<void> openPreviewFromNumero(
       return;
     }
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl ??
+        const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
 
-    final api  = DevApi(baseUrl);
-    final repo = ReimpressaoRepository(api);
+    final api       = DevApi(baseUrl);
+    final reimpRepo = ReimpressaoRepository(api);
+    final exRepo    = ExamesRepository(api);
 
-    // 1) Tenta via Reimpressão (fluxo “oficial” que já alimenta o PDF)
-    final det = await repo.detalhe(numero, idMatricula: profile.id);
+    // --- 1) Pega payload bruto (dados + itens) ---
+    final payload = await reimpRepo.detalheRaw(numero, idMatricula: profile.id);
 
-    AutorizacaoPdfData? data;
+    final Map<String, dynamic> dadosMap = ((
+        (payload['data'] as Map?)?['dados'] ??
+            (payload['dados']) ??
+            (payload['row']) ??
+            payload
+    ) as Map)
+        .cast<String, dynamic>();
 
-    if (det != null) {
-      final isExames = det.tipoAutorizacao == 3; // 3 = exames/complementares
-      if (isExames) {
-        data = AutorizacaoPdfData.fromReimpressaoExame(
-          det: det,
-          idMatricula: profile.id,
-          procedimentos: const [],
-        );
-      } else {
-        final tipo = (det.codEspecialidade == 700)
-            ? AutorizacaoTipo.odontologica
-            : AutorizacaoTipo.medica;
+    final det = ReimpressaoDetalhe.fromMap(dadosMap);
+    bool isExame = _ehExamesPeloDetalhe(det);
 
-        data = mapDetalheToPdfData(
-          det: det,
-          nomeTitular: profile.nome,
-          idMatricula: profile.id,
-          procedimentos: const [],
-          tipo: tipo,
-        );
-      }
-    }
+    // --- 2) Monta AutorizacaoPdfData ---
+    late AutorizacaoPdfData data;
 
-    // 2) Se não veio nada da Reimpressão e for EXAME, tenta fallback via `exame_consulta`
-    data ??= await _fallbackExameFromConsulta(
-      api: api,
-      numero: numero,
-      idMatricula: profile.id,
-      nomeTitular: profile.nome,
-    );
+    if (isExame) {
+      // coleta itens do payload e converte para ProcItem
+      final rawItens = ((payload['data'] as Map?)?['itens'] ?? payload['itens'] ?? const []) as List;
+      final procedimentos = rawItens
+          .whereType<Map>()
+          .map((m) => ProcItem.fromMap(m.cast<String, dynamic>()))
+          .where((p) => p.codigo.isNotEmpty || p.descricao.isNotEmpty)
+          .toList();
 
-    if (data == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível carregar os detalhes desta ordem.')),
+      data = AutorizacaoPdfData.fromReimpressaoExame(
+        det: det,
+        idMatricula: profile.id,
+        procedimentos: procedimentos,
       );
-      return;
-    }
 
-    // === Marca EXAMES como concluída (A -> R) em segundo plano e emite evento ===
-    try {
-      if (data.tipo == AutorizacaoTipo.exames) {
-        final exRepo = ExamesRepository(api);
-        // fire-and-forget (não bloqueia o preview)
-        Future(() async {
-          try {
-            await exRepo.registrarPrimeiraImpressao(numero);
-            // dispara evento global para auto-refresh dos cards/histórico
-            AuthEvents.instance.emitPrinted(numero);
-          } catch (_) {
-            // silencioso: não impacta a abertura do PDF
-          }
-        });
+      if (data.procedimentos.isEmpty) {
+        throw StateError('Nenhum procedimento informado para a autorização ${data.numero}.');
       }
-    } catch (_) {
-      // silencioso
+    } else {
+      // médica/odonto seguem seu mapper existente
+      final tipo = (det.codEspecialidade == 700)
+          ? AutorizacaoTipo.odontologica
+          : AutorizacaoTipo.medica;
+
+      data = mapDetalheToPdfData(
+        det: det,
+        nomeTitular: profile.nome,
+        idMatricula: profile.id,
+        procedimentos: const [],
+        tipo: tipo,
+      );
     }
-    // ============================================================================
 
+    // --- 3) Abre o preview ---
     final fileName = 'aut_$numero.pdf';
-    if (!context.mounted) return;
-
-    // Abre o preview e, quando FECHAR, re-emite o evento para garantir refresh na volta.
-    final routeFuture = Navigator.of(context, rootNavigator: useRootNavigator).push(
+    await Navigator.of(context, rootNavigator: useRootNavigator).push(
       MaterialPageRoute(
         builder: (_) => PdfPreviewScreen(
-          data: data!,
+          data: data,
           fileName: fileName,
         ),
       ),
     );
 
-    // Quando o usuário fechar o preview, dispare novamente o evento:
-    routeFuture.whenComplete(() {
-      // Emite de novo para forçar a HomeServicos a recarregar o histórico
+    // --- 4) Ao fechar o preview, marcar A→R para Exames ---
+    if (isExame) {
+      try {
+        await exRepo.registrarPrimeiraImpressao(numero);
+        AuthEvents.instance.emitPrinted(numero);
+        AuthEvents.instance.emitStatusChanged(numero, 'R');
+      } catch (_) {
+        // silencioso
+      }
+    } else {
       AuthEvents.instance.emitPrinted(numero);
-    });
+    }
   } catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -130,7 +118,6 @@ Future<void> openPreviewFromNumero(
   }
 }
 
-/// Alias semântica para quem quiser chamar explicitamente “exame”.
 Future<void> openPreviewFromNumeroExame(
     BuildContext context,
     int numero, {
@@ -139,52 +126,9 @@ Future<void> openPreviewFromNumeroExame(
   return openPreviewFromNumero(context, numero, useRootNavigator: useRootNavigator);
 }
 
-/// Fallback para EXAMES quando o endpoint de Reimpressão não retorna dados.
-/// Usa `exame_consulta` e monta um PDF mínimo de Exames.
-Future<AutorizacaoPdfData?> _fallbackExameFromConsulta({
-  required DevApi api,
-  required int numero,
-  required int idMatricula,
-  required String nomeTitular,
-}) async {
-  try {
-    final exRepo = ExamesRepository(api);
-    final det = await exRepo.consultarDetalhe(
-      numero: numero,
-      idMatricula: idMatricula,
-    );
-
-    return AutorizacaoPdfData(
-      tipo: AutorizacaoTipo.exames,
-      numero: numero,
-
-      // Prestador
-      nomePrestador: det.prestador,
-      codPrestador: '', // não disponível neste endpoint
-      especialidade: det.especialidade.isEmpty ? 'EXAMES' : det.especialidade,
-      endereco: det.endereco,
-      bairro: det.bairro,
-      cidade: det.cidade,
-      telefone: det.telefone,
-      codigoVinculo: '',
-      nomeVinculo: '',
-
-      // Segurado/Paciente
-      idMatricula: idMatricula,
-      nomeTitular: nomeTitular,
-      idDependente: 0,
-      nomePaciente: det.paciente,
-      idadePaciente: '',
-
-      // Metadados
-      dataEmissao: det.dataEmissao,
-      codigoEspecialidade: 0,
-      observacoes: det.observacoes ?? '',
-      percentual: null,
-      primeiraImpressao: false,
-      procedimentos: const [],
-    );
-  } catch (_) {
-    return null;
-  }
+// mesma regra do backend
+bool _ehExamesPeloDetalhe(ReimpressaoDetalhe det) {
+  final t = det.tipoAutorizacao;
+  final sub = det.codSubtipoAutorizacao;
+  return t == 2 || t == 7 || (t == 3 && sub == 4);
 }

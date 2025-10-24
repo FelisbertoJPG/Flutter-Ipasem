@@ -1,8 +1,8 @@
-// lib/ui/components/requerimentos_card.dart
 import 'package:flutter/material.dart';
 
 import '../../core/formatters.dart';          // fmtData
 import '../../core/models.dart';              // RequerimentoResumo
+import '../../models/exame.dart';             // ExameResumo
 import 'section_card.dart';
 import 'loading_placeholder.dart';
 
@@ -14,6 +14,7 @@ class RequerimentosEmAndamentoCard extends StatelessWidget {
     this.take = 3,
     this.skeletonHeight = 100,
     this.onTapItem,
+    this.extraInner, // << NOVO
   });
 
   final bool isLoading;
@@ -22,25 +23,31 @@ class RequerimentosEmAndamentoCard extends StatelessWidget {
   final double skeletonHeight;
   final void Function(RequerimentoResumo item)? onTapItem;
 
+  /// Qualquer conteúdo adicional para aparecer DENTRO da moldura interna
+  /// (perfeito para a lista inline de exames).
+  final Widget? extraInner; // << NOVO
+
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final double inPad = w < 360 ? 12 : 16; // padding interno, igual aos outros
+    final w = MediaQuery
+        .of(context)
+        .size
+        .width;
+    final double inPad = w < 360 ? 12 : 16;
 
-    Widget body;
+    // Decide o que mostrar na parte "requerimentos"
+    Widget? reqPart;
     if (isLoading) {
-      body = Column(
+      reqPart = Column(
         children: [
           LoadingPlaceholder(height: skeletonHeight),
           const SizedBox(height: 8),
           LoadingPlaceholder(height: skeletonHeight * 0.65),
         ],
       );
-    } else if (items.isEmpty) {
-      body = const _EmptyState();
-    } else {
+    } else if (items.isNotEmpty) {
       final data = items.take(take).toList();
-      body = Column(
+      reqPart = Column(
         children: [
           for (int i = 0; i < data.length; i++) ...[
             _ReqTile(
@@ -55,22 +62,62 @@ class RequerimentosEmAndamentoCard extends StatelessWidget {
           ],
         ],
       );
+    } else {
+      // Só mostra o vazio se NÃO existir extraInner.
+      if (extraInner == null) {
+        reqPart = const _EmptyState();
+      } else {
+        reqPart = null; // suprime o vazio quando há a seção de exames
+      }
     }
+
+    final children = <Widget>[
+      if (reqPart != null) reqPart,
+      if (extraInner != null) ...[
+        if (reqPart != null) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+        ],
+        extraInner!,
+      ],
+    ];
 
     return SectionCard(
       title: 'Requerimentos em andamento',
       child: Padding(
-        padding: EdgeInsets.all(inPad), // respiro do conteúdo do card
+        padding: EdgeInsets.all(inPad),
         child: Container(
           decoration: BoxDecoration(
             color: const Color(0xFFF7FAFC),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
           ),
-          padding: EdgeInsets.all(inPad), // respiro *dentro* da borda interna
-          child: body,
+          padding: EdgeInsets.all(inPad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
         ),
       ),
+    );
+  }
+}
+
+
+  class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF344054)),
+        const SizedBox(width: 8),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+      ],
     );
   }
 }
@@ -89,10 +136,10 @@ class _ReqTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           child: Row(
             children: [
-              const Icon(Icons.description_outlined, size: 24, color: Color(0xFF344054)),
+              const Icon(Icons.description_outlined, size: 22, color: Color(0xFF344054)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -113,6 +160,81 @@ class _ReqTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
+              const Icon(Icons.chevron_right, color: Color(0xFF98A2B3)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExamTile extends StatelessWidget {
+  const _ExamTile({required this.exame, this.onTap});
+  final ExameResumo exame;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final st = (exame.status ?? '').toUpperCase();
+    final isLiberado = st == 'A';
+    final chipColor = isLiberado ? const Color(0xFF12B76A) : const Color(0xFFF79009);
+    final chipBg    = isLiberado ? const Color(0xFFEFFDF5) : const Color(0xFFFFF7E8);
+    final chipText  = isLiberado ? 'Liberado' : 'Pendente';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.biotech_outlined, size: 22, color: Color(0xFF344054)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Exame #${exame.numero} — ${exame.paciente}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${exame.prestador}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFF667085), fontSize: 12.5),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      'Emitido: ${exame.dataHora.isEmpty ? '—' : exame.dataHora}',
+                      style: const TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: chipBg,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  chipText,
+                  style: TextStyle(
+                    color: chipColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               const Icon(Icons.chevron_right, color: Color(0xFF98A2B3)),
             ],
           ),

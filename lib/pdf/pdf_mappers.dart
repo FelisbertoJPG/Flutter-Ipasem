@@ -7,15 +7,22 @@ AutorizacaoPdfData mapDetalheToPdfData({
   required ReimpressaoDetalhe det,
   required String nomeTitular,
   required int idMatricula,
-  required AutorizacaoTipo tipo,        // << NOVO: obriga informar o tipo
+  required AutorizacaoTipo tipo,        // obriga informar o tipo
   String? percentual,
   List<ProcItem> procedimentos = const [],
 }) {
-  // fallback de procedimentos (igual ao site)
+  // Para EXAMES, não aplicar fallback “10014”.
+  // Para MÉDICA/ODONTOLÓGICA e afins, manter fallbacks como no site.
   List<ProcItem> procs = procedimentos;
+
   if (procs.isEmpty) {
     final esp = (det.nomeEspecialidade).toUpperCase();
-    if (esp.contains('ODONTO')) {
+
+    if (tipo == AutorizacaoTipo.exames) {
+      // NUNCA inventar procedimentos para exames;
+      // os itens devem vir do banco (SP_CONS_AMBS_AUTORIZACAO).
+      procs = const [];
+    } else if (esp.contains('ODONTO')) {
       procs = const [
         ProcItem(codigo: '10021', descricao: 'CONSULTA ODONTOLÓGICA', quantidade: 1),
       ];
@@ -36,6 +43,7 @@ AutorizacaoPdfData mapDetalheToPdfData({
         ProcItem(codigo: '5080', descricao: 'CONSULTA DE ESTOMATOLOGISTA', quantidade: 1),
       ];
     } else {
+      // Fallback genérico APENAS para não-exames
       procs = const [
         ProcItem(codigo: '10014', descricao: 'CONSULTA MÉDICA', quantidade: 1),
       ];
@@ -43,7 +51,7 @@ AutorizacaoPdfData mapDetalheToPdfData({
   }
 
   return AutorizacaoPdfData(
-    tipo: tipo,                           // << repassa o tipo
+    tipo: tipo,
     numero: det.numero,
     nomePrestador: det.nomePrestadorExec,
     codPrestador: det.codConselhoExec,
@@ -62,7 +70,7 @@ AutorizacaoPdfData mapDetalheToPdfData({
     dataEmissao: det.dataEmissao,
     codigoEspecialidade: det.codEspecialidade,
     observacoes: det.observacoes,
-    primeiraImpressao: false,             // reimpressão → sempre false
+    primeiraImpressao: false,     // reimpressão → sempre false
     percentual: percentual,
     procedimentos: procs,
   );
