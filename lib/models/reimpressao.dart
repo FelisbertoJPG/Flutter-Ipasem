@@ -1,3 +1,5 @@
+// lib/models/reimpressao.dart
+
 class ReimpressaoResumo {
   final int numero;
   final String titular;
@@ -17,56 +19,68 @@ class ReimpressaoResumo {
     required this.observacoes,
   });
 
-  factory ReimpressaoResumo.fromMap(Map<String, dynamic> m) => ReimpressaoResumo(
-    numero:        (m['nro_autorizacao'] ?? m['numero'] ?? 0) as int,
-    titular:       (m['nome_titular'] ?? m['titular'] ?? '').toString(),
-    paciente:      (m['nome_paciente'] ?? m['paciente'] ?? '').toString(),
-    prestadorExec: (m['nome_prestador_exec'] ?? m['prestador_exec'] ?? '').toString(),
-    dataEmissao:   (m['data_emissao'] ?? '').toString(),
-    horaEmissao:   (m['hora_emissao'] ?? '').toString(),
-    observacoes:   (m['observacoes'] ?? '').toString(),
-  );
+  factory ReimpressaoResumo.fromMap(Map<String, dynamic> m) {
+    int toInt(dynamic v) => int.tryParse('${v ?? ''}') ?? 0;
+    String s(dynamic v) => (v ?? '').toString();
+
+    return ReimpressaoResumo(
+      numero:        toInt(m['nro_autorizacao'] ?? m['numero']),
+      titular:       s(m['nome_titular'] ?? m['titular']),
+      paciente:      s(m['nome_paciente'] ?? m['paciente']),
+      prestadorExec: s(m['nome_prestador_exec'] ?? m['prestador_exec']),
+      dataEmissao:   s(m['data_emissao']),
+      horaEmissao:   s(m['hora_emissao']),
+      observacoes:   s(m['observacoes']),
+    );
+  }
+
+  factory ReimpressaoResumo.fromJson(Map<String, dynamic> j) =>
+      ReimpressaoResumo.fromMap(j);
 }
 
 /// Detalhe completo para montar o PDF no app
 class ReimpressaoDetalhe {
   final int numero;
 
-  // mapeados dos seus endpoints (api-dev.php -> reimpressao_detalhe)
-  final int tipoAutorizacao;            // tipo_autorizacao
-  final int codSubtipoAutorizacao;      // codsubtipo_autorizacao
+  // Classificação (podem não vir => null)
+  final int? tipoAutorizacao;           // 2=exames, 7=fisio, 3 e sub=4 = complementares
+  final int? codSubtipoAutorizacao;     // 4 = complementares
 
-  final String nomePaciente;            // nome_paciente
-  final String nomeTitular;             // nome_titular (pode vir vazio; fallback: profile.nome)
-  final int idDependente;               // iddependente
-  final String idadePaciente;           // idade_paciente (texto “52” ou “10”)
+  // Paciente / titular
+  final String nomePaciente;
+  final String nomeTitular;             // pode vir vazio
+  final int idDependente;
+  final String idadePaciente;           // “52”, “10”, etc. (string mesmo)
 
-  final String nomePrestadorExec;       // nome_prestador_exec
-  final String codConselhoExec;         // cod_conselho_exec
+  // Prestador de execução
+  final String nomePrestadorExec;
+  final String codConselhoExec;
 
-  final String nomeEspecialidade;       // nome_especialidade
-  final int codEspecialidade;           // cod_especialidade
+  // Especialidade
+  final String nomeEspecialidade;
+  final int codEspecialidade;
 
-  final String enderecoComl;            // endereco_coml
-  final String bairroComl;              // bairro_coml
-  final String cidadeComl;              // cidade_coml
-  final String telefoneComl;            // telefone_coml
+  // Endereço comercial
+  final String enderecoComl;
+  final String bairroComl;
+  final String cidadeComl;
+  final String telefoneComl;
 
-  final String codVinculo;              // cod_vinculo
-  final String nomeVinculo;             // nome_vinculo
+  // Vínculo
+  final String codVinculo;
+  final String nomeVinculo;
 
-  final String observacoes;             // observacoes
-  final String dataEmissao;             // data_emissao (já vem "dd/MM/yyyy" na sua API v1)
-  final String? percentual;             // percentual (pode não vir → null)
+  // Metadados
+  final String observacoes;
+  final String dataEmissao;             // já concatena hora se existir
+  final String? percentual;             // “perc_cobertura”, “percentual” etc.
 
-  // opcionais / não usados no layout médico básico, mas úteis no futuro
-  final String? nomePrestadorSolicitante; // nome_prestador_sol
-  final String? operadorAlteracao;        // operador_alteracao
+  // Opcionais
+  final String? nomePrestadorSolicitante;
+  final String? operadorAlteracao;
 
   ReimpressaoDetalhe({
     required this.numero,
-    required this.tipoAutorizacao,
-    required this.codSubtipoAutorizacao,
     required this.nomePaciente,
     required this.nomeTitular,
     required this.idDependente,
@@ -83,33 +97,63 @@ class ReimpressaoDetalhe {
     required this.nomeVinculo,
     required this.observacoes,
     required this.dataEmissao,
+    this.tipoAutorizacao,
+    this.codSubtipoAutorizacao,
     this.percentual,
     this.nomePrestadorSolicitante,
     this.operadorAlteracao,
   });
 
-  factory ReimpressaoDetalhe.fromMap(Map<String, dynamic> m) => ReimpressaoDetalhe(
-    numero:                 (m['numero'] ?? m['nro_autorizacao'] ?? 0) as int,
-    tipoAutorizacao:        int.tryParse((m['tipo_autorizacao'] ?? '0').toString()) ?? 0,
-    codSubtipoAutorizacao:  int.tryParse((m['codsubtipo_autorizacao'] ?? '0').toString()) ?? 0,
-    nomePaciente:           (m['nome_paciente'] ?? '').toString(),
-    nomeTitular:            (m['nome_titular'] ?? '').toString(),
-    idDependente:           int.tryParse((m['iddependente'] ?? '0').toString()) ?? 0,
-    idadePaciente:          (m['idade_paciente'] ?? '').toString(),
-    nomePrestadorExec:      (m['nome_prestador_exec'] ?? '').toString(),
-    codConselhoExec:        (m['cod_conselho_exec'] ?? '').toString(),
-    nomeEspecialidade:      (m['nome_especialidade'] ?? '').toString(),
-    codEspecialidade:       int.tryParse((m['cod_especialidade'] ?? '0').toString()) ?? 0,
-    enderecoComl:           (m['endereco_coml'] ?? '').toString(),
-    bairroComl:             (m['bairro_coml'] ?? '').toString(),
-    cidadeComl:             (m['cidade_coml'] ?? '').toString(),
-    telefoneComl:           (m['telefone_coml'] ?? '').toString(),
-    codVinculo:             (m['cod_vinculo'] ?? '').toString(),
-    nomeVinculo:            (m['nome_vinculo'] ?? '').toString(),
-    observacoes:            (m['observacoes'] ?? '').toString(),
-    dataEmissao:            (m['data_emissao'] ?? '').toString(),
-    percentual:             (m['percentual']?.toString().trim().isEmpty ?? true) ? null : m['percentual'].toString(),
-    nomePrestadorSolicitante: (m['nome_prestador_sol'] ?? '').toString().trim().isEmpty ? null : (m['nome_prestador_sol'] ?? '').toString(),
-    operadorAlteracao:        (m['operador_alteracao'] ?? '').toString().trim().isEmpty ? null : (m['operador_alteracao'] ?? '').toString(),
-  );
+  factory ReimpressaoDetalhe.fromMap(Map<String, dynamic> m) {
+    int? i(dynamic v) => v == null ? null : int.tryParse('$v');
+    int i0(dynamic v) => int.tryParse('${v ?? ''}') ?? 0;
+    String s(dynamic v) => (v ?? '').toString().trim();
+
+    // data + hora (se houver)
+    final data = s(m['data_emissao']);
+    final hora = s(m['hora_emissao']);
+    final dataEmissao = (data.isNotEmpty && hora.isNotEmpty) ? '$data $hora' : data;
+
+    // percentual pode vir em chaves diferentes
+    String? _percentual() {
+      final p = s(m['percentual']);
+      final p2 = s(m['perc_cobertura'] ?? m['o_perc_cobertura']);
+      final val = (p.isNotEmpty ? p : (p2.isNotEmpty ? p2 : ''));
+      return val.isEmpty ? null : val;
+    }
+
+    String? _opt(dynamic v) {
+      final t = s(v);
+      return t.isEmpty ? null : t;
+    }
+
+    return ReimpressaoDetalhe(
+      numero:                 i0(m['numero'] ?? m['nro_autorizacao']),
+      tipoAutorizacao:        i(m['tipo_autorizacao'] ?? m['tipoAutorizacao'] ?? m['tipo']),
+      codSubtipoAutorizacao:  i(m['codsubtipo_autorizacao'] ?? m['cod_subtipo_autorizacao'] ?? m['cod_subtipo']),
+      nomePaciente:           s(m['nome_paciente']),
+      nomeTitular:            s(m['nome_titular']),
+      idDependente:           i0(m['iddependente']),
+      idadePaciente:          s(m['idade_paciente']),
+      nomePrestadorExec:      s(m['nome_prestador_exec'] ?? m['nome_prestador']),
+      codConselhoExec:        s(m['cod_conselho_exec'] ?? m['cod_conselho']),
+      nomeEspecialidade:      s(m['nome_especialidade']),
+      codEspecialidade:       i0(m['cod_especialidade'] ?? m['codesp'] ?? m['codigo_especialidade']),
+      enderecoComl:           s(m['endereco_coml']),
+      bairroComl:             s(m['bairro_coml']),
+      cidadeComl:             s(m['cidade_coml']),
+      telefoneComl:           s(m['telefone_coml']),
+      codVinculo:             s(m['cod_vinculo']),
+      nomeVinculo:            s(m['nome_vinculo']),
+      observacoes:            s(m['observacoes']),
+      dataEmissao:            dataEmissao,
+      percentual:             _percentual(),
+      nomePrestadorSolicitante: _opt(m['nome_prestador_solicitante'] ?? m['nome_prestador_sol']),
+      operadorAlteracao:        _opt(m['operador_alteracao'] ?? m['operador'] ?? m['operadorAlteracao']),
+    );
+  }
+
+  // Alias para compatibilidade (se algum ponto do app ainda usa `fromJson`)
+  factory ReimpressaoDetalhe.fromJson(Map<String, dynamic> j) =>
+      ReimpressaoDetalhe.fromMap(j);
 }

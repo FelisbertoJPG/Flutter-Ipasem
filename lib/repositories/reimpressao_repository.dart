@@ -9,7 +9,7 @@ class ReimpressaoRepository {
   final DevApi api;
   ReimpressaoRepository(this.api);
 
-  // Histórico de autorizações (reimpressão)
+  /// Histórico de autorizações (reimpressão)
   Future<List<ReimpressaoResumo>> historico({required int idMatricula}) async {
     final res = await api.postAction('reimpressao_historico', data: {
       'idmatricula': idMatricula,
@@ -32,8 +32,32 @@ class ReimpressaoRepository {
     );
   }
 
-  // Detalhe (sempre informando a matrícula para o backend injetar a identity)
-  Future<ReimpressaoDetalhe?> detalhe(int numero, {required int idMatricula}) async {
+  /// Payload bruto de reimpressão (traz dados + itens)
+  Future<Map<String, dynamic>> detalheRaw(
+      int numero, {
+        required int idMatricula,
+      }) async {
+    final res = await api.postAction('reimpressao_detalhe', data: {
+      'numero': numero,
+      'idmatricula': idMatricula,
+    });
+
+    final body = (res.data as Map).cast<String, dynamic>();
+    if (body['ok'] == true) return body;
+
+    throw DioException(
+      requestOptions: res.requestOptions,
+      response: res,
+      type: DioExceptionType.badResponse,
+      error: body['error'],
+    );
+  }
+
+  /// Detalhe mapeado (útil para telas antigas que não precisam dos itens)
+  Future<ReimpressaoDetalhe?> detalhe(
+      int numero, {
+        required int idMatricula,
+      }) async {
     final res = await api.postAction('reimpressao_detalhe', data: {
       'numero': numero,
       'idmatricula': idMatricula,
@@ -53,7 +77,7 @@ class ReimpressaoRepository {
     );
   }
 
-  // Baixa o PDF como bytes (para abrir nativamente no dispositivo, se você desejar)
+  /// Baixa o PDF renderizado no backend (se quiser abrir nativamente)
   Future<Uint8List> baixarPdf({
     required int numero,
     required int idMatricula,
@@ -72,12 +96,12 @@ class ReimpressaoRepository {
       ),
     );
 
-    // Quando o backend renderiza PDF, a resposta correta vem em bytes (status 200).
+    // Sucesso: bytes do PDF
     if (res.statusCode == 200 && res.data is List<int>) {
       return Uint8List.fromList(res.data as List<int>);
     }
 
-    // Se vier JSON de erro (ex.: NOT_FOUND, REIMP_PDF_ERROR, etc.), propaga como DioException.
+    // Erro: backend retornou JSON com 'error'
     try {
       final body = (res.data as Map).cast<String, dynamic>();
       throw DioException(
@@ -87,7 +111,7 @@ class ReimpressaoRepository {
         error: body['error'] ?? 'Falha ao gerar PDF.',
       );
     } catch (_) {
-      // fallback genérico
+      // Fallback genérico
       throw DioException(
         requestOptions: res.requestOptions,
         response: res,
