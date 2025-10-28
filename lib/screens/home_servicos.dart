@@ -2,17 +2,18 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../ui/components/exames_liberados_card.dart';
-
-import '../ui/components/exames_negadas_card.dart';
 
 import '../root_nav_shell.dart';
 import '../ui/app_shell.dart';
+
 import '../ui/components/exames_pendentes_card.dart';
+import '../ui/components/exames_liberados_card.dart';
+import '../ui/components/exames_negadas_card.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/quick_actions.dart';
 import '../ui/components/services_visitor.dart';
 import '../ui/widgets/history_list.dart';
+
 import '../ui/utils/webview_warmup.dart';
 import '../ui/utils/service_launcher.dart';
 import '../ui/utils/print_helpers.dart';
@@ -24,14 +25,18 @@ import '../ui/components/reimp_detalhes_sheet.dart';
 
 import '../state/auth_events.dart';
 
+// telas
 import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
 import 'autorizacao_odontologica_screen.dart';
 import 'autorizacao_exames_screen.dart';
-
-// >>> NOVO IMPORT
 import 'historico_autorizacoes_screen.dart';
-// <<<
+
+// sessão/perfil (para obter a matrícula)
+import '../services/session.dart';
+
+// sheet da carteirinha
+import '../ui/sheets/card_sheet.dart';
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
@@ -48,6 +53,8 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   bool _loading = true;
   bool _isLoggedIn = false;
 
+  int? _matricula; // usada para emissão da carteirinha
+
   List<HistoryItem> _historico = const [];
   List<ReimpressaoResumo> _histRows = const [];
 
@@ -57,7 +64,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   VoidCallback? _issuedListener;
   VoidCallback? _printedListener;
 
-  // >>> NOVO: refresh quando o poller sinaliza mudança de status
+  // refresh quando o poller sinaliza mudança de status
   VoidCallback? _statusChangedListener;
   DateTime? _lastAutoRefresh;
 
@@ -72,10 +79,8 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     _printedListener = () => Future.microtask(_refreshAfterPrint);
     AuthEvents.instance.lastPrinted.addListener(_printedListener!);
 
-    // >>> NOVO: escuta mudanças detectadas pelo poller (A/I)
     _statusChangedListener = () => Future.microtask(_refreshAfterStatusChange);
     AuthEvents.instance.exameStatusChanged.addListener(_statusChangedListener!);
-    // <<<
 
     _bootstrap();
   }
@@ -103,7 +108,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     await _bootstrap();
   }
 
-  // >>> NOVO: chamado quando o poller emite AuthEvents.exameStatusChanged
+  // chamado quando o poller emite AuthEvents.exameStatusChanged
   Future<void> _refreshAfterStatusChange() async {
     final evt = AuthEvents.instance.exameStatusChanged.value;
     if (!mounted || evt == null) return;
@@ -116,7 +121,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     }
     _lastAutoRefresh = now;
 
-    // garante que a linha já “apareceu”/atualizou no backend antes de recarregar
     if (_controller != null) {
       await _controller!.waitUntilInHistorico(evt.numero);
     }
@@ -124,7 +128,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
     await _bootstrap();
   }
-  // <<<
 
   @override
   void dispose() {
@@ -134,11 +137,9 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     if (_printedListener != null) {
       AuthEvents.instance.lastPrinted.removeListener(_printedListener!);
     }
-    // >>> NOVO
     if (_statusChangedListener != null) {
       AuthEvents.instance.exameStatusChanged.removeListener(_statusChangedListener!);
     }
-    // <<<
     super.dispose();
   }
 
@@ -150,11 +151,10 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
     // 1) ISO-like: yyyy-MM-dd (opcional HH:mm[:ss])
     if (ds.contains('-')) {
-      // normaliza hora (00:00:00 se vier vazia)
       final hh = hs.isEmpty
           ? '00:00:00'
           : (hs.split(':').length == 2 ? '${hs}:00' : hs); // garante segundos
-      final iso = '${ds}T$hh'; // <-- correção aqui
+      final iso = '${ds}T$hh';
       final isoParsed = DateTime.tryParse(iso);
       if (isoParsed != null) return isoParsed;
     }
@@ -183,8 +183,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     return fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-
-
   Future<void> _bootstrap() async {
     setState(() => _loading = true);
 
@@ -198,8 +196,15 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       try {
         _controller = await HomeServicosController.init(context);
 
-        final titularNome = await _controller!.profileName();
+        // obtém matrícula do perfil persistido na sessão
+        try {
+          final prof = await Session.getProfile();
+          _matricula = prof?.id;
+        } catch (_) {
+          _matricula = null;
+        }
 
+        final titularNome = await _controller!.profileName();
         final rows = await _controller!.loadHistorico();
 
         // Ordena por data/hora (mais recentes primeiro)
@@ -308,12 +313,19 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         id: 'carteirinha',
         label: 'Carteirinha Digital',
         icon: FontAwesomeIcons.idCard,
-        onTap: () => launcher.openUrl(
-          HomeServicos._loginUrl,
-          'Carteirinha Digital',
-        ),
+        onTap: () {
+          final m = _matricula;
+          if (m == null || m <= 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Não foi possível carregar a sua matrícula. Faça login novamente.')),
+            );
+            return;
+          }
+          // abre o sheet in-app; idDependente 0 = titular
+          showCardSheet(context, matricula: m, idDependente: 0);
+        },
         audience: QaAudience.loggedIn,
-        requiresLogin: false,
+        requiresLogin: true,
       ),
       QuickActionItem(
         id: 'site',
@@ -432,7 +444,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         const SizedBox(height: 12),
         const ExamesLiberadosCard(),
         const SizedBox(height: 12),
-        //exames negados
         const ExamesNegadasCard(),
         const SizedBox(height: 12),
         SectionCard(
@@ -440,7 +451,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
           child: HistoryList(
             loading: _loading,
             isLoggedIn: true,
-            items: _historico,// já limitado a 5
+            items: _historico, // já limitado a 5
             maxItems: 5,
             onSeeAll: () {
               Navigator.of(context).push(
