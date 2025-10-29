@@ -1,4 +1,3 @@
-
 // lib/ui/widgets/digital_card_view.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -244,7 +243,6 @@ class _RotatedBoxWithBounds extends StatelessWidget {
     );
   }
 }
-
 
 /// Moldura com cantos 20, sombra e “degradê superior”.
 class _CardChrome extends StatelessWidget {
