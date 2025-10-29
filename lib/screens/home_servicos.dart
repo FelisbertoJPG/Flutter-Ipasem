@@ -26,6 +26,8 @@ import '../ui/components/reimp_detalhes_sheet.dart';
 import '../state/auth_events.dart';
 
 // telas
+import 'carteirinha_beneficiary_sheet.dart';
+import 'carteirinha_digital_screen.dart';
 import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
 import 'autorizacao_odontologica_screen.dart';
@@ -127,6 +129,27 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     if (!mounted) return;
 
     await _bootstrap();
+  }
+  Future<void> showCardSheet(
+      BuildContext context, {
+        required int matricula,
+        int idDependente = 0,
+      }) async {
+    final chosen = await showBeneficiaryPickerSheet(
+      context,
+      idMatricula: matricula,
+    );
+
+    if (chosen == null) return; // usuário cancelou
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CarteirinhaDigitalScreen(
+          idMatricula: matricula,
+          idDependente: chosen,
+        ),
+      ),
+    );
   }
 
   @override
@@ -321,7 +344,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             );
             return;
           }
-          // abre o sheet in-app; idDependente 0 = titular
           showCardSheet(context, matricula: m, idDependente: 0);
         },
         audience: QaAudience.loggedIn,
