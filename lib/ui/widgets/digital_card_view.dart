@@ -1,10 +1,11 @@
+
 // lib/ui/widgets/digital_card_view.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 
 /// Cartão digital do IPASEM com layout responsivo e degradê superior.
 ///
-/// Assinatura estável (somente params nomeados):
+/// Parâmetros nomeados estáveis:
 /// - nome, cpf, matricula, sexoTxt, nascimento (dd/mm/aaaa)
 /// - token
 /// - expiresAtEpoch (epoch em segundos)
@@ -46,6 +47,7 @@ class DigitalCardView extends StatefulWidget {
 }
 
 class _DigitalCardViewState extends State<DigitalCardView> {
+  static const double _cardRatio = 85.6 / 54.0; // CR80
   late Timer _t;
   Duration _left = Duration.zero;
 
@@ -99,74 +101,150 @@ class _DigitalCardViewState extends State<DigitalCardView> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, box) {
-      // Proporção CR80 (~85.6 × 54 mm)
-      const cardRatio = 85.6 / 54.0;
-      final isWide = box.maxWidth >= 420.0;
+    // Base “de design” (antes de escalar/rotacionar).
+    const double designWPortrait = 640.0;
+    const double designHPortrait = 520.0;
+    const double designWLandscape = 980.0;
+    const double designHLandscape = 620.0;
 
-      // Novo: força absoluta OU (força em telas largas)
-      final useLandscape =
-          widget.forceLandscape || (widget.forceLandscapeOnWide && isWide);
+    final mq = MediaQuery.of(context);
+    final viewport = mq.size;
 
-      final double maxW = box.maxWidth;
-      const double pad = 16.0;
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final availableW = (box.maxWidth.isFinite ? box.maxWidth : viewport.width);
+          final availableH = (box.maxHeight.isFinite ? box.maxHeight : viewport.height);
 
-      double cardW, cardH;
-      if (useLandscape) {
-        cardW = (maxW - pad * 2).clamp(360.0, 720.0);
-        cardH = (cardW / cardRatio).clamp(240.0, 380.0);
-      } else {
-        cardW = (maxW - pad * 2).clamp(320.0, 420.0);
-        cardH = 320.0; // um pouco mais alto para não estourar
-      }
+          final isWideByBox = box.maxWidth.isFinite && box.maxWidth >= 420.0;
+          final isWideByAspect = availableW >= availableH * 0.9;
+          final useLandscape =
+              widget.forceLandscape || (widget.forceLandscapeOnWide && (isWideByBox || isWideByAspect));
 
-      final gradient = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF143C8D), Color(0xFF3257B4)],
-      );
+          final bool viewportIsPortrait = availableH >= availableW;
 
-      final expired = _left.inSeconds <= 0;
+          // Quando o layout é “landscape” mas a tela está em retrato,
+          // tombamos o cartão 90° para reproduzir o efeito do site.
+          final bool rotate90 = useLandscape && viewportIsPortrait;
 
-      return Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints.tight(Size(cardW, cardH)),
-          child: _CardChrome(
-            gradient: gradient,
-            child: Padding(
-              padding: const EdgeInsets.all(18.0),
-              child: useLandscape
-                  ? _LandscapeContent(
-                nome: widget.nome,
-                cpf: widget.cpf,
-                matricula: widget.matricula,
-                sexoTxt: widget.sexoTxt,
-                nascimento: widget.nascimento,
-                token: widget.token,
-                validoAte: _fmtValidoAte(),
-                expLeft: _left,
-                expired: expired,
-                onClose: widget.onClose,
-              )
-                  : _PortraitContent(
-                nome: widget.nome,
-                cpf: widget.cpf,
-                matricula: widget.matricula,
-                sexoTxt: widget.sexoTxt,
-                nascimento: widget.nascimento,
-                token: widget.token,
-                validoAte: _fmtValidoAte(),
-                expLeft: _left,
-                expired: expired,
-                onClose: widget.onClose,
+          final double designW = useLandscape ? designWLandscape : designWPortrait;
+          final double designH = useLandscape ? designHLandscape : designHPortrait;
+
+          // Slot finito para o FittedBox.
+          const outerPad = 16.0;
+          final boxW = (availableW - outerPad * 2).clamp(280.0, 1100.0);
+          final idealH = useLandscape ? (boxW / _cardRatio) : (availableH * 0.55);
+          final boxH = idealH.clamp(260.0, availableH - outerPad * 2);
+
+          final gradient = const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF143C8D), Color(0xFF3257B4)],
+          );
+          final expired = _left.inSeconds <= 0;
+
+          final mqNoTextScale = mq.copyWith(textScaler: const TextScaler.linear(1.0));
+
+          final baseCard = SizedBox(
+            width: designW,
+            height: designH,
+            child: _CardChrome(
+              gradient: gradient,
+              child: Padding(
+                padding: const EdgeInsets.all(18.0),
+                child: useLandscape
+                    ? _LandscapeContent(
+                  nome: widget.nome,
+                  cpf: widget.cpf,
+                  matricula: widget.matricula,
+                  sexoTxt: widget.sexoTxt,
+                  nascimento: widget.nascimento,
+                  token: widget.token,
+                  validoAte: _fmtValidoAte(),
+                  expLeft: _left,
+                  expired: expired,
+                  onClose: widget.onClose,
+                )
+                    : _PortraitContent(
+                  nome: widget.nome,
+                  cpf: widget.cpf,
+                  matricula: widget.matricula,
+                  sexoTxt: widget.sexoTxt,
+                  nascimento: widget.nascimento,
+                  token: widget.token,
+                  validoAte: _fmtValidoAte(),
+                  expLeft: _left,
+                  expired: expired,
+                  onClose: widget.onClose,
+                ),
               ),
             ),
-          ),
-        ),
-      );
-    });
+          );
+
+          // Invólucro que ajusta as dimensões de layout ao rotacionar,
+          // para o FittedBox dimensionar/escala corretamente.
+          final Widget cardForFit = rotate90
+              ? _RotatedBoxWithBounds(
+            width: designW,
+            height: designH,
+            quarterTurns: 3, // -90°
+            child: baseCard,
+          )
+              : baseCard;
+
+          return Padding(
+            padding: const EdgeInsets.all(outerPad),
+            child: Center(
+              child: SizedBox(
+                width: boxW,
+                height: boxH,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: MediaQuery(data: mqNoTextScale, child: cardForFit),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
+
+/// Ajusta as dimensões externas quando se rotaciona 90°/180°/270°.
+/// Para 90°/270°, a “caixa” externa tem width=heightOriginal e height=widthOriginal.
+class _RotatedBoxWithBounds extends StatelessWidget {
+  final Widget child;
+  final double width;
+  final double height;
+  final int quarterTurns;
+
+  const _RotatedBoxWithBounds({
+    required this.child,
+    required this.width,
+    required this.height,
+    required this.quarterTurns,
+  });
+
+  bool get _swap => quarterTurns.isOdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final outerW = _swap ? height : width;
+    final outerH = _swap ? width : height;
+    return SizedBox(
+      width: outerW,
+      height: outerH,
+      child: Center(
+        child: RotatedBox(
+          quarterTurns: quarterTurns,
+          child: SizedBox(width: width, height: height, child: child),
+        ),
+      ),
+    );
+  }
+}
+
 
 /// Moldura com cantos 20, sombra e “degradê superior”.
 class _CardChrome extends StatelessWidget {
@@ -302,7 +380,7 @@ class _PortraitContent extends StatelessWidget {
         const SizedBox(height: 12),
         _tokenBlock(token: token, validoAte: validoAte, expLeft: expLeft, expired: expired),
         const Spacer(),
-        _disclaimer(),
+        _disclaimer(maxLines: 3),
         const SizedBox(height: 10),
         Align(
           alignment: Alignment.centerRight,
@@ -384,7 +462,7 @@ class _LandscapeContent extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
-                _disclaimer(),
+                _disclaimer(maxLines: 2),
               ],
             ),
           ),
@@ -451,13 +529,12 @@ Widget _tokenBlock({
   bool alignEnd = false,
 }) {
   if (expired) {
-    // AVISO VERMELHO (token expirado)
     return Align(
       alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFE53935), // vermelho
+          color: const Color(0xFFE53935),
           borderRadius: BorderRadius.circular(12),
           boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
         ),
@@ -485,8 +562,9 @@ Widget _tokenBlock({
           children: [
             Row(
               mainAxisSize: MainAxisSize.min,
-              children: const [
-                Text('Token: ', style: TextStyle(fontWeight: FontWeight.w600)),
+              children: [
+                const Text('Token: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                Text(token, style: const TextStyle(fontWeight: FontWeight.w700)),
               ],
             ),
             const SizedBox(height: 2),
@@ -499,12 +577,14 @@ Widget _tokenBlock({
   );
 }
 
-Widget _disclaimer() {
-  return const Text(
+Widget _disclaimer({int? maxLines}) {
+  return Text(
     'Esta Carteirinha é pessoal e intransferível. Somente tem VALIDADE '
         'junto a um documento de identidade com foto - RG. '
         'Mantenha seu cadastro SEMPRE atualizado.',
-    style: TextStyle(fontSize: 12.5, color: Colors.white, height: 1.25),
+    maxLines: maxLines,
+    overflow: maxLines != null ? TextOverflow.ellipsis : TextOverflow.visible,
+    style: const TextStyle(fontSize: 12.5, color: Colors.white, height: 1.25),
   );
 }
 
