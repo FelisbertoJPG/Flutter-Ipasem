@@ -1,9 +1,10 @@
-import 'dart:async';
-
+// lib/screens/carteirinha_digital_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../config/app_config.dart';
 import '../services/dev_api.dart';
+import '../ui/widgets/digital_card_view.dart';
 
 class CarteirinhaDigitalScreen extends StatefulWidget {
   final int idMatricula;
@@ -24,58 +25,51 @@ class CarteirinhaDigitalScreen extends StatefulWidget {
 }
 
 class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
-  final DevApi _fallbackApi = DevApi(
-    const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98'),
-  );
+  // --- API base resolution ---
+  // 1) Usa a API passada pelo caller (widget.api)
+  // 2) Senão, usa AppConfig(params.baseApiUrl) do app em execução (main ou main_local)
+  // 3) Senão, cai no env var/API_BASE com default PRODUCTION
+  late final DevApi _api;
+  bool _bootstrapped = false;
 
-  DevApi get _api => widget.api ?? _fallbackApi;
+  static String _resolveBaseApi(BuildContext ctx) {
+    final cfg = AppConfig.maybeOf(ctx);
+    if (cfg != null && cfg.params.baseApiUrl.isNotEmpty) {
+      return cfg.params.baseApiUrl;
+    }
+    // Default sempre PROD; o main_local já injeta o host .98 em AppConfig.
+    return const String.fromEnvironment(
+      'API_BASE',
+      defaultValue: 'https://assistweb.ipasemnh.com.br',
+    );
+  }
 
+  // --- UI state ---
   bool _loading = true;
   String? _error;
 
-  // dados renderizados no card
+  // dados do cartão
   String _nome = '';
   String _cpf = '';
   String _sexoTxt = '';
-  String? _nascimento;
-
-  // token/expiração
+  String? _nascimento; // dd/MM/yyyy
   String _token = '';
-  int? _expiresEpoch;
-  int? _serverNowEpoch;
-
-  Timer? _tick;
-
-  Duration get _remaining {
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final end = _expiresEpoch ?? now;
-    final diff = end - now;
-    return Duration(seconds: diff < 0 ? 0 : diff);
-  }
-
-  String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
+  int? _expiresEpoch; // epoch (segundos)
 
   @override
-  void initState() {
-    super.initState();
-    _issueAndLoad();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bootstrapped) return;
+
+    _api = widget.api ?? DevApi(_resolveBaseApi(context));
+    _bootstrapped = true;
+
+    _emitirECarregar();
   }
 
-  @override
-  void dispose() {
-    _tick?.cancel();
-    super.dispose();
-  }
+  Future<void> _emitirECarregar() async {
+    _setBusy();
 
-  Future<void> _issueAndLoad() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
     try {
       final res = await _api.postAction<dynamic>(
         'carteirinha_pessoa',
@@ -89,59 +83,32 @@ class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
       if (m['ok'] != true) {
         throw Exception('Falha na emissão do token.');
       }
+
       final data = (m['data'] as Map).cast<String, dynamic>();
+      final info = _Parsed.fromBackendString(data['string'] as String?);
 
-      setState(() {
-        _nome = _extrairLinha(data['string'] ?? '', 0) ?? '';
-        _cpf = _extrairCampo(data['string'] ?? '', 'CPF:') ?? '';
-        _sexoTxt = (data['sexo_txt'] as String?) ?? '';
-        _nascimento = _extrairCampo(data['string'] ?? '', 'Nascimento:');
-
-        _token = (data['token'] as String?) ?? '';
-        _expiresEpoch = (data['expires_at_epoch'] as num?)?.toInt();
-        _serverNowEpoch = (data['server_now_epoch'] as num?)?.toInt();
-        _loading = false;
+      _setReady(() {
+        _nome = (info.nome ?? widget.nomeTitular ?? '').trim();
+        _cpf = info.cpf ?? '';
+        _sexoTxt = info.sexoTxt ?? '';
+        _nascimento = info.nascimento; // já em dd/MM/yyyy
+        _token = (data['token'] ?? '').toString();
+        _expiresEpoch = _asInt(data['expires_at_epoch']);
       });
 
-      // agenda expurgo
+      // agenda expurgo (best-effort, não bloqueia a UI)
       try {
-        await _api.postAction<dynamic>(
-          'carteirinha_agendar_expurgo',
-          data: {'db_token': data['db_token']},
-        );
-      } catch (_) {
-        // falha no agendamento não deve travar a UI
-      }
-
-      _tick?.cancel();
-      _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
-        setState(() {});
-      });
-    } catch (e) {
-      setState(() {
-        _loading = false;
-        _error = 'Falha ao emitir token da carteirinha.';
-      });
+        final dbToken = _asInt(data['db_token']);
+        if (dbToken != null) {
+          await _api.postAction<dynamic>(
+            'carteirinha_agendar_expurgo',
+            data: {'db_token': dbToken},
+          );
+        }
+      } catch (_) {/* silencioso */}
+    } catch (_) {
+      _setError('Falha ao emitir token da carteirinha.');
     }
-  }
-
-  // Util: a primeira linha do "string" vem com "Titular: NOME" ou "Beneficiário: NOME".
-  String? _extrairLinha(String s, int index) {
-    final lines = s.split('\n').where((e) => e.trim().isNotEmpty).toList();
-    if (index < 0 || index >= lines.length) return null;
-    final ln = lines[index];
-    final i = ln.indexOf(':');
-    return i >= 0 ? ln.substring(i + 1).trim() : ln.trim();
-  }
-
-  String? _extrairCampo(String s, String rotulo) {
-    for (final ln in s.split('\n')) {
-      if (ln.startsWith(rotulo)) {
-        return ln.substring(rotulo.length).trim();
-      }
-    }
-    return null;
   }
 
   @override
@@ -149,177 +116,135 @@ class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Carteirinha Digital'),
-      ),
+      appBar: AppBar(title: const Text('Carteirinha Digital')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : (_error != null)
           ? Center(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: _emitirECarregar,
+                child: const Text('Tentar novamente'),
+              ),
+            ],
+          ),
         ),
       )
           : SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: _CardCarteirinha(
-          nome: _nome.toUpperCase(),
-          cpf: _cpf,
-          matricula: '${widget.idMatricula}',
-          sexoTxt: _sexoTxt,
-          nascimento: _nascimento,
-          token: _token,
-          validoAte: _expiresEpoch != null
-              ? DateFormat('HH:mm').format(
-            DateTime.fromMillisecondsSinceEpoch((_expiresEpoch!) * 1000),
-          )
-              : '--:--',
-          expiraEm: _fmt(_remaining),
+        child: Center(
+          child: DigitalCardView(
+            forceLandscape: true, // força horizontal
+            nome: _nome.toUpperCase(),
+            cpf: _cpf,
+            matricula: '${widget.idMatricula}',
+            sexoTxt: _sexoTxt,
+            nascimento: _nascimento,
+            token: _token,
+            expiresAtEpoch: _expiresEpoch,
+            onClose: () => Navigator.of(context).maybePop(),
+          ),
         ),
       ),
     );
+  }
+
+  // ---------------- helpers ----------------
+
+  void _setBusy() {
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+  }
+
+  void _setReady(void Function() apply) {
+    if (!mounted) return;
+    setState(() {
+      apply();
+      _loading = false;
+      _error = null;
+    });
+  }
+
+  void _setError(String message) {
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _error = message;
+    });
+  }
+
+  int? _asInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
   }
 }
 
-class _CardCarteirinha extends StatelessWidget {
-  final String nome;
-  final String cpf;
-  final String matricula;
-  final String sexoTxt;
+/// Parser simples do campo "string" devolvido pelo backend.
+class _Parsed {
+  final String? nome;
+  final String? cpf;
+  final String? sexoTxt;
   final String? nascimento;
-  final String token;
-  final String validoAte; // HH:mm
-  final String expiraEm;  // mm:ss
 
-  const _CardCarteirinha({
-    Key? key,
-    required this.nome,
-    required this.cpf,
-    required this.matricula,
-    required this.sexoTxt,
-    required this.nascimento,
-    required this.token,
-    required this.validoAte,
-    required this.expiraEm,
-  }) : super(key: key);
+  const _Parsed({this.nome, this.cpf, this.sexoTxt, this.nascimento});
 
-  @override
-  Widget build(BuildContext context) {
-    final brand = const Color(0xFF143C8D);
+  factory _Parsed.fromBackendString(String? s) {
+    if (s == null || s.isEmpty) return const _Parsed();
+    String? nome, cpf, sexo, nasc;
 
-    return Card(
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [brand.withOpacity(0.92), brand.withOpacity(0.72)],
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // topo: logo (opcional) + selo "Digital"
-            Row(
-              children: [
-                // se tiver seu asset de logo, descomente:
-                // Image.asset('assets/images/icons/logo_ipasem.png', height: 22),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Text('Digital', style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              nome,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: 0.2,
-              ),
-            ),
-            const SizedBox(height: 12),
+    for (final raw in s.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
 
-            Row(
-              children: [
-                Expanded(
-                  child: _kv('CPF', cpf),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _kv('Matrícula', matricula),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(child: _kv('Sexo', sexoTxt)),
-                const SizedBox(width: 12),
-                Expanded(child: _kv('Nascimento', nascimento ?? '--/--/----')),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            RichText(
-              text: TextSpan(
-                style: const TextStyle(color: Colors.white),
-                children: [
-                  const TextSpan(text: 'Token: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                  TextSpan(text: token, style: const TextStyle(fontWeight: FontWeight.w900)),
-                  const TextSpan(text: '   (válido até '),
-                  TextSpan(text: validoAte, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  const TextSpan(text: ')   Expira em '),
-                  TextSpan(text: expiraEm, style: const TextStyle(fontWeight: FontWeight.w700)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            const Text(
-              'Esta Carteirinha é pessoal e intransferível. Somente tem VALIDADE junto a um documento de identidade com foto - RG. '
-                  'Mantenha seu cadastro SEMPRE atualizado.',
-              style: TextStyle(color: Colors.white, height: 1.25),
-            ),
-
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: brand,
-                ),
-                onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('Sair'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+      if (line.startsWith('Titular:')) {
+        nome = line.replaceFirst('Titular:', '').trim();
+        continue;
+      }
+      if (line.startsWith('Beneficiário:')) {
+        nome = line.replaceFirst('Beneficiário:', '').trim();
+        continue;
+      }
+      if (line.startsWith('CPF:')) {
+        cpf = line.replaceFirst('CPF:', '').trim();
+        continue;
+      }
+      if (line.startsWith('Sexo:')) {
+        sexo = line.replaceFirst('Sexo:', '').trim();
+        continue;
+      }
+      if (line.startsWith('Nascimento:')) {
+        final v = line.replaceFirst('Nascimento:', '').trim();
+        nasc = _fmtBr(v);
+        continue;
+      }
+    }
+    return _Parsed(nome: nome, cpf: cpf, sexoTxt: sexo, nascimento: nasc);
   }
 
-  Widget _kv(String k, String v) {
-    return RichText(
-      text: TextSpan(
-        children: [
-          TextSpan(text: '$k: ', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
-          TextSpan(text: v, style: const TextStyle(color: Colors.white)),
-        ],
-      ),
-    );
+  static String? _fmtBr(String v) {
+    DateTime? dt;
+    final mBr = RegExp(r'^(\d{2})[\/-](\d{2})[\/-](\d{4})$').firstMatch(v);
+    if (mBr != null) {
+      dt = DateTime(
+        int.parse(mBr.group(3)!),
+        int.parse(mBr.group(2)!),
+        int.parse(mBr.group(1)!),
+      );
+    } else {
+      dt = DateTime.tryParse(v);
+    }
+    if (dt == null) return v;
+    return DateFormat('dd/MM/yyyy').format(dt);
   }
 }

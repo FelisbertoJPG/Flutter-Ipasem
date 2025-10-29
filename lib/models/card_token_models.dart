@@ -17,6 +17,7 @@ class CardTokenData {
   final String? validateUrl;
   final String? scheduleUrl;
   final String? scheduleStatusUrl;
+  String? get string => prettyString;
 
   CardTokenData({
     required this.token,
