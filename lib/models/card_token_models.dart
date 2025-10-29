@@ -1,133 +1,105 @@
 // lib/models/card_token_models.dart
 import 'dart:convert';
 
-class CardTokenResponse {
-  final String? infoString;
-  final String? sexo;
-  final String? sexoTxt;
+class CardTokenData {
+  final String? prettyString;              // "string" legível para copiar
+  final String? sexo;                      // "M"/"F"/null
+  final String? sexoTxt;                   // "Masculino"/"Feminino"/"Não informado"
+  final String token;                      // sempre texto no backend
+  final int dbToken;                       // inteiro (padrão: igual ao token)
+  final String? expiresAt;                 // "YYYY-MM-DD HH:mm:ss"
+  final String? expiresAtIso;              // ISO-8601 com TZ
+  final int? expiresAtEpoch;               // epoch segundos
+  final int? serverNowEpoch;               // epoch segundos (lado servidor)
+  final int? ttlSeconds;                   // TTL concedido
+  final bool persisted;                    // true quando gravado no DB
+  final String? persistSource;             // "db" | "session" | ...
+  final String? validateUrl;
+  final String? scheduleUrl;
+  final String? scheduleStatusUrl;
+  String? get string => prettyString;
 
-  final String token;
-  final int dbToken;
-
-  final String expiresAt;
-  final String expiresAtIso;
-  final int expiresAtEpoch;
-  final int? serverNowEpoch;
-  final int ttlSeconds;
-
-  final bool persisted;
-  final String? persistSource;
-
-  final Uri? validateUrl;
-  final Uri? scheduleUrl;
-  final Uri? scheduleStatusUrl;
-
-  CardTokenResponse({
-    required this.infoString,
-    required this.sexo,
-    required this.sexoTxt,
+  CardTokenData({
     required this.token,
     required this.dbToken,
-    required this.expiresAt,
-    required this.expiresAtIso,
-    required this.expiresAtEpoch,
-    required this.serverNowEpoch,
-    required this.ttlSeconds,
-    required this.persisted,
-    required this.persistSource,
-    required this.validateUrl,
-    required this.scheduleUrl,
-    required this.scheduleStatusUrl,
+    this.prettyString,
+    this.sexo,
+    this.sexoTxt,
+    this.expiresAt,
+    this.expiresAtIso,
+    this.expiresAtEpoch,
+    this.serverNowEpoch,
+    this.ttlSeconds,
+    this.persisted = false,
+    this.persistSource,
+    this.validateUrl,
+    this.scheduleUrl,
+    this.scheduleStatusUrl,
   });
 
-  bool get isExpired {
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    return now >= expiresAtEpoch;
-  }
-
-  Duration get remaining {
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final left = (expiresAtEpoch - now);
-    return Duration(seconds: left.clamp(0, 1 << 31));
-  }
-
-  factory CardTokenResponse.fromJson(Map<String, dynamic> json) {
-    final map = (json.containsKey('data') && json['data'] is Map<String, dynamic>)
-        ? (json['data'] as Map<String, dynamic>)
-        : json;
-
-    Uri? _u(String? s) => (s == null || s.isEmpty) ? null : Uri.tryParse(s);
-
-    final dbTok = (map['db_token'] ?? map['token']);
-    return CardTokenResponse(
-      infoString: map['string'] as String?,
-      sexo: map['sexo']?.toString(),
-      sexoTxt: map['sexo_txt']?.toString(),
-      token: map['token']?.toString() ?? '',
-      dbToken: int.tryParse('${dbTok ?? 0}') ?? 0,
-      expiresAt: map['expires_at']?.toString() ?? '',
-      expiresAtIso: map['expires_at_iso']?.toString() ?? '',
-      expiresAtEpoch: (map['expires_at_epoch'] is int)
-          ? map['expires_at_epoch'] as int
-          : int.tryParse('${map['expires_at_epoch'] ?? 0}') ?? 0,
-      serverNowEpoch: (map['server_now_epoch'] is int)
-          ? map['server_now_epoch'] as int
-          : (map['server_now_epoch'] != null ? int.tryParse('${map['server_now_epoch']}') : null),
-      ttlSeconds: (map['ttl_seconds'] is int)
-          ? map['ttl_seconds'] as int
-          : int.tryParse('${map['ttl_seconds'] ?? 0}') ?? 0,
-      persisted: map['persisted'] == true,
-      persistSource: map['persist_source']?.toString(),
-      validateUrl: _u(map['validate_url']?.toString()),
-      scheduleUrl: _u(map['schedule_url']?.toString()),
-      scheduleStatusUrl: _u(map['schedule_status_url']?.toString()),
+  factory CardTokenData.fromMap(Map<String, dynamic> m) {
+    return CardTokenData(
+      prettyString: m['string'] as String?,
+      sexo: m['sexo'] as String?,
+      sexoTxt: m['sexo_txt'] as String?,
+      token: (m['token'] ?? '').toString(),
+      dbToken: (m['db_token'] is String)
+          ? int.tryParse(m['db_token']) ?? 0
+          : (m['db_token'] ?? 0) as int,
+      expiresAt: m['expires_at'] as String?,
+      expiresAtIso: m['expires_at_iso'] as String?,
+      expiresAtEpoch: (m['expires_at_epoch'] is String)
+          ? int.tryParse(m['expires_at_epoch'])
+          : m['expires_at_epoch'] as int?,
+      serverNowEpoch: (m['server_now_epoch'] is String)
+          ? int.tryParse(m['server_now_epoch'])
+          : m['server_now_epoch'] as int?,
+      ttlSeconds: (m['ttl_seconds'] is String)
+          ? int.tryParse(m['ttl_seconds'])
+          : m['ttl_seconds'] as int?,
+      persisted: (m['persisted'] ?? false) as bool,
+      persistSource: m['persist_source'] as String?,
+      validateUrl: m['validate_url'] as String?,
+      scheduleUrl: m['schedule_url'] as String?,
+      scheduleStatusUrl: m['schedule_status_url'] as String?,
     );
   }
 
-  @override
-  String toString() => jsonEncode({
-    'string': infoString,
-    'sexo': sexo,
-    'sexo_txt': sexoTxt,
-    'token': token,
-    'db_token': dbToken,
-    'expires_at': expiresAt,
-    'expires_at_iso': expiresAtIso,
-    'expires_at_epoch': expiresAtEpoch,
-    'server_now_epoch': serverNowEpoch,
-    'ttl_seconds': ttlSeconds,
-    'persisted': persisted,
-    'persist_source': persistSource,
-    'validate_url': validateUrl?.toString(),
-    'schedule_url': scheduleUrl?.toString(),
-    'schedule_status_url': scheduleStatusUrl?.toString(),
-  });
+  static CardTokenData fromJson(String s) =>
+      CardTokenData.fromMap(json.decode(s) as Map<String, dynamic>);
+
+  /// Segundos restantes considerando o relógio do servidor como base (se disponível).
+  int secondsLeft({int? clientNowEpoch}) {
+    final now = clientNowEpoch ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final serverNow = serverNowEpoch;
+    final exp = expiresAtEpoch;
+    if (exp == null) return 0;
+    final baseNow = serverNow ?? now;
+    final delta = exp - baseNow;
+    return delta < 0 ? 0 : delta;
+  }
 }
 
 class CardScheduleStatus {
-  final String? state;
-  final String? result;
-  final int? expTs;
-  final int? serverNow;
-  final bool? dbExists;
-  final String? eid;
+  final bool scheduled;
+  final bool duplicate;
+  final bool dbExists;
+  final int? expTsDb;
+  final int serverNow;
 
   CardScheduleStatus({
-    this.state,
-    this.result,
-    this.expTs,
-    this.serverNow,
-    this.dbExists,
-    this.eid,
+    required this.scheduled,
+    required this.duplicate,
+    required this.dbExists,
+    required this.serverNow,
+    this.expTsDb,
   });
 
-  factory CardScheduleStatus.fromJson(Map<String, dynamic> json) => CardScheduleStatus(
-    state: json['state']?.toString(),
-    result: json['result']?.toString(),
-    expTs: (json['exp_ts'] is int) ? json['exp_ts'] as int : int.tryParse('${json['exp_ts'] ?? ''}'),
-    serverNow:
-    (json['server_now'] is int) ? json['server_now'] as int : int.tryParse('${json['server_now'] ?? ''}'),
-    dbExists: json['db_exists'] is bool ? json['db_exists'] as bool : null,
-    eid: json['eid']?.toString(),
+  factory CardScheduleStatus.fromMap(Map<String, dynamic> m) => CardScheduleStatus(
+    scheduled: (m['scheduled'] ?? m['ok'] ?? false) as bool,
+    duplicate: (m['duplicate'] ?? false) as bool,
+    dbExists: (m['db_exists'] ?? false) as bool,
+    serverNow: (m['server_now'] ?? 0) as int,
+    expTsDb: m['exp_ts_db'] as int?,
   );
 }

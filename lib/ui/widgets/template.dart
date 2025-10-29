@@ -99,72 +99,90 @@ class _DigitalCardViewState extends State<DigitalCardView> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, box) {
-      // Proporção CR80 (~85.6 × 54 mm)
-      const cardRatio = 85.6 / 54.0;
-      final isWide = box.maxWidth >= 420.0;
+    // Proporção CR80 (~85.6 × 54 mm) — usamos isto como "design ratio".
+    const cardRatio = 85.6 / 54.0;
 
-      // Novo: força absoluta OU (força em telas largas)
-      final useLandscape =
-          widget.forceLandscape || (widget.forceLandscapeOnWide && isWide);
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final isWide = box.maxWidth >= 420.0;
 
-      final double maxW = box.maxWidth;
-      const double pad = 16.0;
+          // Novo: força absoluta OU (força em telas largas)
+          final useLandscape =
+              widget.forceLandscape || (widget.forceLandscapeOnWide && isWide);
 
-      double cardW, cardH;
-      if (useLandscape) {
-        cardW = (maxW - pad * 2).clamp(360.0, 720.0);
-        cardH = (cardW / cardRatio).clamp(240.0, 380.0);
-      } else {
-        cardW = (maxW - pad * 2).clamp(320.0, 420.0);
-        cardH = 320.0; // um pouco mais alto para não estourar
-      }
+          // Tamanhos de "design" (grandes). O FittedBox escala para caber
+          // no espaço disponível, evitando overflow de Column/Row internos.
+          const double designWLandscape = 900.0;
+          const double designWPortrait  = 560.0;
+          final double designW = useLandscape ? designWLandscape : designWPortrait;
+          final double designH = designW / cardRatio;
 
-      final gradient = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF143C8D), Color(0xFF3257B4)],
-      );
+          final gradient = const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF143C8D), Color(0xFF3257B4)],
+          );
 
-      final expired = _left.inSeconds <= 0;
+          final expired = _left.inSeconds <= 0;
 
-      return Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints.tight(Size(cardW, cardH)),
-          child: _CardChrome(
-            gradient: gradient,
-            child: Padding(
-              padding: const EdgeInsets.all(18.0),
-              child: useLandscape
-                  ? _LandscapeContent(
-                nome: widget.nome,
-                cpf: widget.cpf,
-                matricula: widget.matricula,
-                sexoTxt: widget.sexoTxt,
-                nascimento: widget.nascimento,
-                token: widget.token,
-                validoAte: _fmtValidoAte(),
-                expLeft: _left,
-                expired: expired,
-                onClose: widget.onClose,
-              )
-                  : _PortraitContent(
-                nome: widget.nome,
-                cpf: widget.cpf,
-                matricula: widget.matricula,
-                sexoTxt: widget.sexoTxt,
-                nascimento: widget.nascimento,
-                token: widget.token,
-                validoAte: _fmtValidoAte(),
-                expLeft: _left,
-                expired: expired,
-                onClose: widget.onClose,
+          // Evita que o fator de acessibilidade de texto quebre o layout do cartão:
+          final mq = MediaQuery.of(context);
+          final mqNoTextScale = mq.copyWith(textScaler: const TextScaler.linear(1.0));
+
+          // Cartão no tamanho de "design", embrulhado por FittedBox(BoxFit.contain)
+          // para SEMPRE caber no viewport, sem "RenderFlex overflow".
+          final card = SizedBox(
+            width: designW,
+            height: designH,
+            child: _CardChrome(
+              gradient: gradient,
+              child: Padding(
+                padding: const EdgeInsets.all(18.0),
+                child: useLandscape
+                    ? _LandscapeContent(
+                  nome: widget.nome,
+                  cpf: widget.cpf,
+                  matricula: widget.matricula,
+                  sexoTxt: widget.sexoTxt,
+                  nascimento: widget.nascimento,
+                  token: widget.token,
+                  validoAte: _fmtValidoAte(),
+                  expLeft: _left,
+                  expired: expired,
+                  onClose: widget.onClose,
+                )
+                    : _PortraitContent(
+                  nome: widget.nome,
+                  cpf: widget.cpf,
+                  matricula: widget.matricula,
+                  sexoTxt: widget.sexoTxt,
+                  nascimento: widget.nascimento,
+                  token: widget.token,
+                  validoAte: _fmtValidoAte(),
+                  expLeft: _left,
+                  expired: expired,
+                  onClose: widget.onClose,
+                ),
               ),
             ),
-          ),
-        ),
-      );
-    });
+          );
+
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.contain,
+                // Importante: o FittedBox só escala. Para garantir que o
+                // texto não se reexpanda com o TextScaleFactor do SO,
+                // travamos o textScaler dentro do cartão.
+                child: MediaQuery(data: mqNoTextScale, child: card),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 

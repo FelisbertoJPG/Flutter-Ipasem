@@ -60,11 +60,19 @@ class DevApi {
           if (t != null && t.isNotEmpty) opt.headers['X-Session'] = t;
           h.next(opt);
         },
+        onResponse: (res, h) {
+          final eid = res.headers.value('x-eid');
+          if (!kReleaseMode && eid != null) {
+            debugPrint('<<< X-EID=$eid status=${res.statusCode}');
+          }
+          h.next(res);
+        },
         onError: (e, h) {
           // log detalhado de erro
+          final eid = e.response?.headers.value('x-eid');
           debugPrint('*** HTTP ERROR *** '
               '${e.requestOptions.method} ${e.requestOptions.uri}\n'
-              'status: ${e.response?.statusCode}\n'
+              'status: ${e.response?.statusCode}  X-EID: ${eid ?? '-'}\n'
               'data  : ${e.response?.data}');
           h.next(e);
         },
@@ -331,6 +339,131 @@ class DevApi {
       final rows = (m['data']['rows'] as List?) ?? const [];
       return rows.map((e) => PrestadorRow.fromMap((e as Map).cast<String, dynamic>())).toList();
     }
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  // ========= ROTAS CARTEIRINHA (NOVAS) =========
+
+  /// Emite o token da carteirinha.
+  /// Importante: **não** envia nenhum campo chamado 'token' – apenas matrícula e iddependente.
+  Future<Map<String, dynamic>> carteirinhaEmitir({
+    required int matricula,
+    String iddependente = '0',
+  }) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_pessoa'},
+      data: {
+        'matricula': matricula,
+        'iddependente': iddependente,
+      },
+      // o backend aceita JSON ou form; mantendo o default do cliente.
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      // retorna o bloco `data` completo (string, token, db_token, expires_*, urls, etc.)
+      return (m['data'] as Map).cast<String, dynamic>();
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  /// Agenda o expurgo do token (fire-and-forget). A rota responde 202 quando tudo certo.
+  Future<void> carteirinhaAgendarExpurgo({required int dbToken}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_agendar_expurgo'},
+      data: {'db_token': dbToken},
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+
+    // Considera ok se 200/202; em erro, o throw abaixo garante stack com response.
+    final code = r.statusCode ?? 0;
+    if (code == 200 || code == 202) return;
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: r.data,
+    );
+  }
+
+  /// Valida o token (usa db_token quando disponível).
+  Future<Map<String, dynamic>> carteirinhaValidar({int? dbToken, int? token}) async {
+    final payload = <String, dynamic>{};
+    if (dbToken != null && dbToken > 0) {
+      payload['db_token'] = dbToken;
+    } else if (token != null && token > 0) {
+      payload['token'] = token;
+    } else {
+      throw ArgumentError('Informe dbToken ou token.');
+    }
+
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_validar'},
+      data: payload,
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      return (m['data'] as Map).cast<String, dynamic>();
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  /// Consulta o status do agendamento (útil para debug/telemetria no app).
+  Future<Map<String, dynamic>> carteirinhaAgendarStatus({required int dbToken}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_agendar_status'},
+      data: {'db_token': dbToken},
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      return (m['data'] as Map).cast<String, dynamic>();
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  /// Retorna dados do titular + dependentes (para montar a lista no app).
+  Future<Map<String, dynamic>> carteirinhaDados({required int idMatricula}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha'},
+      data: {'idmatricula': idMatricula},
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      return (m['data'] as Map).cast<String, dynamic>(); // {titular:{...}, dependentes:[...]}
+    }
+
     throw DioException(
       requestOptions: r.requestOptions,
       response: r,

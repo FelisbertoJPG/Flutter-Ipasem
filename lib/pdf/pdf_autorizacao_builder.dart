@@ -1,6 +1,5 @@
 // lib/pdf/autorizacao_pdf_builders.dart
-import 'dart:typed_data';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle, Uint8List;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -101,8 +100,42 @@ class _CommonParts {
   }
 
   // ---------- utils / helpers ----------
-  pw.Widget _linha([PdfColor color = PdfColors.grey700]) =>
-      pw.Container(margin: const pw.EdgeInsets.symmetric(vertical: 6), height: 1, color: color);
+
+  pw.Widget _linha([PdfColor color = PdfColors.grey700, double h = 0.9]) =>
+      pw.Container(margin: const pw.EdgeInsets.symmetric(vertical: 6), height: h, color: color);
+
+  pw.Widget _hRule([PdfColor color = PdfColors.grey700, double h = 0.9]) =>
+      pw.Container(height: h, color: color);
+
+  pw.Widget _labelComLinha(String label, {pw.TextStyle? style, bool negrito = false}) {
+    final st = (style ?? small).copyWith(fontWeight: negrito ? pw.FontWeight.bold : null);
+    return pw.Row(
+      children: [
+        pw.Text(label, style: st),
+        pw.SizedBox(width: 8),
+        pw.Expanded(child: _hRule()),
+      ],
+    );
+  }
+
+  // Campo “label: ________” com linha vetorial (usa Expanded interno)
+  pw.Widget _campoLinha(String label, {double minWidth = 60}) {
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.end,
+      children: [
+        pw.Text(label, style: small),
+        pw.SizedBox(width: 6),
+        pw.Expanded(
+          child: pw.Container(
+            constraints: pw.BoxConstraints(minWidth: minWidth, minHeight: 10),
+            decoration: pw.BoxDecoration(
+              border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey700, width: 0.8)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   pw.Widget _etiquetaOrigem() => pw.Container(
     padding: const pw.EdgeInsets.symmetric(vertical: 2, horizontal: 6),
@@ -159,9 +192,9 @@ class _CommonParts {
   );
 
   pw.Widget _linhaDireita() => pw.Row(
-    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
     children: [
-      pw.Text('===================================================', style: tiny),
+      pw.Expanded(child: _hRule()),
+      pw.SizedBox(width: 6),
       pw.Text('* Exija Letra Legível de seu Médico', style: small),
     ],
   );
@@ -233,7 +266,7 @@ class _CommonParts {
       ]),
       pw.SizedBox(height: 6),
       pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.start, // << corrigido
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text('Observações ', style: bold),
           pw.SizedBox(width: 4),
@@ -266,7 +299,7 @@ class _CommonParts {
   }
 
   pw.Widget _procedimentosTabela({bool headerLinha = true}) {
-    final itens = d.procedimentos; // já validado por _assertHasProcedures()
+    final itens = d.procedimentos;
 
     pw.Widget rightCopart() => pw.Align(
       alignment: pw.Alignment.centerRight,
@@ -280,7 +313,7 @@ class _CommonParts {
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
         if (headerLinha)
-          pw.Text('PROCEDIMENTOS AUTORIZADOS==========================================================', style: small),
+          _labelComLinha('PROCEDIMENTOS AUTORIZADOS', style: small, negrito: true),
         if (headerLinha) pw.SizedBox(height: 6),
         pw.Container(
           color: PdfColors.grey300,
@@ -311,7 +344,7 @@ class _CommonParts {
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        if (withTopRule) pw.Text('============================================================================', style: tiny),
+        if (withTopRule) _hRule(),
         if (withTopRule) pw.SizedBox(height: 4),
         pw.Center(child: pw.Text('USO DO SEGURADO', style: bold)),
         pw.SizedBox(height: 6),
@@ -324,10 +357,14 @@ class _CommonParts {
         pw.SizedBox(height: 10),
         pw.Row(children: [
           pw.Expanded(child: pw.Text('Carimbo do Prestador', style: small)),
-          pw.Text('Data: ___/___/______    Assinatura: ____________________________', style: small),
+          pw.SizedBox(width: 12),
+          // largura finita para evitar unbounded:
+          pw.SizedBox(width: 120, child: _campoLinha('Data:')),
+          pw.SizedBox(width: 12),
+          pw.Expanded(child: _campoLinha('Assinatura:')),
         ]),
         if (withBottomRule) pw.SizedBox(height: 6),
-        if (withBottomRule) pw.Text('============================================================================', style: tiny),
+        if (withBottomRule) _hRule(),
       ],
     ),
   );
@@ -346,12 +383,12 @@ class _CommonParts {
         ]),
         _linha(PdfColors.black),
         pw.Row(children: [
-          pw.SizedBox(width: 150, child: pw.Text('Cod. Procediment\n\n.............................', style: small)),
-          pw.SizedBox(width: 100, child: pw.Text('Dente\n\n................', style: small)),
-          pw.SizedBox(width: 150, child: pw.Text('Faces\n\n...... ...... ...... ...... ......', style: small)),
-          pw.Expanded(child: pw.Text('Descrição do Procediment\n\n..............................................................', style: small)),
+          pw.SizedBox(width: 150, child: pw.Text('Cod. Procediment', style: small)),
+          pw.SizedBox(width: 100, child: pw.Text('Dente', style: small)),
+          pw.SizedBox(width: 150, child: pw.Text('Faces', style: small)),
+          pw.Expanded(child: pw.Text('Descrição do Procediment', style: small)),
         ]),
-        pw.SizedBox(height: 8),
+        pw.SizedBox(height: 16),
         pw.Row(children: [
           pw.SizedBox(
             width: 150,
@@ -361,13 +398,13 @@ class _CommonParts {
               pw.Text('RX em Anexo', style: small),
             ]),
           ),
-          pw.SizedBox(width: 100, child: pw.Text('Código:', style: small)),
-          pw.Expanded(child: pw.Text('Descrição:', style: small)),
+          pw.SizedBox(width: 100, child: _campoLinha('Código:')),
+          pw.Expanded(child: _campoLinha('Descrição:')),
         ]),
-        pw.SizedBox(height: 10),
+        pw.SizedBox(height: 14),
         pw.Row(children: [
-          pw.Expanded(child: pw.Center(child: pw.Text('Data: ___/___/______', style: small))),
-          pw.Expanded(child: pw.Center(child: pw.Text('Carimbo e Assinatura: ____________________________', style: small))),
+          pw.Expanded(child: pw.Center(child: _campoLinha('Data:'))),
+          pw.Expanded(child: pw.Center(child: _campoLinha('Carimbo e Assinatura:'))),
         ])
       ],
     ),
@@ -375,40 +412,42 @@ class _CommonParts {
 
   // --------- subquadros de honorários (exames complementares) ---------
   pw.Widget _subQuadroHonorarios(String tituloEsq) {
-    pw.Widget linhaCampo(String label) =>
-        pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 3), child: pw.Text(label.toUpperCase(), style: small));
+    pw.Widget linhaCampo(String label) => pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 3),
+      child: _campoLinha(label),
+    );
 
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Expanded(
           child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            linhaCampo(tituloEsq),
-            linhaCampo('Código TUS:_________________________'),
-            linhaCampo('Assinatura:_________________________'),
+            _campoLinha(tituloEsq),
+            linhaCampo('Código TUS:'),
+            linhaCampo('Assinatura:'),
           ]),
         ),
         pw.SizedBox(width: 12),
         pw.Expanded(
           child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            linhaCampo('CREMERS:_________________________'),
-            linhaCampo(r'R$:_________________________'),
-            linhaCampo('Total:_________________________'),
+            linhaCampo('CREMERS:'),
+            linhaCampo(r'R$:'),
+            linhaCampo('Total:'),
           ]),
         ),
         pw.SizedBox(width: 12),
         pw.Expanded(
           child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            linhaCampo(r"CH's:_________________________"),
-            linhaCampo(r'R$:_________________________'),
-            linhaCampo('Total:_________________________'),
+            linhaCampo(r"CH's:"),
+            linhaCampo(r'R$:'),
+            linhaCampo('Total:'),
           ]),
         ),
       ],
     );
   }
 
-  // ===================== PÁGINAS (sem fallback) =====================
+  // ===================== PÁGINAS =====================
 
   pw.Widget pageExamesFisio() => pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -443,28 +482,18 @@ class _CommonParts {
       pw.Text(_aviso(), style: small),
       pw.SizedBox(height: 10),
 
-      pw.Text(
-        '____________________PROCEDIMENTOS AUTORIZADOS__________________________________________________________________________'
-            .toUpperCase(),
-        style: small,
-      ),
-      pw.SizedBox(height: 8),
-      _procedimentosTabela(headerLinha: false),
+      _procedimentosTabela(headerLinha: true),
       pw.SizedBox(height: 12),
 
-      pw.Text(
-        '____________________HONORÁRIOS PROFISSIONAIS___________________________________________________USO DO IPASEM__________'
-            .toUpperCase(),
-        style: small,
-      ),
+      _labelComLinha('HONORÁRIOS PROFISSIONAIS', style: small, negrito: true),
       pw.SizedBox(height: 8),
-      _subQuadroHonorarios('Cirurgião:_________________________'),
+      _subQuadroHonorarios('Cirurgião:'),
       _linha(PdfColors.black),
-      _subQuadroHonorarios('Anestesista:_________________________'),
+      _subQuadroHonorarios('Anestesista:'),
       _linha(PdfColors.black),
-      _subQuadroHonorarios('Auxiliar:_________________________'),
+      _subQuadroHonorarios('Auxiliar:'),
       _linha(PdfColors.black),
-      _subQuadroHonorarios('Outros:_________________________'),
+      _subQuadroHonorarios('Outros:'),
 
       pw.SizedBox(height: 8),
       pw.Row(children: [
@@ -475,7 +504,8 @@ class _CommonParts {
           ),
         ),
         pw.SizedBox(width: 12),
-        pw.Text(r'R$:______________________________', style: small),
+        // largura finita aqui:
+        pw.SizedBox(width: 160, child: _campoLinha(r'R$:')),
       ]),
       _linha(PdfColors.black),
 
@@ -494,7 +524,11 @@ class _CommonParts {
               style: small,
             ),
             pw.SizedBox(height: 10),
-            pw.Text('Data: ___/___/______   Assinatura: ______________________________________', style: small),
+            pw.Row(children: [
+              pw.Expanded(child: _campoLinha('Data:')),
+              pw.SizedBox(width: 12),
+              pw.Expanded(child: _campoLinha('Assinatura:')),
+            ]),
           ]),
         ),
       ]),
