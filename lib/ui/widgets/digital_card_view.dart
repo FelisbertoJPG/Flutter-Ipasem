@@ -40,11 +40,21 @@ class DigitalCardView extends StatefulWidget {
 }
 
 class _DigitalCardViewState extends State<DigitalCardView> {
-  // ====== GAPS AJUSTÁVEIS ===================================
+  // ====== GAPS AJUSTÁVEIS ====================================================
   static const double kGapNameToGrid = 30;        // Nome -> CPF/Matrícula
   static const double kGapBetweenGridRows = 20;   // Linha 1 -> Linha 2 da grade
   static const double kGapGridToToken = 30;       // (Sexo/Nasc) -> Token
   static const double kGapTokenToText = 40;       // Token -> Texto institucional
+  static const Color kAlertColor = Color(0xFFFFB300); // âmbar (alerta)
+
+
+  // ====== FONTES AJUSTÁVEIS (centralizado aqui) ==============================
+  static const double kNameFont = 36;             // Nome
+  static const double kLabelFont = 16;            // "CPF", "Matrícula", etc.
+  static const double kValueFont = 22;            // 686.041.490-15, 6542, etc.
+  static const double kTokenFont = 25;            // Linha do token (ativo)
+  static const double kTokenExpiredFont = 20;     // Pill "TOKEN EXPIRADO"
+  static const double kDisclaimerFont = 26;       // Texto institucional
 
   // ====== TAMANHO/INSETS DO CARD ============================================
   static const double _cardRatio = 85.6 / 54.0;   // CR80
@@ -139,11 +149,9 @@ class _DigitalCardViewState extends State<DigitalCardView> {
           final slotW = (availableW - padX * 2).clamp(280.0, 4000.0);
           final double slotH;
           if (rotate90) {
-            // usa praticamente toda a altura disponível
             slotH = (availableH - padTop - padBottomExtra)
                 .clamp(280.0, availableH - padTop - padBottomExtra);
           } else {
-            // quando não está tombado, tente ocupar quase tudo
             final idealH = useLandscape ? (slotW / _cardRatio) : (availableH * 0.98);
             slotH = idealH.clamp(260.0, availableH - padTop - padBottomExtra);
           }
@@ -155,18 +163,15 @@ class _DigitalCardViewState extends State<DigitalCardView> {
               child: Padding(
                 padding: _cardBodyInsets,
                 child: _CardSections(
-                  // dados
                   nome: widget.nome,
                   cpf: widget.cpf,
                   matricula: widget.matricula,
                   sexoTxt: widget.sexoTxt,
                   nascimento: widget.nascimento,
-                  // token
                   token: widget.token,
                   validoAte: _fmtValidoAte(),
                   expLeft: _left,
                   expired: _left.inSeconds <= 0,
-                  // ações
                   onClose: widget.onClose,
                 ),
               ),
@@ -186,7 +191,6 @@ class _DigitalCardViewState extends State<DigitalCardView> {
           return Padding(
             padding: const EdgeInsets.fromLTRB(padX, padTop, padX, padBottomExtra),
             child: Align(
-              // puxa bem para cima
               alignment: const Alignment(0, -0.94),
               child: SizedBox(
                 width: slotW,
@@ -314,7 +318,7 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// Seções internas (separadas): Cabeçalho/Grade/Token **e** Texto institucional.
+/// Seções internas: Cabeçalho/Grade/Token **e** Texto institucional.
 /// Botão "Sair" fixo no rodapé do corpo do card.
 class _CardSections extends StatelessWidget {
   final String nome;
@@ -343,49 +347,39 @@ class _CardSections extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Tamanhos base (ajuste à vontade)
-    const double nameSize = 34;
-    const double labelSize = 16;
-    const double valueSize = 20;
-
     // ======= SEÇÃO A: Cabeçalho (Nome) + Grade =======
     final topInfo = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 900),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Nome – próximo da faixa azul
           Text(
             nome.toUpperCase(),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w800,
               color: Colors.black87,
-              fontSize: nameSize,
+              fontSize: _DigitalCardViewState.kNameFont,
               height: 1.04,
             ),
           ),
-          // >>> GAP Nome -> CPF/Matrícula
           SizedBox(height: _DigitalCardViewState.kGapNameToGrid),
-
-          // Grade 2×2 (CPF/Matrícula — Sexo/Nascimento)
           Table(
             columnWidths: const {0: FlexColumnWidth(), 1: FlexColumnWidth()},
             defaultVerticalAlignment: TableCellVerticalAlignment.top,
             children: [
               TableRow(children: [
-                _dl('CPF', cpf, labelSize, valueSize),
-                _dl('Matrícula', matricula, labelSize, valueSize),
+                _dl('CPF', cpf, _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
+                _dl('Matrícula', matricula, _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
               ]),
-              // >>> GAP entre as linhas da grade
               TableRow(children: [
                 SizedBox(height: _DigitalCardViewState.kGapBetweenGridRows),
                 SizedBox(height: _DigitalCardViewState.kGapBetweenGridRows),
               ]),
               TableRow(children: [
-                _dl('Sexo', sexoTxt.toUpperCase(), labelSize, valueSize),
-                _dl('Nascimento', (nascimento ?? '-'), labelSize, valueSize),
+                _dl('Sexo', sexoTxt.toUpperCase(), _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
+                _dl('Nascimento', (nascimento ?? '-'), _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
               ]),
             ],
           ),
@@ -395,23 +389,20 @@ class _CardSections extends StatelessWidget {
 
     // ======= SEÇÃO B: Token (com gap vindo da grade) =======
     final tokenSection = Padding(
-      // >>> GAP (Sexo/Nascimento) -> Token
       padding: EdgeInsets.only(top: _DigitalCardViewState.kGapGridToToken),
       child: expired
           ? _tokenExpiredPill()
           : _tokenLine(token: token, validoAte: validoAte, left: expLeft),
     );
 
-    // ======= SEÇÃO C: Texto institucional (SEÇÃO SEPARADA) =======
+    // ======= SEÇÃO C: Texto institucional =======
     final disclaimerSection = Padding(
-      // >>> GAP Token -> Texto institucional
       padding: EdgeInsets.only(top: _DigitalCardViewState.kGapTokenToText),
       child: _disclaimerBig(),
     );
 
     return Column(
       children: [
-        // Corpo centralizado
         Expanded(
           child: Center(
             child: Column(
@@ -425,7 +416,6 @@ class _CardSections extends StatelessWidget {
             ),
           ),
         ),
-        // Rodapé fixo
         Align(
           alignment: Alignment.centerRight,
           child: ElevatedButton(
@@ -474,9 +464,13 @@ Widget _tokenExpiredPill() {
       borderRadius: BorderRadius.circular(12),
       boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
     ),
-    child: const Text(
+    child: Text(
       'TOKEN EXPIRADO - FECHE E TENTE NOVAMENTE',
-      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w800,
+        fontSize: _DigitalCardViewState.kTokenExpiredFont, // << separado
+      ),
     ),
   );
 }
@@ -491,7 +485,7 @@ Widget _tokenLine({required String token, required String? validoAte, required D
       boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 4, offset: Offset(0, 2))],
     ),
     child: DefaultTextStyle(
-      style: const TextStyle(color: Colors.black87, fontSize: 16, height: 1.24),
+      style: TextStyle(color: Colors.black87, fontSize: _DigitalCardViewState.kTokenFont, height: 1.24),
       child: Wrap(
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: 10,
@@ -508,27 +502,41 @@ Widget _tokenLine({required String token, required String? validoAte, required D
 }
 
 Widget _disclaimerBig() {
+  // estilo base (preto, grande)
+  const base = TextStyle(
+    fontSize: _DigitalCardViewState.kDisclaimerFont,
+    height: 1.35,
+    color: Colors.black87,
+  );
+
+  // estilo de alerta (âmbar), com pesos diferentes
+  const alert = TextStyle(
+    fontSize: _DigitalCardViewState.kDisclaimerFont,
+    height: 1.35,
+    color: _DigitalCardViewState.kAlertColor,
+    fontWeight: FontWeight.w700,
+  );
+  const alertStrong = TextStyle(
+    fontSize: _DigitalCardViewState.kDisclaimerFont,
+    height: 1.35,
+    color: _DigitalCardViewState.kAlertColor,
+    fontWeight: FontWeight.w900,
+  );
+
   return Text.rich(
     TextSpan(
-      children: [
-        const TextSpan(
+      children: const [
+        TextSpan(
           text:
           'Esta Carteirinha é pessoal e intransferível. Somente tem VALIDADE '
-              'junto a um documento de identidade com foto - RG. ',
-          style: TextStyle(color: Colors.black87),
+              'junto a um documento de identidade com foto - RG.\n',
+          style: base,
         ),
-        const TextSpan(text: 'Mantenha seu cadastro ', style: TextStyle(color: Colors.black87)),
-        TextSpan(
-          text: 'SEMPRE ',
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF143C8D),
-          ),
-        ),
-        const TextSpan(text: 'atualizado.', style: TextStyle(color: Colors.black87)),
+        TextSpan(text: 'Mantenha seu cadastro ', style: alert),
+        TextSpan(text: 'SEMPRE ', style: alertStrong),
+        TextSpan(text: 'atualizado.', style: alert),
       ],
     ),
-    style: const TextStyle(fontSize: 25.5, height: 1.35),
   );
 }
 
