@@ -3,158 +3,220 @@ import 'package:flutter/material.dart';
 
 import '../models/card_token_models.dart';
 import '../services/carteirinha_service.dart';
-import 'carteirinha_beneficiary_sheet.dart';
 import '../ui/widgets/digital_card_view.dart';
 
-/// Inicia o fluxo completo:
-/// 1) escolhe beneficiário
-/// 2) carrega dados da pessoa
-/// 3) emite token
-/// 4) mostra o DigitalCardView como diálogo modal (root navigator)
+// Se existir a folha de escolha de beneficiário, mantenha o import.
+// Caso não exista, remova o import e deixe depId = 0 no fluxo.
+import 'carteirinha_beneficiary_sheet.dart';
+
+/// Ponto único de entrada a partir do HomeServicos.
+/// - (Opcional) pergunta o beneficiário
+/// - emite o token via CarteirinhaService.emitir()
+/// - abre o cartão em overlay full-screen (sem bottom-sheet)
 Future<void> startCarteirinhaFlow(
     BuildContext context, {
       required int idMatricula,
     }) async {
-  // 1) Beneficiário
-  final idDep = await showBeneficiaryPickerSheet(
-    context,
-    idMatricula: idMatricula,
-  );
-  if (idDep == null) return;
-
-  final svc = CarteirinhaService();
-
-  // 2) Dados (titular + dependentes)
-  Map<String, dynamic> dados;
+  // 1) Escolha do beneficiário (se houver sheet no projeto)
+  int depId = 0;
   try {
-    dados = await svc.carregarDados(idMatricula: idMatricula);
-  } catch (e) {
-    _toast(context, 'Falha ao carregar dados: $e');
-    return;
-  }
-
-  final titular = (dados['titular'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
-  final deps    = (dados['dependentes'] as List?)?.cast<Map>() ?? const <Map>[];
-
-  Map<String, dynamic> pessoa = idDep == 0
-      ? titular
-      : (deps.cast<Map<String, dynamic>>().firstWhere(
-        (m) => (m['iddependente']?.toString() ?? '0') == idDep.toString(),
-    orElse: () => const <String, dynamic>{},
-  ));
-
-  if (pessoa.isEmpty) pessoa = titular;
-
-  // 3) Emissão
-  CardTokenData token;
-  try {
-    token = await svc.emitir(matricula: idMatricula, iddependente: idDep.toString());
-  } on CarteirinhaException catch (e) {
-    _toast(context, e.message);
-    return;
+    final chosen = await showBeneficiaryPickerSheet(
+      context,
+      idMatricula: idMatricula,
+    );
+    if (chosen == null) return; // cancelou
+    depId = chosen;
   } catch (_) {
-    _toast(context, 'Falha ao emitir token.');
-    return;
+    // sem sheet -> segue como titular (depId = 0)
   }
 
-  // 4) Diálogo modal no *root* navigator (garante que a barreira some ao fechar)
-  await showGeneralDialog(
+  // 2) Emite token
+  final svc = CarteirinhaService();
+  late CardTokenData data;
+
+  // Loading durante a emissão
+  await showDialog<void>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
-    barrierLabel: 'Carteirinha',
-    barrierColor: Colors.black.withOpacity(0.55),
-    transitionDuration: const Duration(milliseconds: 180),
-    pageBuilder: (dialogCtx, _, __) {
-      return _CarteirinhaOverlay(
-        pessoa: pessoa,
-        token: token,
-        onClose: () => Navigator.of(dialogCtx, rootNavigator: true).pop(),
-      );
-    },
-    transitionBuilder: (ctx, anim, _, child) {
-      final curved = CurvedAnimation(
-        parent: anim,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return Opacity(
-        opacity: curved.value,
-        child: Transform.scale(
-          scale: 0.98 + 0.02 * curved.value,
-          child: child,
-        ),
-      );
-    },
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+
+  try {
+    // *** usa a assinatura correta do teu service ***
+    data = await svc.emitir(
+      matricula: idMatricula,
+      iddependente: depId.toString(),
+    );
+  } finally {
+    // fecha o loading
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
+
+  // 3) Abre overlay full-screen (sem limitações de bottom-sheet)
+  await _openDigitalCardOverlay(context, data);
+
+  // 4) (Opcional) agenda expurgo após exibir o cartão
+  try {
+    await svc.agendarExpurgo(data.dbToken);
+  } catch (_) {
+    // silencioso
+  }
+}
+
+/// Abre a Carteirinha em rota transparente full-screen.
+/// Evita restrições de altura do bottom-sheet no Android.
+Future<void> _openDigitalCardOverlay(
+    BuildContext context,
+    CardTokenData data,
+    ) {
+  final info = _ParsedCardInfo.fromBackendString(data.string);
+
+  return Navigator.of(context).push(
+    PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black54,
+      barrierDismissible: false,
+      transitionDuration: const Duration(milliseconds: 180),
+      reverseTransitionDuration: const Duration(milliseconds: 140),
+      pageBuilder: (_, __, ___) {
+        return _CarteirinhaOverlay(
+          nome: info.nome ?? '—',
+          cpf: info.cpf ?? '',
+          matricula: info.matricula ?? '',
+          sexoTxt: info.sexoTxt ?? '—',
+          nascimento: info.nascimento,
+          token: data.token,
+          expiresAtEpoch: data.expiresAtEpoch,
+        );
+      },
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+    ),
   );
 }
 
-void _toast(BuildContext context, String msg) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-}
-
-class _CarteirinhaOverlay extends StatefulWidget {
-  final Map<String, dynamic> pessoa;
-  final CardTokenData token;
-  final VoidCallback onClose;
+/// Tela transparente que ocupa toda a viewport, dando espaço total
+/// para o DigitalCardView rotacionar 90° em tela retrato.
+class _CarteirinhaOverlay extends StatelessWidget {
+  final String nome;
+  final String cpf;
+  final String matricula;
+  final String sexoTxt;
+  final String? nascimento;
+  final String token;
+  final int? expiresAtEpoch;
 
   const _CarteirinhaOverlay({
     super.key,
-    required this.pessoa,
+    required this.nome,
+    required this.cpf,
+    required this.matricula,
+    required this.sexoTxt,
+    required this.nascimento,
     required this.token,
-    required this.onClose,
+    required this.expiresAtEpoch,
   });
 
   @override
-  State<_CarteirinhaOverlay> createState() => _CarteirinhaOverlayState();
-}
-
-class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
-  final _svc = CarteirinhaService();
-
-  @override
-  void initState() {
-    super.initState();
-    // Agenda expurgo (não bloqueia a UI)
-    final dbToken = widget.token.dbToken;
-    if (dbToken != null) {
-      Future.microtask(() async {
-        try {
-          await _svc.agendarExpurgo(dbToken);
-        } catch (_) {
-          // silencioso
-        }
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    // Bloqueia back/gesto enquanto aberto (fecha só no botão "Sair")
+    // Congela text scale para não “estourar” fontes em Android.
+    final mq = MediaQuery.of(context).copyWith(
+      textScaler: const TextScaler.linear(1.0),
+    );
+
     return WillPopScope(
-      onWillPop: () async => false,
+      onWillPop: () async => true,
       child: Material(
         type: MaterialType.transparency,
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 980),
-              child: DigitalCardView(
-                nome: (widget.pessoa['nome'] ?? '').toString(),
-                cpf: (widget.pessoa['cpf'] ?? '').toString(),
-                matricula: (widget.pessoa['idmatricula'] ?? widget.pessoa['matricula'] ?? '').toString(),
-                sexoTxt: (widget.pessoa['sexo_txt'] ?? widget.pessoa['sexo'] ?? '').toString(),
-                nascimento: (widget.pessoa['dt_nasc'] ?? widget.pessoa['nascimento'])?.toString(),
-                token: widget.token.token.toString(),
-                expiresAtEpoch: widget.token.expiresAtEpoch,
-                onClose: widget.onClose,
-                // mantém horizontal em telas largas
-                forceLandscapeOnWide: true,
+        child: MediaQuery(
+          data: mq,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () {}, // toque fora não fecha
+                  child: Container(color: Colors.transparent),
+                ),
               ),
-            ),
+              Positioned.fill(
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: ConstrainedBox(
+                      // Limites só para telas gigantes; não afeta phones.
+                      constraints: const BoxConstraints(
+                        maxWidth: 1400,
+                        maxHeight: 1000,
+                      ),
+                      child: DigitalCardView(
+                        nome: nome,
+                        cpf: cpf,
+                        matricula: matricula,
+                        sexoTxt: sexoTxt,
+                        nascimento: nascimento,
+                        token: token,
+                        expiresAtEpoch: expiresAtEpoch,
+                        // força layout horizontal; em retrato ele gira 90°
+                        forceLandscape: true,
+                        forceLandscapeOnWide: true,
+                        onClose: () => Navigator.of(context).maybePop(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Parser do campo `string` vindo do backend.
+class _ParsedCardInfo {
+  final String? nome;
+  final String? cpf;
+  final String? matricula;
+  final String? sexoTxt;
+  final String? nascimento;
+
+  const _ParsedCardInfo({
+    this.nome,
+    this.cpf,
+    this.matricula,
+    this.sexoTxt,
+    this.nascimento,
+  });
+
+  factory _ParsedCardInfo.fromBackendString(String? s) {
+    if (s == null || s.isEmpty) return const _ParsedCardInfo();
+
+    String? nome, cpf, matricula, sexoTxt, nascimento;
+    for (final raw in s.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+
+      if (line.startsWith('Titular:')) {
+        nome = line.replaceFirst('Titular:', '').trim();
+      } else if (line.startsWith('Beneficiário:')) {
+        nome = line.replaceFirst('Beneficiário:', '').trim();
+      } else if (line.startsWith('CPF:')) {
+        cpf = line.replaceFirst('CPF:', '').trim();
+      } else if (line.startsWith('Matrícula:')) {
+        matricula = line.replaceFirst('Matrícula:', '').trim();
+      } else if (line.startsWith('Sexo:')) {
+        sexoTxt = line.replaceFirst('Sexo:', '').trim();
+      } else if (line.startsWith('Nascimento:')) {
+        nascimento = line.replaceFirst('Nascimento:', '').trim();
+      }
+    }
+    return _ParsedCardInfo(
+      nome: nome,
+      cpf: cpf,
+      matricula: matricula,
+      sexoTxt: sexoTxt,
+      nascimento: nascimento,
     );
   }
 }

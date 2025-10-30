@@ -16,6 +16,7 @@ DevApi buildDevApiFromEnv() {
     final base = raw.substring(0, cut);
     final path = raw.substring(cut);
     return DevApi(base, apiPath: path);
+
   }
   return DevApi(raw, apiPath: '/api-dev.php');
 }
