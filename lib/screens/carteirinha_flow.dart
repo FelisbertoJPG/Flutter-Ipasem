@@ -1,158 +1,160 @@
-import 'dart:async';
-
+// lib/screens/carteirinha_flow.dart
 import 'package:flutter/material.dart';
+
 import '../models/card_token_models.dart';
 import '../services/carteirinha_service.dart';
-import '../services/dev_api.dart';
-import '../models/dependent.dart';
-import '../ui/widgets/digital_card_view.dart';
 import 'carteirinha_beneficiary_sheet.dart';
+import '../ui/widgets/digital_card_view.dart';
 
-/// Fluxo completo:
-/// 1) Abre o sheet de beneficiários.
-/// 2) Emite o token.
-/// 3) Abre o DigitalCardView em OVERLAY bloqueante.
-/// 4) Agenda expurgo depois de exibir.
+/// Inicia o fluxo completo:
+/// 1) escolhe beneficiário
+/// 2) carrega dados da pessoa
+/// 3) emite token
+/// 4) mostra o DigitalCardView como diálogo modal (root navigator)
 Future<void> startCarteirinhaFlow(
     BuildContext context, {
       required int idMatricula,
-      CarteirinhaService? service,
     }) async {
-  // 1) escolher beneficiário
+  // 1) Beneficiário
   final idDep = await showBeneficiaryPickerSheet(
     context,
     idMatricula: idMatricula,
   );
   if (idDep == null) return;
 
-  // 2) emitir token (mostra aguarde curto)
-  final svc = service ?? CarteirinhaService();
-  CardTokenData tokenData;
+  final svc = CarteirinhaService();
+
+  // 2) Dados (titular + dependentes)
+  Map<String, dynamic> dados;
   try {
-    _showMiniLoading(context, 'Emitindo carteirinha...');
-    tokenData = await svc.emitir(
-      matricula: idMatricula,
-      iddependente: idDep.toString(),
-    );
-  } finally {
-    Navigator.of(context, rootNavigator: true).maybePop();
+    dados = await svc.carregarDados(idMatricula: idMatricula);
+  } catch (e) {
+    _toast(context, 'Falha ao carregar dados: $e');
+    return;
   }
 
-  // 2.1) carregar dados do beneficiário selecionado (nome/cpf/sexo/nasc)
-  final api = buildDevApiFromEnv();
-  final dep = await _loadSelectedDependent(api, idMatricula, idDep);
+  final titular = (dados['titular'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+  final deps    = (dados['dependentes'] as List?)?.cast<Map>() ?? const <Map>[];
 
-  // 3) abrir overlay bloqueante com o DigitalCardView
-  await _showCardOverlay(
-    context,
-    nome: dep.nome,
-    cpf: dep.cpf ?? '',
-    matricula: '${dep.idmatricula}',
-    sexoTxt: _sexoHumanizado(dep.sexo),
-    nascimento: dep.dtNasc,
-    token: '${tokenData.token}',
-    expiresAtEpoch: tokenData.expiresAtEpoch,
-  );
+  Map<String, dynamic> pessoa = idDep == 0
+      ? titular
+      : (deps.cast<Map<String, dynamic>>().firstWhere(
+        (m) => (m['iddependente']?.toString() ?? '0') == idDep.toString(),
+    orElse: () => const <String, dynamic>{},
+  ));
 
-  // 4) agenda expurgo (fire-and-forget)
-  if (tokenData.dbToken != null) {
-    unawaited(svc.agendarExpurgo(tokenData.dbToken!));
+  if (pessoa.isEmpty) pessoa = titular;
+
+  // 3) Emissão
+  CardTokenData token;
+  try {
+    token = await svc.emitir(matricula: idMatricula, iddependente: idDep.toString());
+  } on CarteirinhaException catch (e) {
+    _toast(context, e.message);
+    return;
+  } catch (_) {
+    _toast(context, 'Falha ao emitir token.');
+    return;
   }
-}
 
-void _showMiniLoading(BuildContext context, String msg) {
-  showDialog<void>(
+  // 4) Diálogo modal no *root* navigator (garante que a barreira some ao fechar)
+  await showGeneralDialog(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
-    builder: (_) => WillPopScope(
-      onWillPop: () async => false,
-      child: const Center(child: CircularProgressIndicator()),
-    ),
-  );
-}
-
-Future<Dependent> _loadSelectedDependent(DevApi api, int idMatricula, int idDep) async {
-  final list = await api.fetchDependentes(idMatricula);
-  Dependent? d = list.where((e) => e.iddependente == idDep).cast<Dependent?>().firstWhere(
-        (e) => e != null,
-    orElse: () => null,
-  );
-  d ??= list.firstWhere(
-        (e) => e.iddependente == 0,
-    orElse: () => Dependent(
-      nome: 'Titular',
-      idmatricula: idMatricula,
-      iddependente: 0,
-      sexo: 'M',
-      cpf: '',
-      dtNasc: null,
-      idade: null,
-    ),
-  );
-  return d!;
-}
-
-String _sexoHumanizado(String? s) {
-  final v = (s ?? '').trim().toUpperCase();
-  if (v == 'F' || v == 'FEMININO' || v == '2') return 'FEMININO';
-  return 'MASCULINO';
-}
-
-Future<void> _showCardOverlay(
-    BuildContext context, {
-      required String nome,
-      required String cpf,
-      required String matricula,
-      required String sexoTxt,
-      required String? nascimento,
-      required String token,
-      required int? expiresAtEpoch,
-    }) {
-  return showGeneralDialog<void>(
-    context: context,
-    barrierDismissible: false, // bloqueia ações abaixo
     barrierLabel: 'Carteirinha',
-    barrierColor: Colors.black54,
+    barrierColor: Colors.black.withOpacity(0.55),
     transitionDuration: const Duration(milliseconds: 180),
-    pageBuilder: (ctx, _, __) {
-      final mq = MediaQuery.of(ctx);
-      final noScale = mq.copyWith(textScaler: const TextScaler.linear(1.0));
-
-      // Caixa central com o card – sem “faixa zebrada”
-      return MediaQuery(
-        data: noScale,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 980, // acompanha o design landscape do widget
-              maxHeight: 700,
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  color: Colors.transparent,
-                  child: DigitalCardView(
-                    nome: nome,
-                    cpf: cpf,
-                    matricula: matricula,
-                    sexoTxt: sexoTxt,
-                    nascimento: nascimento,
-                    token: token,
-                    expiresAtEpoch: expiresAtEpoch,
-                    // Fechar somente pelo botão "Sair"
-                    onClose: () => Navigator.of(ctx).pop(),
-                    // Mantém a rotação automática do próprio widget
-                    forceLandscape: false,
-                    forceLandscapeOnWide: true,
-                  ),
-                ),
-              ),
-            ),
-          ),
+    pageBuilder: (dialogCtx, _, __) {
+      return _CarteirinhaOverlay(
+        pessoa: pessoa,
+        token: token,
+        onClose: () => Navigator.of(dialogCtx, rootNavigator: true).pop(),
+      );
+    },
+    transitionBuilder: (ctx, anim, _, child) {
+      final curved = CurvedAnimation(
+        parent: anim,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return Opacity(
+        opacity: curved.value,
+        child: Transform.scale(
+          scale: 0.98 + 0.02 * curved.value,
+          child: child,
         ),
       );
     },
   );
+}
+
+void _toast(BuildContext context, String msg) {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+}
+
+class _CarteirinhaOverlay extends StatefulWidget {
+  final Map<String, dynamic> pessoa;
+  final CardTokenData token;
+  final VoidCallback onClose;
+
+  const _CarteirinhaOverlay({
+    super.key,
+    required this.pessoa,
+    required this.token,
+    required this.onClose,
+  });
+
+  @override
+  State<_CarteirinhaOverlay> createState() => _CarteirinhaOverlayState();
+}
+
+class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
+  final _svc = CarteirinhaService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Agenda expurgo (não bloqueia a UI)
+    final dbToken = widget.token.dbToken;
+    if (dbToken != null) {
+      Future.microtask(() async {
+        try {
+          await _svc.agendarExpurgo(dbToken);
+        } catch (_) {
+          // silencioso
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Bloqueia back/gesto enquanto aberto (fecha só no botão "Sair")
+    return WillPopScope(
+      onWillPop: () async => false,
+      child: Material(
+        type: MaterialType.transparency,
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 980),
+              child: DigitalCardView(
+                nome: (widget.pessoa['nome'] ?? '').toString(),
+                cpf: (widget.pessoa['cpf'] ?? '').toString(),
+                matricula: (widget.pessoa['idmatricula'] ?? widget.pessoa['matricula'] ?? '').toString(),
+                sexoTxt: (widget.pessoa['sexo_txt'] ?? widget.pessoa['sexo'] ?? '').toString(),
+                nascimento: (widget.pessoa['dt_nasc'] ?? widget.pessoa['nascimento'])?.toString(),
+                token: widget.token.token.toString(),
+                expiresAtEpoch: widget.token.expiresAtEpoch,
+                onClose: widget.onClose,
+                // mantém horizontal em telas largas
+                forceLandscapeOnWide: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -25,9 +25,7 @@ import '../ui/components/reimp_detalhes_sheet.dart';
 
 import '../state/auth_events.dart';
 
-// telas
-import 'carteirinha_beneficiary_sheet.dart';
-import 'carteirinha_digital_screen.dart';
+// telas (mantidas)
 import 'login_screen.dart';
 import 'autorizacao_medica_screen.dart';
 import 'autorizacao_odontologica_screen.dart';
@@ -37,11 +35,8 @@ import 'historico_autorizacoes_screen.dart';
 // sessão/perfil (para obter a matrícula)
 import '../services/session.dart';
 
-// sheet da carteirinha
-import '../ui/sheets/card_sheet.dart';
+// fluxo NOVO da carteirinha (overlay)
 import '../screens/carteirinha_flow.dart';
-
-
 
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
