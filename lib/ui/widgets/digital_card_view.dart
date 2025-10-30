@@ -2,15 +2,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-/// Cartão digital do IPASEM com layout responsivo e degradê superior.
-///
-/// Parâmetros nomeados estáveis:
-/// - nome, cpf, matricula, sexoTxt, nascimento (dd/mm/aaaa)
-/// - token
-/// - expiresAtEpoch (epoch em segundos)
-/// - onClose (opcional)
-/// - forceLandscape (força sempre horizontal)
-/// - forceLandscapeOnWide (força horizontal apenas em telas largas; default: true)
+/// Cartão digital do IPASEM com layout responsivo.
+/// Conteúdo DENTRO do card: Nome, CPF, Sexo, Matrícula, Nascimento, Token
+/// (ou tarja de expirado) e texto institucional (seção separada).
 class DigitalCardView extends StatefulWidget {
   final String nome;
   final String cpf;
@@ -46,7 +40,18 @@ class DigitalCardView extends StatefulWidget {
 }
 
 class _DigitalCardViewState extends State<DigitalCardView> {
-  static const double _cardRatio = 85.6 / 54.0; // CR80
+  // ====== GAPS AJUSTÁVEIS ===================================
+  static const double kGapNameToGrid = 30;        // Nome -> CPF/Matrícula
+  static const double kGapBetweenGridRows = 20;   // Linha 1 -> Linha 2 da grade
+  static const double kGapGridToToken = 30;       // (Sexo/Nasc) -> Token
+  static const double kGapTokenToText = 40;       // Token -> Texto institucional
+
+  // ====== TAMANHO/INSETS DO CARD ============================================
+  static const double _cardRatio = 85.6 / 54.0;   // CR80
+  static const double _headerHeight = 70.0;       // faixa decorativa
+  static const EdgeInsets _cardBodyInsets =
+  EdgeInsets.fromLTRB(24, _headerHeight + 10, 24, 24);
+
   late Timer _t;
   Duration _left = Duration.zero;
 
@@ -100,7 +105,7 @@ class _DigitalCardViewState extends State<DigitalCardView> {
 
   @override
   Widget build(BuildContext context) {
-    // Base “de design” (antes de escalar/rotacionar).
+    // Tamanhos de design (antes de escalar/rotacionar).
     const double designWPortrait = 640.0;
     const double designHPortrait = 520.0;
     const double designWLandscape = 980.0;
@@ -121,67 +126,54 @@ class _DigitalCardViewState extends State<DigitalCardView> {
               widget.forceLandscape || (widget.forceLandscapeOnWide && (isWideByBox || isWideByAspect));
 
           final bool viewportIsPortrait = availableH >= availableW;
-
-          // Quando o layout é “landscape” mas a tela está em retrato,
-          // tombamos o cartão 90° para reproduzir o efeito do site.
           final bool rotate90 = useLandscape && viewportIsPortrait;
 
           final double designW = useLandscape ? designWLandscape : designWPortrait;
           final double designH = useLandscape ? designHLandscape : designHPortrait;
 
-          // Slot finito para o FittedBox.
-          const outerPad = 16.0;
-          final boxW = (availableW - outerPad * 2).clamp(280.0, 1100.0);
-          final idealH = useLandscape ? (boxW / _cardRatio) : (availableH * 0.55);
-          final boxH = idealH.clamp(260.0, availableH - outerPad * 2);
+          // Slot para o FittedBox — card maior e mais para cima.
+          const double padX = 0.0;          // sem margens laterais
+          const double padTop = 0.0;        // cola no topo
+          const double padBottomExtra = 36; // folga mínima p/ bottom bar
 
-          final gradient = const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF143C8D), Color(0xFF3257B4)],
-          );
-          final expired = _left.inSeconds <= 0;
-
-          final mqNoTextScale = mq.copyWith(textScaler: const TextScaler.linear(1.0));
+          final slotW = (availableW - padX * 2).clamp(280.0, 4000.0);
+          final double slotH;
+          if (rotate90) {
+            // usa praticamente toda a altura disponível
+            slotH = (availableH - padTop - padBottomExtra)
+                .clamp(280.0, availableH - padTop - padBottomExtra);
+          } else {
+            // quando não está tombado, tente ocupar quase tudo
+            final idealH = useLandscape ? (slotW / _cardRatio) : (availableH * 0.98);
+            slotH = idealH.clamp(260.0, availableH - padTop - padBottomExtra);
+          }
 
           final baseCard = SizedBox(
             width: designW,
             height: designH,
             child: _CardChrome(
-              gradient: gradient,
               child: Padding(
-                padding: const EdgeInsets.all(18.0),
-                child: useLandscape
-                    ? _LandscapeContent(
+                padding: _cardBodyInsets,
+                child: _CardSections(
+                  // dados
                   nome: widget.nome,
                   cpf: widget.cpf,
                   matricula: widget.matricula,
                   sexoTxt: widget.sexoTxt,
                   nascimento: widget.nascimento,
+                  // token
                   token: widget.token,
                   validoAte: _fmtValidoAte(),
                   expLeft: _left,
-                  expired: expired,
-                  onClose: widget.onClose,
-                )
-                    : _PortraitContent(
-                  nome: widget.nome,
-                  cpf: widget.cpf,
-                  matricula: widget.matricula,
-                  sexoTxt: widget.sexoTxt,
-                  nascimento: widget.nascimento,
-                  token: widget.token,
-                  validoAte: _fmtValidoAte(),
-                  expLeft: _left,
-                  expired: expired,
+                  expired: _left.inSeconds <= 0,
+                  // ações
                   onClose: widget.onClose,
                 ),
               ),
             ),
           );
 
-          // Invólucro que ajusta as dimensões de layout ao rotacionar,
-          // para o FittedBox dimensionar/escala corretamente.
+          final mqNoTextScale = mq.copyWith(textScaler: const TextScaler.linear(1.0));
           final Widget cardForFit = rotate90
               ? _RotatedBoxWithBounds(
             width: designW,
@@ -192,13 +184,16 @@ class _DigitalCardViewState extends State<DigitalCardView> {
               : baseCard;
 
           return Padding(
-            padding: const EdgeInsets.all(outerPad),
-            child: Center(
+            padding: const EdgeInsets.fromLTRB(padX, padTop, padX, padBottomExtra),
+            child: Align(
+              // puxa bem para cima
+              alignment: const Alignment(0, -0.94),
               child: SizedBox(
-                width: boxW,
-                height: boxH,
+                width: slotW,
+                height: slotH,
                 child: FittedBox(
                   fit: BoxFit.contain,
+                  alignment: Alignment.center,
                   child: MediaQuery(data: mqNoTextScale, child: cardForFit),
                 ),
               ),
@@ -211,7 +206,6 @@ class _DigitalCardViewState extends State<DigitalCardView> {
 }
 
 /// Ajusta as dimensões externas quando se rotaciona 90°/180°/270°.
-/// Para 90°/270°, a “caixa” externa tem width=heightOriginal e height=widthOriginal.
 class _RotatedBoxWithBounds extends StatelessWidget {
   final Widget child;
   final double width;
@@ -244,21 +238,22 @@ class _RotatedBoxWithBounds extends StatelessWidget {
   }
 }
 
-/// Moldura com cantos 20, sombra e “degradê superior”.
+/// Moldura com cantos 20, sombra e faixa superior apenas decorativa.
 class _CardChrome extends StatelessWidget {
   final Widget child;
-  final Gradient gradient;
-
-  const _CardChrome({required this.child, required this.gradient});
+  const _CardChrome({required this.child});
 
   @override
   Widget build(BuildContext context) {
+    const gradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF143C8D), Color(0xFF3257B4)],
+    );
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: Colors.white,
-        shadows: const [
-          BoxShadow(blurRadius: 18, offset: Offset(0, 8), color: Color(0x33000000)),
-        ],
+        shadows: const [BoxShadow(blurRadius: 18, offset: Offset(0, 8), color: Color(0x33000000))],
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       child: ClipRRect(
@@ -269,25 +264,30 @@ class _CardChrome extends StatelessWidget {
             Container(color: const Color(0xFFF7F8FC)),
             Align(
               alignment: Alignment.topCenter,
-              child: Container(height: 64, decoration: BoxDecoration(gradient: gradient)),
+              child: Container(
+                height: _DigitalCardViewState._headerHeight,
+                decoration: const BoxDecoration(gradient: gradient),
+              ),
             ),
-            Positioned(
-              top: 60,
+            const Positioned(
+              top: _DigitalCardViewState._headerHeight - 4,
               left: 0,
               right: 0,
-              child: Container(
-                height: 24,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0x33000000), Colors.transparent],
+              child: SizedBox(
+                height: 22,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0x22000000), Colors.transparent],
+                    ),
                   ),
                 ),
               ),
             ),
             child,
-            Positioned(top: 12, right: 12, child: _Chip('Digital')),
+            const Positioned(top: 12, right: 12, child: _Chip('Digital')),
           ],
         ),
       ),
@@ -314,7 +314,9 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _PortraitContent extends StatelessWidget {
+/// Seções internas (separadas): Cabeçalho/Grade/Token **e** Texto institucional.
+/// Botão "Sair" fixo no rodapé do corpo do card.
+class _CardSections extends StatelessWidget {
   final String nome;
   final String cpf;
   final String matricula;
@@ -326,7 +328,7 @@ class _PortraitContent extends StatelessWidget {
   final bool expired;
   final VoidCallback? onClose;
 
-  const _PortraitContent({
+  const _CardSections({
     required this.nome,
     required this.cpf,
     required this.matricula,
@@ -341,45 +343,89 @@ class _PortraitContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+    // Tamanhos base (ajuste à vontade)
+    const double nameSize = 34;
+    const double labelSize = 16;
+    const double valueSize = 20;
+
+    // ======= SEÇÃO A: Cabeçalho (Nome) + Grade =======
+    final topInfo = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 900),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Nome – próximo da faixa azul
+          Text(
+            nome.toUpperCase(),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+              fontSize: nameSize,
+              height: 1.04,
+            ),
+          ),
+          // >>> GAP Nome -> CPF/Matrícula
+          SizedBox(height: _DigitalCardViewState.kGapNameToGrid),
+
+          // Grade 2×2 (CPF/Matrícula — Sexo/Nascimento)
+          Table(
+            columnWidths: const {0: FlexColumnWidth(), 1: FlexColumnWidth()},
+            defaultVerticalAlignment: TableCellVerticalAlignment.top,
+            children: [
+              TableRow(children: [
+                _dl('CPF', cpf, labelSize, valueSize),
+                _dl('Matrícula', matricula, labelSize, valueSize),
+              ]),
+              // >>> GAP entre as linhas da grade
+              TableRow(children: [
+                SizedBox(height: _DigitalCardViewState.kGapBetweenGridRows),
+                SizedBox(height: _DigitalCardViewState.kGapBetweenGridRows),
+              ]),
+              TableRow(children: [
+                _dl('Sexo', sexoTxt.toUpperCase(), labelSize, valueSize),
+                _dl('Nascimento', (nascimento ?? '-'), labelSize, valueSize),
+              ]),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    // ======= SEÇÃO B: Token (com gap vindo da grade) =======
+    final tokenSection = Padding(
+      // >>> GAP (Sexo/Nascimento) -> Token
+      padding: EdgeInsets.only(top: _DigitalCardViewState.kGapGridToToken),
+      child: expired
+          ? _tokenExpiredPill()
+          : _tokenLine(token: token, validoAte: validoAte, left: expLeft),
+    );
+
+    // ======= SEÇÃO C: Texto institucional (SEÇÃO SEPARADA) =======
+    final disclaimerSection = Padding(
+      // >>> GAP Token -> Texto institucional
+      padding: EdgeInsets.only(top: _DigitalCardViewState.kGapTokenToText),
+      child: _disclaimerBig(),
+    );
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 16),
-        Text(
-          nome.toUpperCase(),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: t.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            shadows: const [Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+        // Corpo centralizado
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                topInfo,
+                tokenSection,
+                disclaimerSection,
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 16),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _dl('CPF', cpf)),
-            const SizedBox(width: 16),
-            Expanded(child: _dl('Matrícula', matricula)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _dl('Sexo', sexoTxt)),
-            const SizedBox(width: 16),
-            Expanded(child: _dl('Nascimento', nascimento ?? '-')),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _tokenBlock(token: token, validoAte: validoAte, expLeft: expLeft, expired: expired),
-        const Spacer(),
-        _disclaimer(maxLines: 3),
-        const SizedBox(height: 10),
+        // Rodapé fixo
         Align(
           alignment: Alignment.centerRight,
           child: ElevatedButton(
@@ -388,7 +434,7 @@ class _PortraitContent extends StatelessWidget {
               backgroundColor: Colors.white,
               foregroundColor: const Color(0xFF143C8D),
               shape: const StadiumBorder(),
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               elevation: 0,
             ),
             child: const Text('Sair'),
@@ -399,190 +445,90 @@ class _PortraitContent extends StatelessWidget {
   }
 }
 
-class _LandscapeContent extends StatelessWidget {
-  final String nome;
-  final String cpf;
-  final String matricula;
-  final String sexoTxt;
-  final String? nascimento;
-  final String token;
-  final String? validoAte;
-  final Duration expLeft;
-  final bool expired;
-  final VoidCallback? onClose;
-
-  const _LandscapeContent({
-    required this.nome,
-    required this.cpf,
-    required this.matricula,
-    required this.sexoTxt,
-    required this.nascimento,
-    required this.token,
-    required this.validoAte,
-    required this.expLeft,
-    required this.expired,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-
-    return Row(
-      children: [
-        Expanded(
-          flex: 6,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 16, top: 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  nome.toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: .2,
-                    shadows: const [Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 20,
-                  runSpacing: 6,
-                  children: [
-                    _dl('CPF', cpf),
-                    _dl('Matrícula', matricula),
-                    _dl('Sexo', sexoTxt),
-                    _dl('Nascimento', nascimento ?? '-'),
-                  ],
-                ),
-                const Spacer(),
-                _disclaimer(maxLines: 2),
-              ],
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 4,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const SizedBox(height: 4),
-              _tokenBlock(
-                token: token,
-                validoAte: validoAte,
-                expLeft: expLeft,
-                expired: expired,
-                alignEnd: true,
-              ),
-              const Spacer(),
-              ElevatedButton(
-                onPressed: onClose,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF143C8D),
-                  shape: const StadiumBorder(),
-                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-                  elevation: 0,
-                ),
-                child: const Text('Sair'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // --- Helpers visuais ---------------------------------------------------------
 
-Widget _dl(String label, String value) {
+Widget _dl(String label, String value, double labelSize, double valueSize) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label, style: const TextStyle(fontSize: 12, color: Colors.white70)),
-      const SizedBox(height: 2),
+      Text(label, style: TextStyle(fontSize: labelSize, color: Colors.black45)),
+      const SizedBox(height: 4),
       Text(
         value,
-        style: const TextStyle(
-          fontSize: 14,
+        style: TextStyle(
+          fontSize: valueSize,
           fontWeight: FontWeight.w700,
-          color: Colors.white,
-          height: 1.1,
+          color: Colors.black87,
+          height: 1.04,
         ),
       ),
     ],
   );
 }
 
-Widget _tokenBlock({
-  required String token,
-  required String? validoAte,
-  required Duration expLeft,
-  required bool expired,
-  bool alignEnd = false,
-}) {
-  if (expired) {
-    return Align(
-      alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFE53935),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
-        ),
-        child: const Text(
-          'TOKEN EXPIRADO - FECHE E TENTE NOVAMENTE',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-        ),
-      ),
-    );
-  }
+Widget _tokenExpiredPill() {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFE53935),
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
+    ),
+    child: const Text(
+      'TOKEN EXPIRADO - FECHE E TENTE NOVAMENTE',
+      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+    ),
+  );
+}
 
-  final left = expLeft.inSeconds > 0 ? _fmtLeftStatic(expLeft) : '00:00';
-  return Align(
-    alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0x1A000000),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: DefaultTextStyle(
-        style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.2),
-        child: Column(
-          crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Token: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                Text(token, style: const TextStyle(fontWeight: FontWeight.w700)),
-              ],
-            ),
-            const SizedBox(height: 2),
-            if (validoAte != null) Text('válido até $validoAte'),
-            Text('Expira em $left'),
-          ],
-        ),
+Widget _tokenLine({required String token, required String? validoAte, required Duration left}) {
+  final leftStr = left.inSeconds > 0 ? _fmtLeftStatic(left) : '00:00';
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 4, offset: Offset(0, 2))],
+    ),
+    child: DefaultTextStyle(
+      style: const TextStyle(color: Colors.black87, fontSize: 16, height: 1.24),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 10,
+        runSpacing: 2,
+        children: [
+          const Text('Token:', style: TextStyle(fontWeight: FontWeight.w600)),
+          Text(token, style: const TextStyle(fontWeight: FontWeight.w800)),
+          if (validoAte != null) Text('(válido até $validoAte)'),
+          Text('Expira em $leftStr'),
+        ],
       ),
     ),
   );
 }
 
-Widget _disclaimer({int? maxLines}) {
-  return Text(
-    'Esta Carteirinha é pessoal e intransferível. Somente tem VALIDADE '
-        'junto a um documento de identidade com foto - RG. '
-        'Mantenha seu cadastro SEMPRE atualizado.',
-    maxLines: maxLines,
-    overflow: maxLines != null ? TextOverflow.ellipsis : TextOverflow.visible,
-    style: const TextStyle(fontSize: 12.5, color: Colors.white, height: 1.25),
+Widget _disclaimerBig() {
+  return Text.rich(
+    TextSpan(
+      children: [
+        const TextSpan(
+          text:
+          'Esta Carteirinha é pessoal e intransferível. Somente tem VALIDADE '
+              'junto a um documento de identidade com foto - RG. ',
+          style: TextStyle(color: Colors.black87),
+        ),
+        const TextSpan(text: 'Mantenha seu cadastro ', style: TextStyle(color: Colors.black87)),
+        TextSpan(
+          text: 'SEMPRE ',
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF143C8D),
+          ),
+        ),
+        const TextSpan(text: 'atualizado.', style: TextStyle(color: Colors.black87)),
+      ],
+    ),
+    style: const TextStyle(fontSize: 25.5, height: 1.35),
   );
 }
 
