@@ -36,7 +36,7 @@ Future<void> startCarteirinhaFlow(
   CardTokenData? data;
   String? errMsg;
 
-  final closeLoader = await _showBlockingLoader(context); // <-- abre sem await do diálogo
+  final closeLoader = await _showBlockingLoader(context); // abre sem travar
   try {
     data = await svc.emitir(
       matricula: idMatricula,
@@ -47,7 +47,7 @@ Future<void> startCarteirinhaFlow(
   } catch (_) {
     errMsg = 'Falha ao emitir a carteirinha.';
   } finally {
-    closeLoader(); // <-- garante que o loader fecha mesmo com erro
+    closeLoader(); // garante fechamento do loader mesmo com erro
   }
 
   if (data == null) {
@@ -71,12 +71,12 @@ Future<void> startCarteirinhaFlow(
 typedef _Close = void Function();
 
 /// Abre um loader bloqueante sem travar o fluxo chamador.
-/// Retorna uma função para fechá-lo de qualquer lugar (e sempre com segurança).
+/// Retorna uma função para fechá-lo com segurança.
 Future<_Close> _showBlockingLoader(BuildContext context) async {
   final nav = Navigator.of(context, rootNavigator: true);
   bool closed = false;
 
-  // Abre o diálogo em um microtask para não bloquear a sequência.
+  // Abre o diálogo em microtask para não bloquear a sequência.
   Future.microtask(() {
     showDialog<void>(
       context: context,
@@ -100,8 +100,9 @@ Future<void> _openDigitalCardOverlay(
     CardTokenData data,
     ) {
   final info = _ParsedCardInfo.fromBackendString(data.string);
+  final rootNav = Navigator.of(context, rootNavigator: true);
 
-  return Navigator.of(context).push(
+  return rootNav.push(
     PageRouteBuilder(
       opaque: false,
       barrierColor: Colors.black54,
@@ -125,8 +126,12 @@ Future<void> _openDigitalCardOverlay(
   );
 }
 
-/// Tela transparente que ocupa toda a viewport, dando espaço total
-/// para o DigitalCardView rotacionar 90° em tela retrato.
+/// Tela transparente que ocupa toda a viewport.
+/// REQUISITO: o MODAL deve rotacionar 90° em retrato.
+/// Implementação:
+/// - Em retrato: rotaciona o CONTEÚDO do modal em +90° (quarterTurns: 1)
+///   e depois escala para caber na viewport.
+/// - Em paisagem: mantém orientação natural.
 class _CarteirinhaOverlay extends StatelessWidget {
   final String nome;
   final String cpf;
@@ -150,9 +155,38 @@ class _CarteirinhaOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Congela text scale para não “estourar” fontes em Android.
-    final mq = MediaQuery.of(context).copyWith(
-      textScaler: const TextScaler.linear(1.0),
+    final mqBase = MediaQuery.of(context);
+    final mq = mqBase.copyWith(textScaler: const TextScaler.linear(1.0));
+
+    final size = mq.size;
+    final isPortrait = size.height >= size.width;
+
+    // Canvas de design fixo: dá base estável para o FittedBox escalar.
+    const double baseW = 1280; // landscape
+    const double baseH = 800;
+
+    Widget card = SizedBox(
+      width: baseW,
+      height: baseH,
+      child: DigitalCardView(
+        nome: nome,
+        cpf: cpf,
+        matricula: matricula,
+        sexoTxt: sexoTxt,
+        nascimento: nascimento,
+        token: token,
+        expiresAtEpoch: expiresAtEpoch,
+        // Mantemos o card em layout horizontal; quem gira é o PAI (modal).
+        forceLandscape: true,
+        forceLandscapeOnWide: false,
+        onClose: () => Navigator.of(context, rootNavigator: true).maybePop(),
+      ),
     );
+
+    // Em retrato, rotaciona o MODAL (conteúdo) em +90°.
+    if (isPortrait) {
+      card = RotatedBox(quarterTurns: 1, child: card);
+    }
 
     return WillPopScope(
       onWillPop: () async => true,
@@ -162,37 +196,13 @@ class _CarteirinhaOverlay extends StatelessWidget {
           data: mq,
           child: Stack(
             children: [
+              // Fundo não-interativo
+              const Positioned.fill(child: IgnorePointer()),
+              // Conteúdo centralizado ocupando a viewport com escala correta
               Positioned.fill(
-                child: GestureDetector(
-                  onTap: () {}, // toque fora não fecha
-                  child: Container(color: Colors.transparent),
-                ),
-              ),
-              Positioned.fill(
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.contain,
-                    child: ConstrainedBox(
-                      // Limites só para telas gigantes; não afeta phones.
-                      constraints: const BoxConstraints(
-                        maxWidth: 1400,
-                        maxHeight: 1000,
-                      ),
-                      child: DigitalCardView(
-                        nome: nome,
-                        cpf: cpf,
-                        matricula: matricula,
-                        sexoTxt: sexoTxt,
-                        nascimento: nascimento,
-                        token: token,
-                        expiresAtEpoch: expiresAtEpoch,
-                        // força layout horizontal; em retrato ele gira 90°
-                        forceLandscape: true,
-                        forceLandscapeOnWide: true,
-                        onClose: () => Navigator.of(context).maybePop(),
-                      ),
-                    ),
-                  ),
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: card,
                 ),
               ),
             ],
