@@ -5,62 +5,118 @@ import '../../models/card_token_models.dart';
 import '../../services/carteirinha_service.dart';
 import '../widgets/digital_card_view.dart';
 
-/// Abre o bottom-sheet exibindo o cartão digital.
-/// Mantém a mesma assinatura pública.
+/// Abre a Carteirinha em overlay full-screen (não usa bottom-sheet),
+/// mantendo a mesma assinatura pública.
 Future<void> showDigitalCardSheet(
     BuildContext context, {
       required CardTokenData data,
       required CarteirinhaService service,
     }) {
-  // Extrai os campos de exibição a partir de data.string
   final info = _ParsedCardInfo.fromBackendString(data.string);
 
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Theme.of(context).colorScheme.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  return Navigator.of(context).push(
+    PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black54,     // escurece o fundo
+      barrierDismissible: false,        // fecha no botão "Sair" ou back
+      transitionDuration: const Duration(milliseconds: 180),
+      reverseTransitionDuration: const Duration(milliseconds: 140),
+      pageBuilder: (_, __, ___) {
+        return _CarteirinhaOverlay(
+          nome: info.nome ?? '—',
+          cpf: info.cpf ?? '',
+          matricula: info.matricula ?? '',
+          sexoTxt: info.sexoTxt ?? '—',
+          nascimento: info.nascimento,
+          token: data.token,
+          expiresAtEpoch: data.expiresAtEpoch,
+        );
+      },
+      transitionsBuilder: (_, anim, __, child) {
+        return FadeTransition(opacity: anim, child: child);
+      },
     ),
-    builder: (ctx) {
-      return Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          top: 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DigitalCardView(
-              nome: info.nome ?? '—',
-              cpf: info.cpf ?? '',
-              matricula: info.matricula ?? '',
-              sexoTxt: info.sexoTxt ?? '—',
-              nascimento: info.nascimento, // já vem dd/mm/aaaa do backend
-              token: data.token,
-              expiresAtEpoch: data.expiresAtEpoch,
-              onClose: () => Navigator.of(ctx).maybePop(), forceLandscape: false,
-            ),
-            const SizedBox(height: 16),
-            // Opcional: manter botão "Fechar" fora do cartão
-            Align(
-              alignment: Alignment.center,
-              child: FilledButton(
-                onPressed: () => Navigator.of(ctx).maybePop(),
-                child: const Text('Fechar'),
-              ),
-            ),
-          ],
-        ),
-      );
-    },
   );
 }
 
-/// Estrutura simples para segurar os dados parseados do backend.
+/// Tela transparente que ocupa toda a viewport, sem limites do bottom-sheet.
+class _CarteirinhaOverlay extends StatelessWidget {
+  final String nome;
+  final String cpf;
+  final String matricula;
+  final String sexoTxt;
+  final String? nascimento;
+  final String token;
+  final int? expiresAtEpoch;
+
+  const _CarteirinhaOverlay({
+    super.key,
+    required this.nome,
+    required this.cpf,
+    required this.matricula,
+    required this.sexoTxt,
+    required this.nascimento,
+    required this.token,
+    required this.expiresAtEpoch,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Congela o text scale para o cartão não variar no Android.
+    final mq = MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.0));
+
+    return WillPopScope(
+      onWillPop: () async => true,
+      child: Material(
+        type: MaterialType.transparency,
+        child: MediaQuery(
+          data: mq,
+          child: Stack(
+            children: [
+              // Camada de fundo apenas para consumir toques
+              Positioned.fill(child: AbsorbPointer(absorbing: true, child: Container())),
+
+              // Conteúdo centralizado e sem restrição de altura/largura do sheet
+              Positioned.fill(
+                child: Center(
+                  child: SizedBox.expand(
+                    // O DigitalCardView se ajusta via FittedBox internamente;
+                    // aqui damos a área total para ele calcular a melhor escala.
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: ConstrainedBox(
+                        // Limite “saudável” apenas para tablets/monitores muito grandes
+                        constraints: const BoxConstraints(
+                          maxWidth: 1400,
+                          maxHeight: 1000,
+                        ),
+                        child: DigitalCardView(
+                          nome: nome,
+                          cpf: cpf,
+                          matricula: matricula,
+                          sexoTxt: sexoTxt,
+                          nascimento: nascimento,
+                          token: token,
+                          expiresAtEpoch: expiresAtEpoch,
+                          // força layout horizontal; em retrato ele gira 90°
+                          forceLandscape: true,
+                          forceLandscapeOnWide: true,
+                          onClose: () => Navigator.of(context).maybePop(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Parser do campo `string` vindo do backend.
 class _ParsedCardInfo {
   final String? nome;
   final String? cpf;
@@ -76,57 +132,28 @@ class _ParsedCardInfo {
     this.nascimento,
   });
 
-  /// Constrói a partir do campo `string` retornado pelo gateway:
-  /// Ex. (titular)
-  ///   Titular: NOME
-  ///   CPF: 000.000.000-00
-  ///   Matrícula: 6542
-  ///   Sexo: Masculino
-  ///   Nascimento: 04/12/1972
-  ///   Token: 12345678
-  ///
-  /// ou (dependente) com "Beneficiário:" e "Dependente: X".
   factory _ParsedCardInfo.fromBackendString(String? s) {
     if (s == null || s.isEmpty) return const _ParsedCardInfo();
 
-    String? nome;
-    String? cpf;
-    String? matricula;
-    String? sexoTxt;
-    String? nascimento;
-
-    final lines = s.split('\n');
-
-    for (final raw in lines) {
+    String? nome, cpf, matricula, sexoTxt, nascimento;
+    for (final raw in s.split('\n')) {
       final line = raw.trim();
       if (line.isEmpty) continue;
 
       if (line.startsWith('Titular:')) {
         nome = line.replaceFirst('Titular:', '').trim();
-        continue;
-      }
-      if (line.startsWith('Beneficiário:')) {
+      } else if (line.startsWith('Beneficiário:')) {
         nome = line.replaceFirst('Beneficiário:', '').trim();
-        continue;
-      }
-      if (line.startsWith('CPF:')) {
+      } else if (line.startsWith('CPF:')) {
         cpf = line.replaceFirst('CPF:', '').trim();
-        continue;
-      }
-      if (line.startsWith('Matrícula:')) {
+      } else if (line.startsWith('Matrícula:')) {
         matricula = line.replaceFirst('Matrícula:', '').trim();
-        continue;
-      }
-      if (line.startsWith('Sexo:')) {
+      } else if (line.startsWith('Sexo:')) {
         sexoTxt = line.replaceFirst('Sexo:', '').trim();
-        continue;
-      }
-      if (line.startsWith('Nascimento:')) {
+      } else if (line.startsWith('Nascimento:')) {
         nascimento = line.replaceFirst('Nascimento:', '').trim();
-        continue;
       }
     }
-
     return _ParsedCardInfo(
       nome: nome,
       cpf: cpf,

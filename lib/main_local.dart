@@ -30,12 +30,15 @@ import 'state/notification_bridge.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/polling/exame_bg_worker.dart';
 // =================================================================
+import 'services/api_router.dart';
+
 
 // Base local: por padrão .98; pode sobrescrever com --dart-define=API_BASE=http://host
 const String kLocalBase = String.fromEnvironment(
   'API_BASE',
   defaultValue: 'http://192.9.200.98',
 );
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,6 +88,8 @@ Future<void> main() async {
     passwordMinLength: 4,
     firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
   );
+  ApiRouter.configure(params.baseApiUrl); // <- única fonte de verdade
+
 
   runApp(
     AppConfig(

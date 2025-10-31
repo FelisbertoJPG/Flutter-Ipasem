@@ -1,4 +1,3 @@
-// lib/ui/widgets/digital_card_view.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 
@@ -12,7 +11,14 @@ class DigitalCardView extends StatefulWidget {
   final String sexoTxt;
   final String? nascimento;
   final String token;
-  final int? expiresAtEpoch; // epoch (segundos)
+
+  /// Expiração em EPOCH **segundos** (do backend).
+  final int? expiresAtEpoch;
+
+  /// Epoch **segundos** que o servidor reportou como "agora" no momento da emissão.
+  /// Quando presente, o contador usa (server_now + elapsed) em vez do relógio do aparelho.
+  final int? serverNowEpoch;
+
   final VoidCallback? onClose;
 
   /// Força SEMPRE o layout horizontal (independente da largura).
@@ -30,6 +36,7 @@ class DigitalCardView extends StatefulWidget {
     required this.token,
     this.nascimento,
     this.expiresAtEpoch,
+    this.serverNowEpoch,
     this.onClose,
     this.forceLandscape = false,
     this.forceLandscapeOnWide = true,
@@ -47,14 +54,13 @@ class _DigitalCardViewState extends State<DigitalCardView> {
   static const double kGapTokenToText = 40;       // Token -> Texto institucional
   static const Color kAlertColor = Color(0xFFFFB300); // âmbar (alerta)
 
-
-  // ====== FONTES AJUSTÁVEIS (centralizado aqui) ==============================
-  static const double kNameFont = 36;             // Nome
-  static const double kLabelFont = 16;            // "CPF", "Matrícula", etc.
-  static const double kValueFont = 22;            // 686.041.490-15, 6542, etc.
-  static const double kTokenFont = 25;            // Linha do token (ativo)
-  static const double kTokenExpiredFont = 20;     // Pill "TOKEN EXPIRADO"
-  static const double kDisclaimerFont = 26;       // Texto institucional
+  // ====== FONTES AJUSTÁVEIS ==================================================
+  static const double kNameFont = 36;
+  static const double kLabelFont = 16;
+  static const double kValueFont = 22;
+  static const double kTokenFont = 25;
+  static const double kTokenExpiredFont = 20;
+  static const double kDisclaimerFont = 26;
 
   // ====== TAMANHO/INSETS DO CARD ============================================
   static const double _cardRatio = 85.6 / 54.0;   // CR80
@@ -62,8 +68,11 @@ class _DigitalCardViewState extends State<DigitalCardView> {
   static const EdgeInsets _cardBodyInsets =
   EdgeInsets.fromLTRB(24, _headerHeight + 10, 24, 24);
 
+  late final Stopwatch _sw = Stopwatch()..start();
   late Timer _t;
-  Duration _left = Duration.zero;
+
+  // Usamos -1 para “desconhecido/sem expiração”.
+  int _leftSec = -1;
 
   @override
   void initState() {
@@ -72,28 +81,13 @@ class _DigitalCardViewState extends State<DigitalCardView> {
     _t = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
 
-  void _tick() {
-    if (!mounted) return;
-    final next = _remaining();
-    if (next.inSeconds != _left.inSeconds) {
-      setState(() => _left = next);
-    }
-  }
-
-  Duration _remaining() {
-    final exp = widget.expiresAtEpoch;
-    if (exp == null || exp <= 0) return Duration.zero;
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final leftSec = exp - now;
-    return Duration(seconds: leftSec.clamp(0, 24 * 3600));
-  }
-
-  void _recalcLeft() => _left = _remaining();
-
   @override
   void didUpdateWidget(covariant DigitalCardView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.expiresAtEpoch != widget.expiresAtEpoch) {
+    if (oldWidget.expiresAtEpoch != widget.expiresAtEpoch ||
+        oldWidget.serverNowEpoch != widget.serverNowEpoch) {
+      _sw.reset();
+      _sw.start();
       _recalcLeft();
     }
   }
@@ -102,6 +96,34 @@ class _DigitalCardViewState extends State<DigitalCardView> {
   void dispose() {
     _t.cancel();
     super.dispose();
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    final next = _computeLeftSeconds();
+    if (next != _leftSec) {
+      setState(() => _leftSec = next);
+    }
+  }
+
+  void _recalcLeft() {
+    _leftSec = _computeLeftSeconds();
+  }
+
+  /// Calcula segundos restantes sem depender do relógio do aparelho
+  /// quando serverNowEpoch estiver disponível.
+  int _computeLeftSeconds() {
+    final exp = widget.expiresAtEpoch;
+    if (exp == null || exp <= 0) return -1; // sem expiração -> não expira na UI
+
+    final baseNow = widget.serverNowEpoch ??
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+
+    // avança “agora” do servidor pelo tempo decorrido localmente
+    final nowEst = baseNow + _sw.elapsed.inSeconds;
+    final left = exp - nowEst;
+    // clamp apenas inferior (não travar em 24h artificialmente)
+    return left < 0 ? 0 : left;
   }
 
   String? _fmtValidoAte() {
@@ -123,6 +145,10 @@ class _DigitalCardViewState extends State<DigitalCardView> {
 
     final mq = MediaQuery.of(context);
     final viewport = mq.size;
+
+    final hasExpiry = widget.expiresAtEpoch != null && widget.expiresAtEpoch! > 0;
+    // Regra: só mostra “EXPIRADO” quando há expiração definida.
+    final expired = hasExpiry && _leftSec == 0;
 
     return SafeArea(
       child: LayoutBuilder(
@@ -170,8 +196,9 @@ class _DigitalCardViewState extends State<DigitalCardView> {
                   nascimento: widget.nascimento,
                   token: widget.token,
                   validoAte: _fmtValidoAte(),
-                  expLeft: _left,
-                  expired: _left.inSeconds <= 0,
+                  // Quando _leftSec == -1: sem contador (não mostra “Expira em …”)
+                  leftSeconds: _leftSec >= 0 ? _leftSec : null,
+                  expired: expired,
                   onClose: widget.onClose,
                 ),
               ),
@@ -328,7 +355,10 @@ class _CardSections extends StatelessWidget {
   final String? nascimento;
   final String token;
   final String? validoAte;
-  final Duration expLeft;
+
+  /// Null = sem contador (“Expira em …” oculto).
+  final int? leftSeconds;
+
   final bool expired;
   final VoidCallback? onClose;
 
@@ -340,7 +370,7 @@ class _CardSections extends StatelessWidget {
     required this.nascimento,
     required this.token,
     required this.validoAte,
-    required this.expLeft,
+    required this.leftSeconds,
     required this.expired,
     required this.onClose,
   });
@@ -392,7 +422,7 @@ class _CardSections extends StatelessWidget {
       padding: EdgeInsets.only(top: _DigitalCardViewState.kGapGridToToken),
       child: expired
           ? _tokenExpiredPill()
-          : _tokenLine(token: token, validoAte: validoAte, left: expLeft),
+          : _tokenLine(token: token, validoAte: validoAte, leftSeconds: leftSeconds),
     );
 
     // ======= SEÇÃO C: Texto institucional =======
@@ -469,14 +499,25 @@ Widget _tokenExpiredPill() {
       style: TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.w800,
-        fontSize: _DigitalCardViewState.kTokenExpiredFont, // << separado
+        fontSize: _DigitalCardViewState.kTokenExpiredFont,
       ),
     ),
   );
 }
 
-Widget _tokenLine({required String token, required String? validoAte, required Duration left}) {
-  final leftStr = left.inSeconds > 0 ? _fmtLeftStatic(left) : '00:00';
+Widget _tokenLine({
+  required String token,
+  required String? validoAte,
+  required int? leftSeconds,
+}) {
+  String fmtLeft(int s) {
+    final d = Duration(seconds: s);
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final hh = d.inHours;
+    return hh > 0 ? '$hh:$mm:$ss' : '$mm:$ss';
+  }
+
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
     decoration: BoxDecoration(
@@ -494,7 +535,7 @@ Widget _tokenLine({required String token, required String? validoAte, required D
           const Text('Token:', style: TextStyle(fontWeight: FontWeight.w600)),
           Text(token, style: const TextStyle(fontWeight: FontWeight.w800)),
           if (validoAte != null) Text('(válido até $validoAte)'),
-          Text('Expira em $leftStr'),
+          if (leftSeconds != null) Text('Expira em ${fmtLeft(leftSeconds)}'),
         ],
       ),
     ),
@@ -502,14 +543,11 @@ Widget _tokenLine({required String token, required String? validoAte, required D
 }
 
 Widget _disclaimerBig() {
-  // estilo base (preto, grande)
   const base = TextStyle(
     fontSize: _DigitalCardViewState.kDisclaimerFont,
     height: 1.35,
     color: Colors.black87,
   );
-
-  // estilo de alerta (âmbar), com pesos diferentes
   const alert = TextStyle(
     fontSize: _DigitalCardViewState.kDisclaimerFont,
     height: 1.35,
@@ -538,11 +576,4 @@ Widget _disclaimerBig() {
       ],
     ),
   );
-}
-
-String _fmtLeftStatic(Duration d) {
-  final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-  final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  final hh = d.inHours;
-  return hh > 0 ? '$hh:$mm:$ss' : '$mm:$ss';
 }

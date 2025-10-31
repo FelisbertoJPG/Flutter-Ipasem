@@ -1,37 +1,29 @@
 // lib/services/carteirinha_service.dart
 import 'dart:async';
-
 import 'package:dio/dio.dart';
+import 'package:flutter/widgets.dart';
 
 import '../models/card_token_models.dart';
+import 'api_router.dart';
 import 'dev_api.dart';
-
-/// Constrói DevApi aceitando tanto:
-/// - API_BASE="http://host/api-dev.php"
-/// - API_BASE="http://host" (usa /api-dev.php)
-DevApi buildDevApiFromEnv() {
-  final raw = const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98/api-dev.php');
-  if (raw.endsWith('.php')) {
-    final cut = raw.lastIndexOf('/');
-    final base = raw.substring(0, cut);
-    final path = raw.substring(cut);
-    return DevApi(base, apiPath: path);
-  }
-  return DevApi(raw, apiPath: '/api-dev.php');
-}
 
 class CarteirinhaService {
   final DevApi api;
 
-  CarteirinhaService({DevApi? api}) : api = api ?? buildDevApiFromEnv();
+  /// Preferir quando há BuildContext (usa AppConfig do main ativo).
+  CarteirinhaService.fromContext(BuildContext context)
+      : api = ApiRouter.fromContext(context);
 
-  /// Busca titular + dependentes para a tela.
+  /// Útil em camadas sem contexto; usa env/API_BASE (fallback PROD).
+  CarteirinhaService({DevApi? api}) : api = api ?? ApiRouter.client();
+
+  /// Busca titular + dependentes.
   Future<Map<String, dynamic>> carregarDados({required int idMatricula}) async {
-    final data = await this.api.carteirinhaDados(idMatricula: idMatricula);
+    final data = await api.carteirinhaDados(idMatricula: idMatricula);
     return data; // {titular:{...}, dependentes:[...]}
   }
 
-  /// Emite o token (não envia 'token' no payload).
+  /// Emite o token (rota mapeada no gateway).
   Future<CardTokenData> emitir({
     required int matricula,
     String iddependente = '0',
@@ -45,22 +37,19 @@ class CarteirinhaService {
     } on DioException catch (e) {
       final body = (e.response?.data is Map) ? e.response!.data as Map : const {};
       final err = (body['error'] as Map?) ?? const {};
-      final eid = err['eid'];
-      final code = err['code'] ?? 'CARD_ISSUE_ERROR';
-      final msg = err['message'] ?? 'Falha ao emitir.';
-      final details = err['details'];
       throw CarteirinhaException(
-        code: code.toString(),
-        message: msg.toString(),
-        details: details?.toString(),
-        eid: eid?.toString(),
+        code: '${err['code'] ?? 'CARD_ISSUE_ERROR'}',
+        message: '${err['message'] ?? 'Falha ao emitir.'}',
+        details: err['details']?.toString(),
+        eid: err['eid']?.toString(),
         status: e.response?.statusCode,
       );
     }
   }
 
-  /// Agenda o expurgo. Rota retorna 202 quando aceita.
-  Future<void> agendarExpurgo(int dbToken) => api.carteirinhaAgendarExpurgo(dbToken: dbToken);
+  /// Agenda o expurgo (202 Accepted quando ok).
+  Future<void> agendarExpurgo(int dbToken) =>
+      api.carteirinhaAgendarExpurgo(dbToken: dbToken);
 
   Future<Map<String, dynamic>> validar({int? dbToken, int? token}) =>
       api.carteirinhaValidar(dbToken: dbToken, token: token);
@@ -87,5 +76,6 @@ class CarteirinhaException implements Exception {
   });
 
   @override
-  String toString() => 'CarteirinhaException($code, $message, eid=$eid, status=$status, details=$details)';
+  String toString() =>
+      'CarteirinhaException($code, $message, eid=$eid, status=$status, details=$details)';
 }
