@@ -1,14 +1,16 @@
-// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 
 import '../core/formatters.dart';        // fmtData, fmtCpf
 import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
 import '../repositories/dependents_repository.dart';
+import '../repositories/comunicados_repository.dart';
+import '../repositories/exames_repository.dart';   // <-- NOVO
 import '../services/dev_api.dart';
 import '../config/app_config.dart';
 
 import '../ui/app_shell.dart';           // AppScaffold
+import '../ui/components/exames_inline_status.dart';
 import '../ui/components/quick_actions.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/section_list.dart';
@@ -16,15 +18,20 @@ import '../ui/components/loading_placeholder.dart';
 import '../ui/components/locked_notice.dart';
 import '../ui/components/resumo_row.dart';
 import '../ui/components/welcome_card.dart';
+import '../ui/components/minha_situacao_card.dart';
 import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
+import '../ui/components/requerimentos_card.dart';
+import '../ui/components/comunicados_card.dart';
 
+import '../models/exame.dart';           // ExameResumo
 import '../flows/visitor_consent.dart';
+import '../root_nav_shell.dart';
 
-// CORRIGIR IMPORTS AQUI:
+// Controller/State
 import '../controllers/home_controller.dart';
-import '../controllers/home_state.dart'; // <- este é o certo
+import '../controllers/home_state_controller.dart'; // HomeState
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -35,12 +42,20 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with AutomaticKeepAliveClientMixin {
-  // Controller
+  static const int _TAB_HOME     = 0;
+  static const int _TAB_SERVICOS = 1;
+  static const int _TAB_PERFIL   = 2;
+
   late HomeController _ctrl;
   bool _ctrlReady = false;
 
-  // Para exibir o consent uma única vez
   bool _didPromptConsent = false;
+
+  // NOVO: repositório de exames e estado local dos exames da Home
+  late ExamesRepository _exRepo;
+  List<ExameResumo> _examesHome = const [];
+  bool _exLoading = false;
+  int? _exLoadedForMatricula; // para não refazer desnecessariamente
 
   @override
   bool get wantKeepAlive => true;
@@ -56,25 +71,134 @@ class _HomeScreenState extends State<HomeScreen>
           );
 
       final depsRepo = DependentsRepository(DevApi(baseUrl));
+      final comRepo  = const ComunicadosRepository();
+      _exRepo        = ExamesRepository(DevApi(baseUrl)); // NOVO
+
       _ctrl = HomeController(
         session: SessionStore(),
         depsRepo: depsRepo,
+        comRepo: comRepo,
       )..load();
 
       _ctrlReady = true;
     }
   }
 
-  // ---- Navegação ----
+  Future<void> _loadExamesHome(int idMatricula) async {
+    if (_exLoading) return;
+    setState(() => _exLoading = true);
+    try {
+      final list = await _exRepo.listarUltimosAP(idMatricula: idMatricula, limit: 3);
+      if (!mounted) return;
+      setState(() {
+        _examesHome = list;
+        _exLoadedForMatricula = idMatricula;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _examesHome = const [];
+      });
+    } finally {
+      if (mounted) setState(() => _exLoading = false);
+    }
+  }
+
+  // Chama quando o state do controller muda
+  void _ensureExamesFor(HomeState s) {
+    if (!s.isLoggedIn) {
+      if (_examesHome.isNotEmpty) setState(() => _examesHome = const []);
+      _exLoadedForMatricula = null;
+      return;
+    }
+    final id = s.profile?.id;
+    if (id == null) return;
+    if (_exLoadedForMatricula != id && !_exLoading) {
+      _loadExamesHome(id);
+    }
+  }
+
+  // ====== Navegação mantendo hotbar ======
+  bool _switchTab(int index) {
+    final scope = RootNavShell.maybeOf(context);
+    if (scope != null) {
+      scope.setTab(index);
+      return true;
+    }
+    return false;
+  }
+
   void _goToServicos() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HomeServicos()),
-    );
+    if (_switchTab(_TAB_SERVICOS)) return;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HomeServicos()));
   }
 
   void _goToPerfil() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    if (_switchTab(_TAB_PERFIL)) return;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
+  }
+
+  Widget _quickActionsFor(HomeState s) {
+    final isLogged = s.isLoggedIn;
+
+    final items = <QuickActionItem>[
+      QuickActionItem(
+        id: 'carteirinha',
+        label: 'Carteirinha',
+        icon: Icons.badge_outlined,
+        onTap: _goToServicos,
+        audience: QaAudience.all,
+        requiresLogin: true,
+      ),
+      QuickActionItem(
+        id: 'assistencia',
+        label: 'Serviços',
+        icon: Icons.local_hospital_outlined,
+        onTap: _goToServicos,
+        audience: QaAudience.all,
+        requiresLogin: false,
+      ),
+      QuickActionItem(
+        id: 'autorizacoes',
+        label: 'Autoriz\u00E7\u00F5es',
+        icon: Icons.assignment_turned_in_outlined,
+        onTap: _goToServicos,
+        audience: QaAudience.all,
+        requiresLogin: true,
+      ),
+      if (!isLogged)
+        QuickActionItem(
+          id: 'login',
+          label: 'Fazer login',
+          icon: Icons.login_outlined,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          },
+          audience: QaAudience.visitor,
+          requiresLogin: false,
+        ),
+      if (isLogged)
+        QuickActionItem(
+          id: 'perfil',
+          label: 'Meu Perfil',
+          icon: Icons.person_outline,
+          onTap: _goToPerfil,
+          audience: QaAudience.loggedIn,
+          requiresLogin: false,
+        ),
+    ];
+
+    return QuickActions(
+      title: 'Ações rápidas',
+      items: items,
+      isLoggedIn: isLogged,
+      onRequireLogin: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      },
     );
   }
 
@@ -83,7 +207,6 @@ class _HomeScreenState extends State<HomeScreen>
     super.build(context);
 
     if (!_ctrlReady) {
-      // proteção rápida (primeiro build antes do didChangeDependencies)
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -92,10 +215,11 @@ class _HomeScreenState extends State<HomeScreen>
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, _) {
-        // sem cast – use o getter tipado do controller
         final s = _ctrl.state;
 
-        // dispara o consent para visitante (uma única vez)
+        // Garante que buscamos os exames quando logar / trocar usuário
+        _ensureExamesFor(s);
+
         if (!s.loading && !s.isLoggedIn && !_didPromptConsent) {
           _didPromptConsent = true;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -109,7 +233,11 @@ class _HomeScreenState extends State<HomeScreen>
         return AppScaffold(
           title: 'Início',
           body: RefreshIndicator(
-            onRefresh: _ctrl.load,
+            onRefresh: () async {
+              await _ctrl.load();
+              final id = _ctrl.state.profile?.id;
+              if (id != null) await _loadExamesHome(id);
+            },
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
@@ -119,7 +247,7 @@ class _HomeScreenState extends State<HomeScreen>
                     child: ListView(
                       padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
                       children: [
-                        // ===== Cabeçalho (sempre mostra; o card decide o layout)
+                        // ===== Cabeçalho
                         WelcomeCard(
                           isLoggedIn: s.isLoggedIn,
                           name: s.isLoggedIn ? s.profile?.nome : null,
@@ -128,97 +256,55 @@ class _HomeScreenState extends State<HomeScreen>
                               ? fmtCpf(s.profile!.cpf)
                               : null)
                               : (s.cpf == null || s.cpf!.isEmpty ? null : fmtCpf(s.cpf!)),
-                          // onLogin é required; quando logado, passo no-op.
                           onLogin: s.isLoggedIn
                               ? () {}
                               : () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const LoginScreen()),
                           ),
                         ),
-                        const SizedBox(height: 16),
-
-                        // ===== Ações rápidas (leva para Serviços)
-                        QuickActions(
-                          onCarteirinha: _goToServicos,
-                          onAssistenciaSaude: _goToServicos,
-                          onAutorizacoes: _goToServicos,
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ===== Minha Situação
-                        SectionCard(
-                          title: 'Minha Situação',
-                          child: s.loading
-                              ? const LoadingPlaceholder(height: 72)
-                              : (s.isLoggedIn
-                              ? _MinhaSituacaoResumo(
-                            vinculo: '—', // ainda não temos SP pra isso
-                            plano: '—',   // idem
-                            dependentes: dependentesCount,
-                          )
-                              : const LockedNotice(
-                            message:
-                            'Faça login para visualizar seus dados de vínculo, plano e dependentes.',
-                          )),
-                        ),
 
                         const SizedBox(height: 12),
 
-                        // ===== Requerimentos em andamento (stub mantido)
-                        SectionList<RequerimentoResumo>(
-                          title: 'Requerimentos em andamento',
-                          isLoading: s.loading,
-                          items: s.reqs,
-                          take: 3,
-                          skeletonHeight: 100,
-                          itemBuilder: (e) => ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.description_outlined),
-                            title: Text(
-                              e.titulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              'Status: ${e.status} • Atualizado: ${fmtData(e.atualizadoEm)}',
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                          ),
-                          emptyIcon: Icons.assignment_outlined,
-                          emptyTitle: 'Nenhum requerimento em andamento',
-                          emptySubtitle:
-                          'Quando houverem movimentações, elas aparecerão aqui.',
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // ===== Comunicados (stub mantido)
-                        SectionList<ComunicadoResumo>(
-                          title: 'Comunicados',
+                        // ===== Comunicados
+                        ComunicadosCard(
                           isLoading: s.loading,
                           items: s.comunicados,
                           take: 3,
                           skeletonHeight: 100,
-                          itemBuilder: (c) => ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.campaign_outlined),
-                            title: Text(
-                              c.titulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              '${fmtData(c.data)} • ${c.descricao}',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          emptyIcon: Icons.campaign_outlined,
-                          emptyTitle: 'Sem comunicados no momento',
-                          emptySubtitle:
-                          'Novos avisos oficiais do IPASEM aparecerão aqui.',
+                          onTapItem: (c) {},
                         ),
+
+                        const SizedBox(height: 16),
+
+                        // ===== Ações rápidas
+                        _quickActionsFor(s),
+
+                        const SizedBox(height: 16),
+
+                        // ===== Minha Situação
+                        MinhaSituacaoCard(
+                          isLoading: s.loading,
+                          isLoggedIn: s.isLoggedIn,
+                          situacao: s.isLoggedIn ? 'Ativo' : null,
+                          //plano: s.isLoggedIn ? '—' : null,
+                          dependentes: dependentesCount,
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // ===== Requerimentos + Exames (no mesmo card)
+                        RequerimentosEmAndamentoCard(
+                          isLoading: s.loading,        // o widget de exames cuida do loading dele
+                          items: s.reqs,
+                          take: 3,
+                          skeletonHeight: 100,
+                          onTapItem: (req) {
+                            // se quiser, trate o toque do "requerimento" aqui
+                            // (req é RequerimentoResumo, não tem 'numero')
+                          },
+                          extraInner: const ExamesInlineStatusList(take: 3), // << AQUI, fora do onTapItem
+                        ),
+                        const SizedBox(height: 12),
                       ],
                     ),
                   ),
@@ -228,39 +314,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
       },
-    );
-  }
-}
-
-// ====== Pequeno widget específico, mas fino o suficiente para ficar aqui ======
-
-class _MinhaSituacaoResumo extends StatelessWidget {
-  const _MinhaSituacaoResumo({
-    required this.vinculo,
-    required this.plano,
-    required this.dependentes,
-  });
-
-  final String vinculo;
-  final String plano;
-  final int dependentes;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        ResumoRow(icon: Icons.badge_outlined, label: 'Vínculo', value: vinculo),
-        ResumoRow(
-          icon: Icons.medical_services_outlined,
-          label: 'Plano de saúde',
-          value: plano,
-        ),
-        ResumoRow(
-          icon: Icons.group_outlined,
-          label: 'Dependentes',
-          value: '$dependentes',
-        ),
-      ],
     );
   }
 }

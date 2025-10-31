@@ -1,5 +1,7 @@
 // lib/main_local.dart
+import 'dart:ui'; // PlatformDispatcher
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/app_config.dart';
@@ -20,26 +22,66 @@ import 'screens/termos_screen.dart';
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
 
-// Base local: por padrão .18; pode sobrescrever com --dart-define=API_BASE=http://host
-const String kLocalBase =
-String.fromEnvironment(
-  'API_BASE',
-  defaultValue: 'https://assistweb.ipasemnh.com.br',
-);
-//String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
+// <<< NOTIFICAÇÕES
+import 'state/notification_bridge.dart';
+// >>>
 
-void main() async {
+// ==== background polling (workmanager) – não suportado no Web ====
+import 'package:workmanager/workmanager.dart';
+import 'services/polling/exame_bg_worker.dart';
+// =================================================================
+
+// Base local: por padrão .98; pode sobrescrever com --dart-define=API_BASE=http://host
+const String kLocalBase = String.fromEnvironment(
+  'API_BASE',
+  defaultValue: 'http://192.9.200.98',
+);
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Registra implementação da WebView no Web (no-op nas outras plataformas)
+  // Handlers de erro para evitar "travamento silencioso"
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+    debugPrintStack(stackTrace: details.stack);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Uncaught: $error');
+    debugPrintStack(stackTrace: stack);
+    return true;
+  };
+
+  // Registra implementação da WebView no Web (no-op nas demais)
   ensureWebViewRegisteredForWeb();
 
   // Warm-up do SharedPreferences
   await SharedPreferences.getInstance();
 
-  // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
+  // Bridge de notificações: idempotente (no Web vira no-op)
+  await NotificationBridge.I.attach();
+
+  // Agenda worker apenas fora do Web
+  if (!kIsWeb) {
+    await Workmanager().initialize(
+      exameBgDispatcher, // @pragma('vm:entry-point')
+      isInDebugMode: kDebugMode,
+    );
+
+    await Workmanager().registerPeriodicTask(
+      kExameBgUniqueName,                 // uniqueName
+      kExameBgUniqueName,                 // taskName
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+      constraints: Constraints(networkType: NetworkType.connected),
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 5),
+    );
+  }
+
+  // Parâmetros do app (sem dados sensíveis)
   final params = AppParams(
-    baseApiUrl: kLocalBase, // <- Só o 18 por padrão
+    baseApiUrl: kLocalBase,
     passwordMinLength: 4,
     firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
   );
@@ -119,8 +161,7 @@ class LoginSlidesOverSplashLocal extends StatefulWidget {
       _LoginSlidesOverSplashLocalState();
 }
 
-class _LoginSlidesOverSplashLocalState
-    extends State<LoginSlidesOverSplashLocal>
+class _LoginSlidesOverSplashLocalState extends State<LoginSlidesOverSplashLocal>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));
@@ -136,7 +177,9 @@ class _LoginSlidesOverSplashLocalState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await precacheImage(AssetImage(widget.splashImage), context);
+      try {
+        await precacheImage(AssetImage(widget.splashImage), context);
+      } catch (_) { /* evita crash se o asset faltar */ }
       await Future.delayed(const Duration(milliseconds: 16));
       if (!mounted) return;
       await _c.forward();
