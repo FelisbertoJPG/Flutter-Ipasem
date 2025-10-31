@@ -1,4 +1,4 @@
-// lib/ui/components/exames_liberados_card.dart
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../config/app_config.dart';
@@ -11,24 +11,21 @@ import '../components/section_card.dart';
 import '../components/loading_placeholder.dart';
 import '../sheets/exame_detalhe_sheet.dart';
 
-// abre o preview/print do PDF no app
-import '../utils/print_helpers.dart';
-
-class ExamesLiberadosCard extends StatefulWidget {
-  const ExamesLiberadosCard({super.key});
+class ExamesNegadasCard extends StatefulWidget {
+  const ExamesNegadasCard({super.key});
 
   @override
-  State<ExamesLiberadosCard> createState() => _ExamesLiberadosCardState();
+  State<ExamesNegadasCard> createState() => _ExamesNegadasCardState();
 }
 
-class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
+class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
   late DevApi _api;
   late ExamesRepository _repo;
   bool _ready = false;
 
   bool _loading = true;
   String? _error;
-  List<ExameResumo> _itens = const [];
+  List<ExameResumo> _rows = const [];
 
   @override
   void didChangeDependencies() {
@@ -37,6 +34,7 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
 
     final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
         ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+
     _api = DevApi(baseUrl);
     _repo = ExamesRepository(_api);
 
@@ -45,38 +43,56 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
   }
 
   Future<void> _load() async {
-    if (!mounted) return;
-    setState(() { _loading = true; _error = null; _itens = const []; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      _rows = const [];
+    });
 
     try {
       final profile = await Session.getProfile();
-      if (!mounted) return;
-
       if (profile == null) {
         setState(() {
-          _error = 'Faça login para ver suas autorizações.';
           _loading = false;
+          _error = 'Faça login para ver suas autorizações.';
         });
         return;
       }
 
-      final rows = await _repo.listarLiberadas(idMatricula: profile.id, limit: 0);
-      if (!mounted) return;
+      // Traz até 5 negadas para a Home
+      final rows = await _repo.listarNegadas(
+        idMatricula: profile.id,
+        limit: 5,
+      );
 
-      rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
-      setState(() { _itens = rows; _loading = false; });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() { _error = 'Erro ao carregar autorizações.'; _loading = false; });
+      setState(() {
+        _rows = rows;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = kDebugMode ? 'Erro ao carregar negadas: $e' : 'Erro ao carregar.';
+      });
     }
   }
 
-  Future<void> _openPdfNoApp(int numero) async {
-    if (!mounted) return;
-    await openPreviewFromNumeroExame(context, numero, useRootNavigator: true);
+  void _openAll() async {
+    final profile = await Session.getProfile();
+    if (!mounted || profile == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _ExamesNegadasModal(repo: _repo, idMatricula: profile.id),
+    ).then((_) => _load());
   }
 
-  void _abrirDetalhe(ExameResumo a) async {
+  void _openDetail(ExameResumo a) async {
     final profile = await Session.getProfile();
     if (!mounted || profile == null) return;
 
@@ -91,95 +107,76 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         repo: _repo,
         idMatricula: profile.id,
         numero: a.numero,
-        resumo: a,
-        onPdfNoApp: _openPdfNoApp,
-        // vindo da lista de "liberadas": força o botão habilitado se quiser
-        // forcePodeImprimir: true,
+        resumo: a, // pode não ter detalhe/permitir impressão; o sheet lida com isso
       ),
-    ).then((_) {
-      if (!mounted) return;
-      _load();
-    });
-  }
-
-  void _verTodas() async {
-    final profile = await Session.getProfile();
-    if (!mounted || profile == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => _LiberadasModal(
-        repo: _repo,
-        idMatricula: profile.id,
-        onPdfNoApp: _openPdfNoApp,
-      ),
-    ).then((_) {
-      if (!mounted) return;
-      _load();
-    });
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const SectionCard(
-        title: 'Autorizações de Exames (liberadas)',
+        title: 'Autorizações Negadas',
         child: LoadingPlaceholder(height: 76),
       );
     }
+
     if (_error != null) {
       return SectionCard(
-        title: 'Autorizações de Exames (liberadas)',
+        title: 'Autorizações Negadas',
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Text(_error!, style: const TextStyle(color: Colors.red)),
         ),
       );
     }
-    if (_itens.isEmpty) return const SizedBox.shrink();
 
-    final first = _itens.first;
+    if (_rows.isEmpty) {
+      // Não exibe nada quando não há negadas
+      return const SizedBox.shrink();
+    }
+
+    // Mostra apenas a primeira (mais recente) + botão "Ver todas"
+    final a = _rows.first;
 
     return SectionCard(
-      title: 'Autorizações de Exames (liberadas)',
-      trailing: TextButton(onPressed: _verTodas, child: const Text('Ver todas')),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-        dense: true,
-        leading: const Icon(Icons.check_circle_outline),
-        title: Text(
-          '${first.paciente} • ${first.prestador}',
-          maxLines: 1, overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(first.dataHora),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => _abrirDetalhe(first),
+      title: 'Autorizações Negadas',
+      trailing: TextButton(onPressed: _openAll, child: const Text('Ver todas')),
+      child: Column(
+        children: [
+          ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            leading: const Icon(Icons.block, color: Colors.red),
+            title: Text(
+              '${a.paciente.isEmpty ? "Paciente" : a.paciente} • ${a.prestador.isEmpty ? "Prestador" : a.prestador}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(a.dataHora),
+            onTap: () => _openDetail(a),
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
 }
 
-class _LiberadasModal extends StatefulWidget {
+class _ExamesNegadasModal extends StatefulWidget {
   final ExamesRepository repo;
   final int idMatricula;
-  final Future<void> Function(int numero)? onPdfNoApp;
 
-  const _LiberadasModal({
+  const _ExamesNegadasModal({
     required this.repo,
     required this.idMatricula,
-    this.onPdfNoApp,
   });
 
   @override
-  State<_LiberadasModal> createState() => _LiberadasModalState();
+  State<_ExamesNegadasModal> createState() => _ExamesNegadasModalState();
 }
 
-class _LiberadasModalState extends State<_LiberadasModal> {
+class _ExamesNegadasModalState extends State<_ExamesNegadasModal> {
   bool _loading = true;
   String? _error;
   List<ExameResumo> _rows = const [];
@@ -191,20 +188,30 @@ class _LiberadasModalState extends State<_LiberadasModal> {
   }
 
   Future<void> _load() async {
-    if (!mounted) return;
-    setState(() { _loading = true; _error = null; _rows = const []; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      _rows = const [];
+    });
+
     try {
-      final rows = await widget.repo.listarLiberadas(idMatricula: widget.idMatricula, limit: 0);
-      if (!mounted) return;
-      rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
-      setState(() { _rows = rows; _loading = false; });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() { _error = 'Erro ao carregar.'; _loading = false; });
+      final rows = await widget.repo.listarNegadas(
+        idMatricula: widget.idMatricula,
+        limit: 0, // todas (sem limite) no modal
+      );
+      setState(() {
+        _rows = rows;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
+      });
     }
   }
 
-  void _abrirDetalhe(ExameResumo a) {
+  void _openDetail(ExameResumo a) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -217,13 +224,8 @@ class _LiberadasModalState extends State<_LiberadasModal> {
         idMatricula: widget.idMatricula,
         numero: a.numero,
         resumo: a,
-        onPdfNoApp: widget.onPdfNoApp,
-        // forcePodeImprimir: true,
       ),
-    ).then((_) {
-      if (!mounted) return;
-      _load(); // se imprimiu, já some daqui
-    });
+    );
   }
 
   @override
@@ -231,7 +233,7 @@ class _LiberadasModalState extends State<_LiberadasModal> {
     return SafeArea(
       child: DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.8,
+        initialChildSize: 0.7,
         minChildSize: 0.5,
         maxChildSize: 0.95,
         builder: (ctx, controller) {
@@ -244,7 +246,7 @@ class _LiberadasModalState extends State<_LiberadasModal> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Autorizações de Exames (liberadas)',
+                'Autorizações Negadas',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
@@ -254,21 +256,23 @@ class _LiberadasModalState extends State<_LiberadasModal> {
                     : (_error != null)
                     ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
                     : (_rows.isEmpty)
-                    ? const Center(child: Text('Nenhuma autorização liberada.'))
-                    : ListView.builder(
+                    ? const Center(child: Text('Nenhuma autorização negada.'))
+                    : ListView.separated(
                   controller: controller,
                   itemCount: _rows.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final a = _rows[i];
                     return ListTile(
-                      leading: const Icon(Icons.check_circle_outline),
+                      leading: const Icon(Icons.block, color: Colors.red),
                       title: Text(
                         '${a.paciente} • ${a.prestador}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(a.dataHora),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _abrirDetalhe(a),
+                      onTap: () => _openDetail(a),
                     );
                   },
                 ),

@@ -7,8 +7,7 @@ import 'package:file_saver/file_saver.dart';
 import 'package:pdf/pdf.dart';
 
 import '../pdf/autorizacao_pdf_data.dart';
-import '../pdf/pdf_autorizacao.dart';
-import '../pdf/pdf_autorizacao_builder.dart';
+import '../pdf/pdf_autorizacao_builder.dart'; // <-- use os builders novos
 
 class PdfPreviewScreen extends StatelessWidget {
   const PdfPreviewScreen({
@@ -30,25 +29,34 @@ class PdfPreviewScreen extends StatelessWidget {
             tooltip: 'Compartilhar',
             icon: const Icon(Icons.share_outlined),
             onPressed: () async {
-              final bytes = await buildAutorizacaoPdf(data);
-              await Printing.sharePdf(bytes: bytes, filename: fileName);
+              try {
+                final bytes = await _buildPdfBytes();
+                await Printing.sharePdf(bytes: bytes, filename: fileName);
+              } catch (e) {
+                _showError(context, e);
+              }
             },
           ),
           IconButton(
             tooltip: 'Imprimir',
             icon: const Icon(Icons.print_outlined),
             onPressed: () async {
-              final bytes = await buildAutorizacaoPdf(data);
-              await Printing.layoutPdf(onLayout: (format) async => bytes);
+              try {
+                final bytes = await _buildPdfBytes();
+                await Printing.layoutPdf(onLayout: (format) async => bytes);
+              } catch (e) {
+                _showError(context, e);
+              }
             },
           ),
           IconButton(
             tooltip: 'Baixar',
             icon: const Icon(Icons.download_outlined),
             onPressed: () async {
-              final bytes = await buildAutorizacaoPdf(data);
-              final savedPath = await _saveWithSystemPicker(bytes, fileName);
-              if (context.mounted) {
+              try {
+                final bytes = await _buildPdfBytes();
+                final savedPath = await _saveWithSystemPicker(bytes, fileName);
+                if (!context.mounted) return;
                 if (savedPath != null && savedPath.isNotEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Arquivo salvo em: $savedPath')),
@@ -58,13 +66,25 @@ class PdfPreviewScreen extends StatelessWidget {
                     const SnackBar(content: Text('Não foi possível salvar o arquivo.')),
                   );
                 }
+              } catch (e) {
+                _showError(context, e);
               }
             },
           ),
         ],
       ),
       body: PdfPreview(
-        build: (format) => buildAutorizacaoPdf(data),
+        build: (_) => _buildPdfBytes(),
+        onError: (context, error) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Falha ao gerar PDF:\n$error',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
+        ),
         allowSharing: false,
         allowPrinting: false,
         canChangePageFormat: false,
@@ -76,13 +96,38 @@ class PdfPreviewScreen extends StatelessWidget {
         icon: const Icon(Icons.open_in_new),
         label: const Text('Abrir arquivo…'),
         onPressed: () async {
-          final bytes = await buildAutorizacaoPdf(data);
-          final path = await _saveWithSystemPicker(bytes, fileName);
-          if (path != null && path.isNotEmpty) {
-            await OpenFilex.open(path);
+          try {
+            final bytes = await _buildPdfBytes();
+            final path = await _saveWithSystemPicker(bytes, fileName);
+            if (path != null && path.isNotEmpty) {
+              await OpenFilex.open(path);
+            }
+          } catch (e) {
+            _showError(context, e);
           }
         },
       ),
+    );
+  }
+
+  /// Seleciona o builder correto conforme o tipo (sem fallback).
+  Future<Uint8List> _buildPdfBytes() {
+    switch (data.tipo) {
+      case AutorizacaoTipo.exames:
+        return buildAutorizacaoExamesPdf(data);
+      case AutorizacaoTipo.complementares:
+        return buildAutorizacaoExamesComplementaresPdf(data);
+      case AutorizacaoTipo.medica:
+        return buildAutorizacaoMedicaPdf(data);
+      case AutorizacaoTipo.odontologica:
+        return buildAutorizacaoOdontoPdf(data);
+    }
+  }
+
+  void _showError(BuildContext context, Object e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Erro: $e')),
     );
   }
 

@@ -1,14 +1,20 @@
+// lib/pdf/autorizacao_pdf_data.dart
 import '../models/proc_item.dart';
-import '../models/reimpressao.dart'; // ReimpressaoDetalhe
+import '../models/reimpressao.dart';
 
-// Enum deve ser top-level
 enum AutorizacaoTipo { medica, odontologica, exames, complementares }
 
 class AutorizacaoPdfData {
-  final int numero;
+  // --- tipo/layout ---
   final AutorizacaoTipo tipo;
 
-  // Prestador
+  // --- metadados ---
+  final int numero;
+  final String dataEmissao;
+  final String observacoes;
+  final bool primeiraImpressao;
+
+  // --- prestador execução / vínculo ---
   final String nomePrestador;
   final String codPrestador;
   final String especialidade;
@@ -19,23 +25,27 @@ class AutorizacaoPdfData {
   final String codigoVinculo;
   final String nomeVinculo;
 
-  // Segurado/Paciente
+  // --- segurado/paciente ---
   final int idMatricula;
   final String nomeTitular;
   final int idDependente;
   final String nomePaciente;
   final String idadePaciente;
 
-  // Metadados
-  final String dataEmissao;       // “dd/MM/yyyy” (pode vir com hora)
-  final int codigoEspecialidade;
-  final String observacoes;
-  final String? percentual;
-  final bool primeiraImpressao;
-
+  // --- procedimentos/coparticipação ---
   final List<ProcItem> procedimentos;
+  final String? percentual;
 
-  const AutorizacaoPdfData({
+  // --- NOVOS (opcionais) para exames/complementares ---
+  final int? tipoAutorizacao;            // do backend (ex.: 2, 3, 7)
+  final int? codSubtipoAutorizacao;      // do backend (ex.: 4)
+  final String? operadorAlteracao;       // “Operador” no cabeçalho
+  final String? nomePrestadorSolicitante;
+
+  // --- também já existia no seu código ---
+  final int codigoEspecialidade;
+
+  AutorizacaoPdfData({
     required this.tipo,
     required this.numero,
     required this.nomePrestador,
@@ -55,47 +65,66 @@ class AutorizacaoPdfData {
     required this.dataEmissao,
     required this.codigoEspecialidade,
     required this.observacoes,
+    required this.primeiraImpressao,
+    required this.procedimentos,
     this.percentual,
-    this.primeiraImpressao = false,
-    this.procedimentos = const [],
+
+    // novos
+    this.tipoAutorizacao,
+    this.codSubtipoAutorizacao,
+    this.operadorAlteracao,
+    this.nomePrestadorSolicitante,
   });
 
+  /// Factory usada no app para montar PDFs de EXAMES (ou COMPLEMENTARES) a partir
+  /// do detalhe retornado pela Reimpressão.
   factory AutorizacaoPdfData.fromReimpressaoExame({
     required ReimpressaoDetalhe det,
     required int idMatricula,
     List<ProcItem> procedimentos = const [],
   }) {
-    final tipo = (det.tipoAutorizacao == 3 && det.codSubtipoAutorizacao == 4)
-        ? AutorizacaoTipo.complementares
-        : AutorizacaoTipo.exames;
+    final bool isComplementar =
+        det.tipoAutorizacao == 3 && det.codSubtipoAutorizacao == 4;
 
     return AutorizacaoPdfData(
-      tipo: tipo,
+      tipo: isComplementar ? AutorizacaoTipo.complementares : AutorizacaoTipo.exames,
       numero: det.numero,
-      dataEmissao: det.dataEmissao,
-      codigoEspecialidade: det.codEspecialidade,
-      // Prestador
-      codPrestador: det.codConselhoExec,
+
+      // Prestador Execução
       nomePrestador: det.nomePrestadorExec,
+      codPrestador: det.codConselhoExec,
+      especialidade: det.nomeEspecialidade,
       endereco: det.enderecoComl,
       bairro: det.bairroComl,
       cidade: det.cidadeComl,
       telefone: det.telefoneComl,
-      // Especialidade / vínculo
-      especialidade: det.nomeEspecialidade,
+
+      // Vínculo
       codigoVinculo: det.codVinculo,
       nomeVinculo: det.nomeVinculo,
-      // Segurado
+
+      // Segurado/Paciente
       idMatricula: idMatricula,
-      nomeTitular: det.nomeTitular,
-      idadePaciente: det.idadePaciente,
+      nomeTitular: det.nomeTitular.isEmpty ? '' : det.nomeTitular,
       idDependente: det.idDependente,
       nomePaciente: det.nomePaciente,
-      // Observações / proc / copart
+      idadePaciente: det.idadePaciente,
+
+      // Metadados
+      dataEmissao: det.dataEmissao,
+      codigoEspecialidade: det.codEspecialidade,
       observacoes: det.observacoes,
-      procedimentos: procedimentos,
-      percentual: det.percentual,
       primeiraImpressao: false,
+
+      // Procedimentos / copart
+      percentual: det.percentual,
+      procedimentos: procedimentos,
+
+      // Novos (opcionais)
+      tipoAutorizacao: det.tipoAutorizacao,
+      codSubtipoAutorizacao: det.codSubtipoAutorizacao,
+      operadorAlteracao: det.operadorAlteracao,
+      nomePrestadorSolicitante: det.nomePrestadorSolicitante,
     );
   }
 }

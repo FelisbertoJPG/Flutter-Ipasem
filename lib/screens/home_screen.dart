@@ -5,33 +5,33 @@ import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
 import '../repositories/dependents_repository.dart';
 import '../repositories/comunicados_repository.dart';
+import '../repositories/exames_repository.dart';   // <-- NOVO
 import '../services/dev_api.dart';
 import '../config/app_config.dart';
 
 import '../ui/app_shell.dart';           // AppScaffold
-import '../ui/components/quick_actions.dart'; // << novo flexível
+import '../ui/components/exames_inline_status.dart';
+import '../ui/components/quick_actions.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/section_list.dart';
 import '../ui/components/loading_placeholder.dart';
 import '../ui/components/locked_notice.dart';
 import '../ui/components/resumo_row.dart';
 import '../ui/components/welcome_card.dart';
-import '../ui/components/minha_situacao_card.dart'; // card "Minha Situação"
+import '../ui/components/minha_situacao_card.dart';
 import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
 import '../ui/components/requerimentos_card.dart';
 import '../ui/components/comunicados_card.dart';
 
-
+import '../models/exame.dart';           // ExameResumo
 import '../flows/visitor_consent.dart';
-
-// Navegação via Shell (para manter hotbar)
 import '../root_nav_shell.dart';
 
-// ===== Controller/State =====
+// Controller/State
 import '../controllers/home_controller.dart';
-import '../controllers/home_state_controller.dart'; // reexporta HomeState
+import '../controllers/home_state_controller.dart'; // HomeState
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,7 +42,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with AutomaticKeepAliveClientMixin {
-  // Índices de abas na RootNavShell
   static const int _TAB_HOME     = 0;
   static const int _TAB_SERVICOS = 1;
   static const int _TAB_PERFIL   = 2;
@@ -50,8 +49,13 @@ class _HomeScreenState extends State<HomeScreen>
   late HomeController _ctrl;
   bool _ctrlReady = false;
 
-  // Para exibir o consent uma única vez
   bool _didPromptConsent = false;
+
+  // NOVO: repositório de exames e estado local dos exames da Home
+  late ExamesRepository _exRepo;
+  List<ExameResumo> _examesHome = const [];
+  bool _exLoading = false;
+  int? _exLoadedForMatricula; // para não refazer desnecessariamente
 
   @override
   bool get wantKeepAlive => true;
@@ -68,14 +72,49 @@ class _HomeScreenState extends State<HomeScreen>
 
       final depsRepo = DependentsRepository(DevApi(baseUrl));
       final comRepo  = const ComunicadosRepository();
+      _exRepo        = ExamesRepository(DevApi(baseUrl)); // NOVO
 
       _ctrl = HomeController(
         session: SessionStore(),
         depsRepo: depsRepo,
-        comRepo: comRepo, // comunicados via repositório
+        comRepo: comRepo,
       )..load();
 
       _ctrlReady = true;
+    }
+  }
+
+  Future<void> _loadExamesHome(int idMatricula) async {
+    if (_exLoading) return;
+    setState(() => _exLoading = true);
+    try {
+      final list = await _exRepo.listarUltimosAP(idMatricula: idMatricula, limit: 3);
+      if (!mounted) return;
+      setState(() {
+        _examesHome = list;
+        _exLoadedForMatricula = idMatricula;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _examesHome = const [];
+      });
+    } finally {
+      if (mounted) setState(() => _exLoading = false);
+    }
+  }
+
+  // Chama quando o state do controller muda
+  void _ensureExamesFor(HomeState s) {
+    if (!s.isLoggedIn) {
+      if (_examesHome.isNotEmpty) setState(() => _examesHome = const []);
+      _exLoadedForMatricula = null;
+      return;
+    }
+    final id = s.profile?.id;
+    if (id == null) return;
+    if (_exLoadedForMatricula != id && !_exLoading) {
+      _loadExamesHome(id);
     }
   }
 
@@ -91,7 +130,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _goToServicos() {
     if (_switchTab(_TAB_SERVICOS)) return;
-    // Fallback (evite no dia a dia)
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HomeServicos()));
   }
 
@@ -100,12 +138,10 @@ class _HomeScreenState extends State<HomeScreen>
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
   }
 
-  // ====== NOVA ROTINA: monta as ações por tipo de login ======
   Widget _quickActionsFor(HomeState s) {
     final isLogged = s.isLoggedIn;
 
     final items = <QuickActionItem>[
-      // Disponível para todos, mas exige login para funcionar
       QuickActionItem(
         id: 'carteirinha',
         label: 'Carteirinha',
@@ -114,7 +150,6 @@ class _HomeScreenState extends State<HomeScreen>
         audience: QaAudience.all,
         requiresLogin: true,
       ),
-      // Disponível para todos, sem exigir login (pode abrir serviços/infos públicas)
       QuickActionItem(
         id: 'assistencia',
         label: 'Serviços',
@@ -123,17 +158,14 @@ class _HomeScreenState extends State<HomeScreen>
         audience: QaAudience.all,
         requiresLogin: false,
       ),
-      // Exige login
       QuickActionItem(
         id: 'autorizacoes',
-        label: 'Autoriz\u00E7\u00F5es', // evita problemas de encoding
+        label: 'Autoriz\u00E7\u00F5es',
         icon: Icons.assignment_turned_in_outlined,
         onTap: _goToServicos,
         audience: QaAudience.all,
         requiresLogin: true,
       ),
-
-      // Exemplo de item só para visitante (se quiser estimular login)
       if (!isLogged)
         QuickActionItem(
           id: 'login',
@@ -147,8 +179,6 @@ class _HomeScreenState extends State<HomeScreen>
           audience: QaAudience.visitor,
           requiresLogin: false,
         ),
-
-      // Exemplo de item só para logado (se quiser atalho ao Perfil)
       if (isLogged)
         QuickActionItem(
           id: 'perfil',
@@ -165,7 +195,6 @@ class _HomeScreenState extends State<HomeScreen>
       items: items,
       isLoggedIn: isLogged,
       onRequireLogin: () {
-        // Comportamento padrão ao tocar em item bloqueado quando visitante:
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
         );
@@ -178,7 +207,6 @@ class _HomeScreenState extends State<HomeScreen>
     super.build(context);
 
     if (!_ctrlReady) {
-      // proteção rápida (primeiro build antes do didChangeDependencies)
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -189,7 +217,9 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (context, _) {
         final s = _ctrl.state;
 
-        // dispara o consent para visitante (uma única vez)
+        // Garante que buscamos os exames quando logar / trocar usuário
+        _ensureExamesFor(s);
+
         if (!s.loading && !s.isLoggedIn && !_didPromptConsent) {
           _didPromptConsent = true;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -203,7 +233,11 @@ class _HomeScreenState extends State<HomeScreen>
         return AppScaffold(
           title: 'Início',
           body: RefreshIndicator(
-            onRefresh: _ctrl.load,
+            onRefresh: () async {
+              await _ctrl.load();
+              final id = _ctrl.state.profile?.id;
+              if (id != null) await _loadExamesHome(id);
+            },
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
@@ -213,7 +247,7 @@ class _HomeScreenState extends State<HomeScreen>
                     child: ListView(
                       padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
                       children: [
-                        // ===== Cabeçalho (sempre mostra; o card decide o layout)
+                        // ===== Cabeçalho
                         WelcomeCard(
                           isLoggedIn: s.isLoggedIn,
                           name: s.isLoggedIn ? s.profile?.nome : null,
@@ -222,27 +256,27 @@ class _HomeScreenState extends State<HomeScreen>
                               ? fmtCpf(s.profile!.cpf)
                               : null)
                               : (s.cpf == null || s.cpf!.isEmpty ? null : fmtCpf(s.cpf!)),
-                          // onLogin é required; quando logado, passo no-op.
                           onLogin: s.isLoggedIn
                               ? () {}
                               : () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const LoginScreen()),
                           ),
                         ),
+
                         const SizedBox(height: 12),
+
                         // ===== Comunicados
                         ComunicadosCard(
                           isLoading: s.loading,
                           items: s.comunicados,
                           take: 3,
                           skeletonHeight: 100,
-                          onTapItem: (c) {
-                            // abrir detalhe/navegar...
-                          },
+                          onTapItem: (c) {},
                         ),
+
                         const SizedBox(height: 16),
 
-                        // ===== Ações rápidas (controladas por rotina)
+                        // ===== Ações rápidas
                         _quickActionsFor(s),
 
                         const SizedBox(height: 16),
@@ -251,24 +285,26 @@ class _HomeScreenState extends State<HomeScreen>
                         MinhaSituacaoCard(
                           isLoading: s.loading,
                           isLoggedIn: s.isLoggedIn,
-                          situacao: s.isLoggedIn ? 'Ativo' : null, // padrão quando logado
-                          plano: s.isLoggedIn ? '—' : null,        // placeholder até SP
+                          situacao: s.isLoggedIn ? 'Ativo' : null,
+                          //plano: s.isLoggedIn ? '—' : null,
                           dependentes: dependentesCount,
                         ),
 
                         const SizedBox(height: 12),
 
-                        // ===== Requerimentos em andamento
+                        // ===== Requerimentos + Exames (no mesmo card)
                         RequerimentosEmAndamentoCard(
-                          isLoading: s.loading,
+                          isLoading: s.loading,        // o widget de exames cuida do loading dele
                           items: s.reqs,
                           take: 3,
                           skeletonHeight: 100,
-                          // onTapItem: (req) { ... abrir detalhe se quiser ... },
+                          onTapItem: (req) {
+                            // se quiser, trate o toque do "requerimento" aqui
+                            // (req é RequerimentoResumo, não tem 'numero')
+                          },
+                          extraInner: const ExamesInlineStatusList(take: 3), // << AQUI, fora do onTapItem
                         ),
-
                         const SizedBox(height: 12),
-
                       ],
                     ),
                   ),

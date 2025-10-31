@@ -1,4 +1,4 @@
-// lib/main_local.dart
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,15 +20,24 @@ import 'screens/termos_screen.dart';
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
 
-// Base local: por padrão .18; pode sobrescrever com --dart-define=API_BASE=http://host
-const String kLocalBase =
-String.fromEnvironment(
+// <<< NOTIFICAÇÕES
+import 'state/notification_bridge.dart';
+// >>>
+
+// ==== NOVO: background polling (workmanager) ====
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:workmanager/workmanager.dart';
+import 'services/polling/exame_bg_worker.dart';
+// ===============================================
+
+// Base local: por padrão assistweb; pode sobrescrever com --dart-define=API_BASE=...
+const String kLocalBase = String.fromEnvironment(
   'API_BASE',
   defaultValue: 'https://assistweb.ipasemnh.com.br',
 );
-//String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
+// String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Registra implementação da WebView no Web (no-op nas outras plataformas)
@@ -37,9 +46,33 @@ void main() async {
   // Warm-up do SharedPreferences
   await SharedPreferences.getInstance();
 
+  // Liga o bridge de notificações (idempotente).
+  await NotificationBridge.I.attach();
+
+  // ==== NOVO: inicializa e agenda o worker em background ====
+  // Observação: o plugin não é suportado no Web.
+  if (!kIsWeb) {
+    await Workmanager().initialize(
+      exameBgDispatcher, // entrypoint @pragma('vm:entry-point') no arquivo do worker
+      isInDebugMode: kDebugMode,
+    );
+
+    // Android impõe ~15min como mínimo para tarefas periódicas.
+    await Workmanager().registerPeriodicTask(
+      kExameBgUniqueName,                 // uniqueName
+      kExameBgUniqueName,                 // taskName
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep, // <- API nova 0.9.x
+      constraints: Constraints(networkType: NetworkType.connected),
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 5),
+    );
+  }
+  // ==========================================================
+
   // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
   final params = AppParams(
-    baseApiUrl: kLocalBase, // <- Só o 18 por padrão
+    baseApiUrl: kLocalBase,
     passwordMinLength: 4,
     firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
   );
@@ -69,8 +102,7 @@ class MyAppLocal extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
       // Suaviza as primeiras animações
-      builder: (context, child) =>
-          AnimationWarmUp(child: child ?? const SizedBox()),
+      builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
       initialRoute: '/__splash_login',
       routes: {
         '/__splash_login': (_) => const _SplashRouteWrapper(),
@@ -115,12 +147,10 @@ class LoginSlidesOverSplashLocal extends StatefulWidget {
   });
 
   @override
-  State<LoginSlidesOverSplashLocal> createState() =>
-      _LoginSlidesOverSplashLocalState();
+  State<LoginSlidesOverSplashLocal> createState() => _LoginSlidesOverSplashLocalState();
 }
 
-class _LoginSlidesOverSplashLocalState
-    extends State<LoginSlidesOverSplashLocal>
+class _LoginSlidesOverSplashLocalState extends State<LoginSlidesOverSplashLocal>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));

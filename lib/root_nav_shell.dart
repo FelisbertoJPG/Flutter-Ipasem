@@ -1,13 +1,20 @@
+// lib/root_nav_shell.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ipasemnhdigital/screens/autorizacao_exames_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'config/app_config.dart';
+import 'services/dev_api.dart';
+import 'services/polling/exame_status_poller.dart';
+
+import 'state/notification_bridge.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/home_servicos.dart';
 import 'screens/profile_screen.dart';
 import 'screens/autorizacao_medica_screen.dart';
-import 'screens/autorizacao_odontologica_screen.dart'; // <- NOVO
+import 'screens/autorizacao_odontologica_screen.dart';
+import 'screens/autorizacao_exames_screen.dart';
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});
@@ -19,23 +26,45 @@ class RootNavShell extends StatefulWidget {
   State<RootNavShell> createState() => _RootNavShellState();
 }
 
-class _RootNavShellState extends State<RootNavShell> {
+class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver {
   final _tabKeys = <int, GlobalKey<NavigatorState>>{
-    0: GlobalKey<NavigatorState>(),
-    1: GlobalKey<NavigatorState>(),
-    2: GlobalKey<NavigatorState>(),
+    0: GlobalKey<NavigatorState>(), // Início
+    1: GlobalKey<NavigatorState>(), // Serviços
+    2: GlobalKey<NavigatorState>(), // Perfil
   };
+
+  ExameStatusPoller? _poller;
 
   int _currentIndex = 0;
   bool _handledArgs = false;
 
-  // >>> ENABLE SWIPE BETWEEN TABS
-  late final PageController _pageController = PageController(initialPage: _currentIndex);
-  // <<<
+  // Swipe entre abas
+  late final PageController _pageController =
+  PageController(initialPage: _currentIndex);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // idempotente e no-op no Web
+    NotificationBridge.I.attach();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    if (_poller == null) {
+      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
+          ?? const String.fromEnvironment('API_BASE', defaultValue: 'https://assistweb.ipasemnh.com.br');
+
+      _poller = ExameStatusPoller(
+        api: DevApi(baseUrl),
+        contextProvider: () => context, // sempre não-nulo aqui
+      );
+      _poller!.start(); // async, não bloqueia o frame
+    }
+
     if (_handledArgs) return;
 
     final args = ModalRoute.of(context)?.settings.arguments;
@@ -43,7 +72,6 @@ class _RootNavShellState extends State<RootNavShell> {
       final idx = args['tab'] as int;
       if (idx >= 0 && idx <= 2) {
         _currentIndex = idx;
-        // garante que o PageView vá para a aba solicitada (caso venha via args)
         _pageController.jumpToPage(_currentIndex);
       }
     }
@@ -51,7 +79,17 @@ class _RootNavShellState extends State<RootNavShell> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // ao voltar pro app → force um poll imediato
+      _poller?.pollNow();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _poller?.stop();
     _pageController.dispose();
     super.dispose();
   }
@@ -67,7 +105,6 @@ class _RootNavShellState extends State<RootNavShell> {
       return;
     }
     setState(() => _currentIndex = i);
-    // sincroniza seleção -> página
     _pageController.animateToPage(
       i,
       duration: const Duration(milliseconds: 220),
@@ -82,10 +119,32 @@ class _RootNavShellState extends State<RootNavShell> {
       }) {
     if (switchTab && _currentIndex != 1) {
       setState(() => _currentIndex = 1);
-      _pageController.jumpToPage(1); // garante que está na página de Serviços
+      _pageController.jumpToPage(1);
     }
     final nav = _tabKeys[1]!.currentState!;
     return nav.pushNamed<T>(name, arguments: arguments);
+  }
+
+  Future<bool> _handleSystemBack() async {
+    final currentNav = _tabKeys[_currentIndex]!.currentState!;
+    if (currentNav.canPop()) {
+      currentNav.pop();
+      return false; // impede o pop global
+    }
+
+    if (_currentIndex != 1) {
+      _setTab(1); // prioriza Serviços
+      return false;
+    }
+    if (_currentIndex != 0) {
+      _setTab(0); // depois Início
+      return false;
+    }
+    return false; // nunca fecha o app
+  }
+
+  Future<void> _safeBack() async {
+    await _handleSystemBack();
   }
 
   Route<dynamic> _routeHome(RouteSettings settings) {
@@ -108,17 +167,17 @@ class _RootNavShellState extends State<RootNavShell> {
           builder: (_) => const AutorizacaoMedicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-medica'),
         );
-      case 'autorizacao-odontologica': // <- NOVO
+      case 'autorizacao-odontologica':
         return MaterialPageRoute(
           builder: (_) => const AutorizacaoOdontologicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-odontologica'),
         );
-    case 'autorizacao-exames': // <<< NOVO
-    return MaterialPageRoute(
-    builder: (_) => const AutorizacaoExamesScreen(),
-    settings: const RouteSettings(name: 'autorizacao-exames'),
-    );
-    default:
+      case 'autorizacao-exames':
+        return MaterialPageRoute(
+          builder: (_) => const AutorizacaoExamesScreen(),
+          settings: const RouteSettings(name: 'autorizacao-exames'),
+        );
+      default:
         return MaterialPageRoute(
           builder: (_) => const HomeServicos(),
           settings: const RouteSettings(name: 'servicos-root'),
@@ -158,7 +217,7 @@ class _RootNavShellState extends State<RootNavShell> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-        selectedIndex: _currentIndex, // segue a página atual do PageView
+        selectedIndex: _currentIndex,
         onDestinationSelected: (i) {
           if (i == 3) {
             _showContactsSheet(context);
@@ -195,27 +254,26 @@ class _RootNavShellState extends State<RootNavShell> {
       ),
     );
 
-    return RootNavScope(
-      setTab: _setTab,
-      currentIndex: _currentIndex,
-      pushInServicos: _pushInServicos,
-      child: Scaffold(
-        // >>> PageView no lugar do IndexedStack
-        body: PageView(
-          controller: _pageController,
-          physics: const PageScrollPhysics(), // permite arrastar
-          onPageChanged: (i) {
-            // sincroniza página -> seleção do NavigationBar
-            setState(() => _currentIndex = i);
-          },
-          children: [
-            _tabNavigator(index: 0, onGenerateRoute: _routeHome),
-            _tabNavigator(index: 1, onGenerateRoute: _routeServicos),
-            _tabNavigator(index: 2, onGenerateRoute: _routePerfil),
-          ],
+    return WillPopScope(
+      onWillPop: _handleSystemBack,
+      child: RootNavScope(
+        setTab: _setTab,
+        currentIndex: _currentIndex,
+        pushInServicos: _pushInServicos,
+        safeBack: _safeBack,
+        child: Scaffold(
+          body: PageView(
+            controller: _pageController,
+            physics: const PageScrollPhysics(),
+            onPageChanged: (i) => setState(() => _currentIndex = i),
+            children: [
+              _tabNavigator(index: 0, onGenerateRoute: _routeHome),
+              _tabNavigator(index: 1, onGenerateRoute: _routeServicos),
+              _tabNavigator(index: 2, onGenerateRoute: _routePerfil),
+            ],
+          ),
+          bottomNavigationBar: bottomBar,
         ),
-        // <<<
-        bottomNavigationBar: bottomBar,
       ),
     );
   }
@@ -307,7 +365,7 @@ class _RootNavShellState extends State<RootNavShell> {
     await Clipboard.setData(const ClipboardData(text: _email));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nenhum app de e-mail encontrado. Endereço copiado.'))
+      const SnackBar(content: Text('Nenhum app de e-mail encontrado. Endereço copiado.')),
     );
   }
 }
@@ -318,6 +376,7 @@ class RootNavScope extends InheritedWidget {
     required this.setTab,
     required this.currentIndex,
     required this.pushInServicos,
+    required this.safeBack,
     required super.child,
   });
 
@@ -330,8 +389,12 @@ class RootNavScope extends InheritedWidget {
       bool switchTab,
       }) pushInServicos;
 
+  /// Exposto para um “voltar com fallback” consistente (opcional).
+  final Future<void> Function() safeBack;
+
   static RootNavScope? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<RootNavScope>();
+    // ignore: unreachable_code
   }
 
   @override

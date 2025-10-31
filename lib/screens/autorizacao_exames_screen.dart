@@ -389,11 +389,16 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                         children: [
                           FilledButton.tonal(
                             onPressed: _imagens.length >= 2 ? null : _addImages,
-                            child: const Text('Adicionar imagens (até 2)',
-                                overflow: TextOverflow.ellipsis),
+                            child: const Text('Adicionar imagens (até 2)'),
                           ),
-                          Text('${_imagens.length}/2 selecionadas',
-                              style: const TextStyle(color: Colors.black54)),
+                          FilledButton.tonal(
+                            onPressed: _imagens.length >= 2 ? null : _capturePhoto,
+                            child: const Text('Câmera'),
+                          ),
+                          Text(
+                            '${_imagens.length}/2 selecionadas',
+                            style: const TextStyle(color: Colors.black54),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -574,6 +579,33 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: kBrand, width: 1.6)),
   );
+  Future<void> _capturePhoto() async {
+    try {
+      if (_imagens.length >= 2) return;
+
+      final shot = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 2000,
+      );
+      if (shot == null) return;
+
+      final size = await shot.length();
+      if (size > 10 * 1024 * 1024) {
+        if (!mounted) return;
+        AppAlert.toast(context, 'A foto deve ter até 10 MB.');
+        return;
+      }
+
+      setState(() {
+        _imagens = [..._imagens, shot].take(2).toList(); // mistura com as já escolhidas
+      });
+    } catch (_) {
+      if (!mounted) return;
+      AppAlert.toast(context, 'Falha ao abrir a câmera.');
+    }
+  }
+
 }
 
 // Modelo simples só para esta tela
