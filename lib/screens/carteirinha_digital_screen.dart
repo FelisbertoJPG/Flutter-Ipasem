@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../config/app_config.dart';
+import '../services/api_router.dart';
 import '../services/dev_api.dart';
 import '../ui/widgets/digital_card_view.dart';
 
@@ -10,14 +10,12 @@ class CarteirinhaDigitalScreen extends StatefulWidget {
   final int idMatricula;
   final int idDependente; // 0 = titular
   final String? nomeTitular;
-  final DevApi? api;
 
   const CarteirinhaDigitalScreen({
     Key? key,
     required this.idMatricula,
     this.idDependente = 0,
     this.nomeTitular,
-    this.api,
   }) : super(key: key);
 
   @override
@@ -25,26 +23,8 @@ class CarteirinhaDigitalScreen extends StatefulWidget {
 }
 
 class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
-  // --- API base resolution ---
-  // 1) Usa a API passada pelo caller (widget.api)
-  // 2) Senão, usa AppConfig(params.baseApiUrl) do app em execução (main ou main_local)
-  // 3) Senão, cai no env var/API_BASE com default PRODUCTION
-  late final DevApi _api;
-  bool _bootstrapped = false;
+  late final DevApi _api = ApiRouter.client();
 
-  static String _resolveBaseApi(BuildContext ctx) {
-    final cfg = AppConfig.maybeOf(ctx);
-    if (cfg != null && cfg.params.baseApiUrl.isNotEmpty) {
-      return cfg.params.baseApiUrl;
-    }
-    // Default sempre PROD; o main_local já injeta o host .98 em AppConfig.
-    return const String.fromEnvironment(
-      'API_BASE',
-      defaultValue: 'https://assistweb.ipasemnh.com.br',
-    );
-  }
-
-  // --- UI state ---
   bool _loading = true;
   String? _error;
 
@@ -57,13 +37,8 @@ class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
   int? _expiresEpoch; // epoch (segundos)
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_bootstrapped) return;
-
-    _api = widget.api ?? DevApi(_resolveBaseApi(context));
-    _bootstrapped = true;
-
+  void initState() {
+    super.initState();
     _emitirECarregar();
   }
 
@@ -71,32 +46,28 @@ class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
     _setBusy();
 
     try {
-      final res = await _api.postAction<dynamic>(
-        'carteirinha_pessoa',
-        data: {
-          'matricula': widget.idMatricula,
-          'iddependente': widget.idDependente,
-        },
-      );
+      // ---------- 1) Tenta carteirinha_emitir ----------
+      Map<String, dynamic>? data = await _tryEmitir();
 
-      final m = (res.data as Map).cast<String, dynamic>();
-      if (m['ok'] != true) {
+      // ---------- 2) Fallback: carteirinha_pessoa ----------
+      data ??= await _tryPessoa();
+
+      if (data == null) {
         throw Exception('Falha na emissão do token.');
       }
 
-      final data = (m['data'] as Map).cast<String, dynamic>();
-      final info = _Parsed.fromBackendString(data['string'] as String?);
-
+      // Preenche UI
+      final parsed = _Parsed.fromEither(data, fallbackNome: widget.nomeTitular);
       _setReady(() {
-        _nome = (info.nome ?? widget.nomeTitular ?? '').trim();
-        _cpf = info.cpf ?? '';
-        _sexoTxt = info.sexoTxt ?? '';
-        _nascimento = info.nascimento; // já em dd/MM/yyyy
-        _token = (data['token'] ?? '').toString();
-        _expiresEpoch = _asInt(data['expires_at_epoch']);
+        _nome        = parsed.nome?.trim() ?? '';
+        _cpf         = parsed.cpf ?? '';
+        _sexoTxt     = parsed.sexoTxt ?? '';
+        _nascimento  = parsed.nascimento;
+        _token       = parsed.token ?? '';
+        _expiresEpoch= parsed.expiresEpoch;
       });
 
-      // agenda expurgo (best-effort, não bloqueia a UI)
+      // ---------- 3) Agenda expurgo (best-effort) ----------
       try {
         final dbToken = _asInt(data['db_token']);
         if (dbToken != null) {
@@ -106,8 +77,56 @@ class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
           );
         }
       } catch (_) {/* silencioso */}
-    } catch (_) {
+    } catch (e) {
       _setError('Falha ao emitir token da carteirinha.');
+    }
+  }
+
+  // Tenta o endpoint novo (ou usado no seu fluxo modal)
+  Future<Map<String, dynamic>?> _tryEmitir() async {
+    try {
+      final res = await _api.postAction<dynamic>(
+        'carteirinha_emitir',
+        data: {
+          // Envia ambos para compatibilidade entre gateways
+          'idmatricula': widget.idMatricula,
+          'matricula': widget.idMatricula,
+          'iddependente': widget.idDependente,
+        },
+      );
+      final m = (res.data as Map).cast<String, dynamic>();
+      if (m['ok'] == true && m['data'] is Map) {
+        final data = (m['data'] as Map).cast<String, dynamic>();
+        // Considera sucesso se veio token ou db_token ou string
+        if ((data['token'] ?? '').toString().isNotEmpty ||
+            (data['db_token'] != null) ||
+            (data['string'] ?? '').toString().isNotEmpty) {
+          return data;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Tenta o endpoint legado que você usou nos logs
+  Future<Map<String, dynamic>?> _tryPessoa() async {
+    try {
+      final res = await _api.postAction<dynamic>(
+        'carteirinha_pessoa',
+        data: {
+          'matricula': widget.idMatricula,
+          'iddependente': widget.idDependente,
+        },
+      );
+      final m = (res.data as Map).cast<String, dynamic>();
+      if (m['ok'] == true && m['data'] is Map) {
+        return (m['data'] as Map).cast<String, dynamic>();
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -143,7 +162,7 @@ class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
             forceLandscape: true, // força horizontal
             nome: _nome.toUpperCase(),
             cpf: _cpf,
-            matricula: '${widget.idMatricula}',
+            matricula: '${widget.idMatricula}-${widget.idDependente}',
             sexoTxt: _sexoTxt,
             nascimento: _nascimento,
             token: _token,
@@ -190,19 +209,56 @@ class _CarteirinhaDigitalScreenState extends State<CarteirinhaDigitalScreen> {
   }
 }
 
-/// Parser simples do campo "string" devolvido pelo backend.
+/// Parser compatível com os dois formatos de resposta.
+/// - Se vier "data.string", extrai linhas (Titular, CPF, Sexo, Nascimento)
+/// - Se vierem campos soltos, usa-os diretamente.
+/// - Também coleta token e expires_at_epoch quando existirem.
 class _Parsed {
   final String? nome;
   final String? cpf;
   final String? sexoTxt;
   final String? nascimento;
+  final String? token;
+  final int? expiresEpoch;
 
-  const _Parsed({this.nome, this.cpf, this.sexoTxt, this.nascimento});
+  const _Parsed({this.nome, this.cpf, this.sexoTxt, this.nascimento, this.token, this.expiresEpoch});
 
-  factory _Parsed.fromBackendString(String? s) {
-    if (s == null || s.isEmpty) return const _Parsed();
+  factory _Parsed.fromEither(Map<String, dynamic> data, {String? fallbackNome}) {
+    String? nome, cpf, sexo, nasc, token;
+    int? exp;
+
+    token = (data['token'] ?? '').toString();
+    exp   = _asInt(data['expires_at_epoch']);
+
+    // 1) Se vierem campos diretos
+    nome = (data['nome'] ?? fallbackNome)?.toString();
+    cpf  = data['cpf']?.toString();
+    sexo = data['sexo_txt']?.toString();
+    nasc = _fmtBrSafe(data['nascimento']?.toString());
+
+    // 2) Se vier "string", parseia e sobrescreve o que faltar
+    final s = data['string']?.toString();
+    if (s != null && s.isNotEmpty) {
+      final p = _fromBackendString(s);
+      nome ??= p.nome ?? fallbackNome;
+      cpf  ??= p.cpf;
+      sexo ??= p.sexoTxt;
+      nasc ??= p.nascimento;
+    }
+
+    return _Parsed(
+      nome: nome ?? fallbackNome,
+      cpf: cpf,
+      sexoTxt: sexo,
+      nascimento: nasc,
+      token: token?.isNotEmpty == true ? token : null,
+      expiresEpoch: exp,
+    );
+  }
+
+  // ---------- helpers ----------
+  static _Parsed _fromBackendString(String s) {
     String? nome, cpf, sexo, nasc;
-
     for (final raw in s.split('\n')) {
       final line = raw.trim();
       if (line.isEmpty) continue;
@@ -225,14 +281,15 @@ class _Parsed {
       }
       if (line.startsWith('Nascimento:')) {
         final v = line.replaceFirst('Nascimento:', '').trim();
-        nasc = _fmtBr(v);
+        nasc = _fmtBrSafe(v);
         continue;
       }
     }
     return _Parsed(nome: nome, cpf: cpf, sexoTxt: sexo, nascimento: nasc);
   }
 
-  static String? _fmtBr(String v) {
+  static String? _fmtBrSafe(String? v) {
+    if (v == null || v.isEmpty) return v;
     DateTime? dt;
     final mBr = RegExp(r'^(\d{2})[\/-](\d{2})[\/-](\d{4})$').firstMatch(v);
     if (mBr != null) {
@@ -246,5 +303,12 @@ class _Parsed {
     }
     if (dt == null) return v;
     return DateFormat('dd/MM/yyyy').format(dt);
+  }
+
+  static int? _asInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
   }
 }

@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
+import 'package:ipasemnhdigital/services/api_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/app_config.dart';
@@ -76,6 +77,8 @@ Future<void> main() async {
     passwordMinLength: 4,
     firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
   );
+  ApiRouter.configure(params.baseApiUrl); // <- única fonte de verdade
+
 
   runApp(
     AppConfig(

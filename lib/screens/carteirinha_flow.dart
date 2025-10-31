@@ -32,7 +32,8 @@ Future<void> startCarteirinhaFlow(
   }
 
   // 2) Emite token (com loader que SEMPRE fecha)
-  final svc = CarteirinhaService();
+  //    Usa a base API vinda do AppConfig (main ou main_local) sem alterar outros arquivos.
+  final svc = CarteirinhaService.fromContext(context);
   CardTokenData? data;
   String? errMsg;
 
@@ -70,16 +71,17 @@ Future<void> startCarteirinhaFlow(
 
 typedef _Close = void Function();
 
-/// Abre um loader bloqueante sem travar o fluxo chamador.
+/// Abre um loader bloqueante no ROOT sem travar o fluxo chamador.
 /// Retorna uma função para fechá-lo com segurança.
 Future<_Close> _showBlockingLoader(BuildContext context) async {
-  final nav = Navigator.of(context, rootNavigator: true);
+  final rootNav = Navigator.of(context, rootNavigator: true);
   bool closed = false;
 
   // Abre o diálogo em microtask para não bloquear a sequência.
   Future.microtask(() {
     showDialog<void>(
       context: context,
+      useRootNavigator: true, // <- garante o mesmo stack do overlay
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
@@ -88,7 +90,7 @@ Future<_Close> _showBlockingLoader(BuildContext context) async {
   return () {
     if (!closed) {
       closed = true;
-      nav.maybePop();
+      if (rootNav.canPop()) rootNav.pop();
     }
   };
 }
@@ -111,10 +113,10 @@ Future<void> _openDigitalCardOverlay(
       reverseTransitionDuration: const Duration(milliseconds: 140),
       pageBuilder: (_, __, ___) {
         return _CarteirinhaOverlay(
-          nome: info.nome ?? '—',
-          cpf: info.cpf ?? '',
-          matricula: info.matricula ?? '',
-          sexoTxt: info.sexoTxt ?? '—',
+          nome: (info.nome ?? '—'),
+          cpf: (info.cpf ?? ''),
+          matricula: (info.matricula ?? ''),
+          sexoTxt: (info.sexoTxt ?? '—'),
           nascimento: info.nascimento,
           token: data.token,
           expiresAtEpoch: data.expiresAtEpoch,
@@ -132,7 +134,7 @@ Future<void> _openDigitalCardOverlay(
 /// - Em retrato: rotaciona o CONTEÚDO do modal em +90° (quarterTurns: 1)
 ///   e depois escala para caber na viewport.
 /// - Em paisagem: mantém orientação natural.
-class _CarteirinhaOverlay extends StatelessWidget {
+class _CarteirinhaOverlay extends StatefulWidget {
   final String nome;
   final String cpf;
   final String matricula;
@@ -153,6 +155,23 @@ class _CarteirinhaOverlay extends StatelessWidget {
   });
 
   @override
+  State<_CarteirinhaOverlay> createState() => _CarteirinhaOverlayState();
+}
+
+class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
+  bool _closing = false;
+
+  void _close() {
+    if (_closing) return;
+    _closing = true;
+    final nav = Navigator.of(context, rootNavigator: true);
+    // Evita pop durante o build/animação.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (nav.canPop()) nav.pop();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Congela text scale para não “estourar” fontes em Android.
     final mqBase = MediaQuery.of(context);
@@ -169,17 +188,17 @@ class _CarteirinhaOverlay extends StatelessWidget {
       width: baseW,
       height: baseH,
       child: DigitalCardView(
-        nome: nome,
-        cpf: cpf,
-        matricula: matricula,
-        sexoTxt: sexoTxt,
-        nascimento: nascimento,
-        token: token,
-        expiresAtEpoch: expiresAtEpoch,
+        nome: widget.nome,
+        cpf: widget.cpf,
+        matricula: widget.matricula,
+        sexoTxt: widget.sexoTxt,
+        nascimento: widget.nascimento,
+        token: widget.token,                 // <- usar widget.*, não data.*
+        expiresAtEpoch: widget.expiresAtEpoch,
         // Mantemos o card em layout horizontal; quem gira é o PAI (modal).
         forceLandscape: true,
         forceLandscapeOnWide: false,
-        onClose: () => Navigator.of(context, rootNavigator: true).maybePop(),
+        onClose: _close, // <- fechamento centralizado e protegido
       ),
     );
 
@@ -189,7 +208,10 @@ class _CarteirinhaOverlay extends StatelessWidget {
     }
 
     return WillPopScope(
-      onWillPop: () async => true,
+      onWillPop: () async {
+        _close();
+        return false; // nós mesmos controlamos o pop
+      },
       child: Material(
         type: MaterialType.transparency,
         child: MediaQuery(
