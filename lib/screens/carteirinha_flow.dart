@@ -1,4 +1,5 @@
 // lib/screens/carteirinha_flow.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/card_token_models.dart';
@@ -30,37 +31,66 @@ Future<void> startCarteirinhaFlow(
     // sem sheet -> segue como titular (depId = 0)
   }
 
-  // 2) Emite token
+  // 2) Emite token (com loader que SEMPRE fecha)
   final svc = CarteirinhaService();
-  late CardTokenData data;
+  CardTokenData? data;
+  String? errMsg;
 
-  // Loading durante a emissão
-  await showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => const Center(child: CircularProgressIndicator()),
-  );
-
+  final closeLoader = await _showBlockingLoader(context); // <-- abre sem await do diálogo
   try {
-    // *** usa a assinatura correta do teu service ***
     data = await svc.emitir(
       matricula: idMatricula,
       iddependente: depId.toString(),
     );
+  } on CarteirinhaException catch (e) {
+    errMsg = e.message.isNotEmpty ? e.message : 'Falha ao emitir a carteirinha.';
+  } catch (_) {
+    errMsg = 'Falha ao emitir a carteirinha.';
   } finally {
-    // fecha o loading
-    Navigator.of(context, rootNavigator: true).maybePop();
+    closeLoader(); // <-- garante que o loader fecha mesmo com erro
+  }
+
+  if (data == null) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errMsg ?? 'Erro inesperado ao emitir.')),
+      );
+    }
+    return;
   }
 
   // 3) Abre overlay full-screen (sem limitações de bottom-sheet)
   await _openDigitalCardOverlay(context, data);
 
-  // 4) (Opcional) agenda expurgo após exibir o cartão
+  // 4) (Opcional) agenda expurgo após exibir o cartão (silencioso)
   try {
     await svc.agendarExpurgo(data.dbToken);
-  } catch (_) {
-    // silencioso
-  }
+  } catch (_) {/* silencioso */}
+}
+
+typedef _Close = void Function();
+
+/// Abre um loader bloqueante sem travar o fluxo chamador.
+/// Retorna uma função para fechá-lo de qualquer lugar (e sempre com segurança).
+Future<_Close> _showBlockingLoader(BuildContext context) async {
+  final nav = Navigator.of(context, rootNavigator: true);
+  bool closed = false;
+
+  // Abre o diálogo em um microtask para não bloquear a sequência.
+  Future.microtask(() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+  });
+
+  return () {
+    if (!closed) {
+      closed = true;
+      nav.maybePop();
+    }
+  };
 }
 
 /// Abre a Carteirinha em rota transparente full-screen.
