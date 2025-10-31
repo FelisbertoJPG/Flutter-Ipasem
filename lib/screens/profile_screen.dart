@@ -199,13 +199,14 @@ class _HeaderCardUser extends StatelessWidget {
                   profile.nome,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 4),
-                const Wrap(
+                Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children: [
+                  children: const [
                     _StatusChip(
                       label: 'Acesso autenticado',
                       color: Color(0xFF027A48),
@@ -247,18 +248,58 @@ class _UserDataBlocks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // mesmo respiro que usamos nos demais cards
+    final w = MediaQuery.of(context).size.width;
+    final double inPad = w < 360 ? 12 : 16;
+
     return Column(
       children: [
         SectionCard(
           title: 'Dados do usuário',
-          child: Column(
-            children: [
-              _InfoRow(label: 'Nome completo ', value: profile.nome),
-              _InfoRow(label: 'CPF', value: fmtCpf(profile.cpf)),
-              _InfoRow(label: 'Matrícula', value: profile.id.toString()),
-              _InfoRow(label: 'E-mail', value: profile.email ?? '—'),
-              _InfoRow(label: 'E-mail 2', value: profile.email2 ?? '—'),
-            ],
+          child: Padding(
+            padding: EdgeInsets.all(inPad), // respiro do SectionCard
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
+              ),
+              padding:
+              EdgeInsets.all(inPad), // respiro dentro da borda interna
+              child: Column(
+                children: const [
+                  _InfoRow(
+                    icon: Icons.badge_outlined,
+                    label: 'Nome completo',
+                    valueKey: _InfoValueKey.nome,
+                  ),
+                  _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.credit_card_outlined,
+                    label: 'CPF',
+                    valueKey: _InfoValueKey.cpf,
+                  ),
+                  _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.confirmation_number_outlined,
+                    label: 'Matrícula',
+                    valueKey: _InfoValueKey.matricula,
+                  ),
+                  _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.mail_outline,
+                    label: 'E-mail',
+                    valueKey: _InfoValueKey.email1,
+                  ),
+                  _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.alternate_email_outlined,
+                    label: 'E-mail 2',
+                    valueKey: _InfoValueKey.email2,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -276,41 +317,105 @@ class _UserDataBlocks extends StatelessWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _InfoRow({required this.label, required this.value});
-
+/// Divider fininho com espaçamento vertical, igual aos outros cards
+class _InsetDivider extends StatelessWidget {
+  const _InsetDivider();
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.person_outline, color: Color(0xFF667085)),
-      title: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF101828)),
-      ),
-      subtitle: Text(
-        value,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Color(0xFF475467)),
-      ),
-      minLeadingWidth: 0,
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Divider(height: 1),
     );
   }
 }
 
+/// Chaves para sabermos qual valor renderizar dentro do _InfoRow
+enum _InfoValueKey { nome, cpf, matricula, email1, email2 }
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final _InfoValueKey valueKey;
+
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.valueKey,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // pega o Profile “para renderizar” sem propagar tudo no construtor
+    final inherited = context.findAncestorWidgetOfExactType<_UserDataBlocks>()!;
+    final p = inherited.profile;
+
+    String value;
+    switch (valueKey) {
+      case _InfoValueKey.nome:
+        value = p.nome;
+        break;
+      case _InfoValueKey.cpf:
+        value = fmtCpf(p.cpf);
+        break;
+      case _InfoValueKey.matricula:
+        value = p.id.toString();
+        break;
+      case _InfoValueKey.email1:
+        value = p.email?.trim().isNotEmpty == true ? p.email! : '—';
+        break;
+      case _InfoValueKey.email2:
+        value = p.email2?.trim().isNotEmpty == true ? p.email2! : '—';
+        break;
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: const Color(0xFF667085)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF101828),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF475467),
+                  fontSize: 13,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Badge simples do cabeçalho
 class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;
   final Color bg;
 
-  const _StatusChip({required this.label, required this.color, required this.bg});
+  const _StatusChip({
+    required this.label,
+    required this.color,
+    required this.bg,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -325,7 +430,11 @@ class _StatusChip extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
