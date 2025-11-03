@@ -16,7 +16,7 @@ class DigitalCardView extends StatefulWidget {
   final String? nascimento;
   final String token;
 
-  /// db_token retornado na emissão. Usado para agendar expurgo.
+  /// db_token retornado na emissão. Usado para agendar/invalidar no backend.
   final int? dbToken;
 
   /// Expiração em EPOCH **segundos** (do backend).
@@ -82,8 +82,9 @@ class _DigitalCardViewState extends State<DigitalCardView> {
   // Usamos -1 para “desconhecido/sem expiração”.
   int _leftSec = -1;
 
-  // Controle de agendamento para evitar chamadas duplicadas.
-  int? _expurgoAgendadoPara; // guarda o dbToken já agendado
+  // Controle de chamadas únicas.
+  int? _expurgoAgendadoPara;   // lembra qual dbToken já agendou
+  bool _excluiuViaApp = false; // garante exclusão única ao expirar/fechar
 
   @override
   void initState() {
@@ -121,6 +122,12 @@ class _DigitalCardViewState extends State<DigitalCardView> {
   @override
   void dispose() {
     _t.cancel();
+
+    // Se por algum motivo estiver expirado e ainda não excluímos, tenta excluir.
+    if (_leftSec == 0) {
+      _tryExcluirOnExpireOnce();
+    }
+
     super.dispose();
   }
 
@@ -129,6 +136,11 @@ class _DigitalCardViewState extends State<DigitalCardView> {
     final next = _computeLeftSeconds();
     if (next != _leftSec) {
       setState(() => _leftSec = next);
+
+      // Quando o contador chega em 0 (e há expiração definida), dispare exclusão imediata via app.
+      if (next == 0 && widget.expiresAtEpoch != null && widget.expiresAtEpoch! > 0) {
+        _tryExcluirOnExpireOnce();
+      }
     }
   }
 
@@ -161,7 +173,7 @@ class _DigitalCardViewState extends State<DigitalCardView> {
     return '$hh:$mm';
   }
 
-  /// Agenda expurgo do token **apenas uma vez por dbToken**.
+  /// Agenda expurgo do token **apenas uma vez por dbToken** (best-effort no backend).
   void _tryAgendarExpurgoOnce() async {
     final token = widget.dbToken;
     if (!mounted || token == null || token <= 0) return;
@@ -174,6 +186,23 @@ class _DigitalCardViewState extends State<DigitalCardView> {
     } catch (e) {
       // Não quebra a UI; apenas loga.
       debugPrint('DigitalCardView: agendarExpurgo falhou: $e');
+    }
+  }
+
+  /// Tenta excluir o token no backend quando a contagem zera (uma única vez).
+  void _tryExcluirOnExpireOnce() async {
+    if (_excluiuViaApp) return;
+    _excluiuViaApp = true;
+
+    final token = widget.dbToken;
+    if (token == null || token <= 0) return;
+
+    try {
+      await CarteirinhaService.fromContext(context)
+          .excluirToken(dbToken: token);
+      debugPrint('DigitalCardView: excluirToken OK (db_token=$token)');
+    } catch (e) {
+      debugPrint('DigitalCardView: excluirToken falhou: $e');
     }
   }
 

@@ -45,7 +45,6 @@ class CarteirinhaService {
 
       return CardTokenData.fromMap(map);
     } on DioException catch (e) {
-      // Normaliza payloads variados (ok=false / error={} / outras formas).
       final res = e.response;
       final status = res?.statusCode;
 
@@ -64,7 +63,6 @@ class CarteirinhaService {
         }
       }
 
-      // Classificação por tipo de falha de rede/timeout.
       String fallbackCode;
       String fallbackMsg;
       switch (e.type) {
@@ -80,8 +78,9 @@ class CarteirinhaService {
           break;
         case DioExceptionType.badResponse:
           fallbackCode = 'CARD_ISSUE_ERROR';
-          fallbackMsg =
-          status == 404 ? 'Endpoint de emissão indisponível (404).' : 'Falha ao emitir.';
+          fallbackMsg = status == 404
+              ? 'Endpoint de emissão indisponível (404).'
+              : 'Falha ao emitir.';
           break;
         default:
           fallbackCode = 'CARD_ISSUE_ERROR';
@@ -96,7 +95,6 @@ class CarteirinhaService {
         status: status,
       );
     } catch (e) {
-      // Protege contra erros de parsing/conversão inesperados.
       throw CarteirinhaException(
         code: 'CARD_ISSUE_ERROR',
         message: 'Erro inesperado ao emitir.',
@@ -105,13 +103,33 @@ class CarteirinhaService {
     }
   }
 
-  /// Agenda o expurgo (202 Accepted quando ok).
-  Future<void> agendarExpurgo(int dbToken) =>
-      api.carteirinhaAgendarExpurgo(dbToken: dbToken);
+  /// Agenda o expurgo (202 Accepted quando ok). No-op se dbToken inválido.
+  Future<void> agendarExpurgo(int? dbToken) async {
+    if (dbToken == null || dbToken <= 0) return;
+    await api.carteirinhaAgendarExpurgo(dbToken: dbToken);
+  }
 
-  /// Revoga imediatamente (SP_EXCLUI_TOKEN).
-  Future<void> excluir(int dbToken) =>
-      api.carteirinhaExcluir(dbToken: dbToken);
+  /// Exclui imediatamente o token (fallback da view ao expirar).
+  /// Aceita db_token OU token simples, conforme o gateway.
+  Future<void> excluirToken({int? dbToken, int? token}) async {
+    // Seu DevApi já expõe `carteirinhaExcluir(dbToken: ...)`. Reutilizamos.
+    // Se você também criar `carteirinhaExcluirToken(dbToken:..., token:...)`,
+    // pode trocar a chamada aqui sem impacto no resto do app.
+    if (dbToken != null && dbToken > 0) {
+      await api.carteirinhaExcluir(dbToken: dbToken);
+      return;
+    }
+    // Se quiser suportar exclusão por "token" numérico puro:
+    if (token != null && token > 0) {
+      // Opcional: crie um método no DevApi que aceite token simples, ex.:
+      // await api.carteirinhaExcluirToken(token: token);
+      // Como fallback, tente tratar como dbToken.
+      await api.carteirinhaExcluir(dbToken: token);
+    }
+  }
+
+  /// Alias legado (mantido para compatibilidade).
+  Future<void> excluir(int dbToken) => excluirToken(dbToken: dbToken);
 
   /// Valida o token atual (tipicamente: {expired: bool, expires_at_ts: int}).
   Future<Map<String, dynamic>> validar({int? dbToken, int? token}) =>
