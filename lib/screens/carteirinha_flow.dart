@@ -120,6 +120,7 @@ Future<void> _openDigitalCardOverlay(
           nascimento: info.nascimento,
           token: data.token,
           expiresAtEpoch: data.expiresAtEpoch,
+          serverNowEpoch: data.serverNowEpoch, // <- NOVO: relógio do servidor
         );
       },
       transitionsBuilder: (_, anim, __, child) =>
@@ -142,6 +143,7 @@ class _CarteirinhaOverlay extends StatefulWidget {
   final String? nascimento;
   final String token;
   final int? expiresAtEpoch;
+  final int? serverNowEpoch; // <- NOVO
 
   const _CarteirinhaOverlay({
     super.key,
@@ -152,6 +154,7 @@ class _CarteirinhaOverlay extends StatefulWidget {
     required this.nascimento,
     required this.token,
     required this.expiresAtEpoch,
+    this.serverNowEpoch,
   });
 
   @override
@@ -193,12 +196,13 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
         matricula: widget.matricula,
         sexoTxt: widget.sexoTxt,
         nascimento: widget.nascimento,
-        token: widget.token,                 // <- usar widget.*, não data.*
+        token: widget.token,                 // usar widget.*, não data.*
         expiresAtEpoch: widget.expiresAtEpoch,
+        serverNowEpoch: widget.serverNowEpoch, // <- NOVO
         // Mantemos o card em layout horizontal; quem gira é o PAI (modal).
         forceLandscape: true,
         forceLandscapeOnWide: false,
-        onClose: _close, // <- fechamento centralizado e protegido
+        onClose: _close, // fechamento centralizado e protegido
       ),
     );
 

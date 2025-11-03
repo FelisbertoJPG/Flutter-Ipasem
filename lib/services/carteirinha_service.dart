@@ -33,16 +33,75 @@ class CarteirinhaService {
         matricula: matricula,
         iddependente: iddependente,
       );
+
+      // Validação leve do envelope antes do parse.
+      if (map is! Map<String, dynamic>) {
+        throw CarteirinhaException(
+          code: 'CARD_INVALID_RESPONSE',
+          message: 'Resposta inválida da emissão.',
+          status: 200,
+        );
+      }
+
       return CardTokenData.fromMap(map);
     } on DioException catch (e) {
-      final body = (e.response?.data is Map) ? e.response!.data as Map : const {};
-      final err = (body['error'] as Map?) ?? const {};
+      // Normaliza payloads variados (ok=false / error={} / outras formas).
+      final res = e.response;
+      final status = res?.statusCode;
+
+      Map<String, dynamic> errMap = const {};
+      if (res?.data is Map) {
+        final body = (res!.data as Map).cast<String, dynamic>();
+        if (body['error'] is Map) {
+          errMap = (body['error'] as Map).cast<String, dynamic>();
+        } else if (body['ok'] == false && body['message'] is String) {
+          errMap = {
+            'code': body['code'] ?? 'CARD_ISSUE_ERROR',
+            'message': body['message'],
+            'details': body['details'],
+            'eid': body['eid'],
+          };
+        }
+      }
+
+      // Classificação por tipo de falha de rede/timeout.
+      String fallbackCode;
+      String fallbackMsg;
+      switch (e.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.sendTimeout:
+          fallbackCode = 'TIMEOUT';
+          fallbackMsg = 'Tempo de resposta excedido.';
+          break;
+        case DioExceptionType.connectionError:
+          fallbackCode = 'NETWORK';
+          fallbackMsg = 'Falha de conexão com o servidor.';
+          break;
+        case DioExceptionType.badResponse:
+          fallbackCode = 'CARD_ISSUE_ERROR';
+          fallbackMsg = status == 404
+              ? 'Endpoint de emissão indisponível (404).'
+              : 'Falha ao emitir.';
+          break;
+        default:
+          fallbackCode = 'CARD_ISSUE_ERROR';
+          fallbackMsg = 'Falha ao emitir.';
+      }
+
       throw CarteirinhaException(
-        code: '${err['code'] ?? 'CARD_ISSUE_ERROR'}',
-        message: '${err['message'] ?? 'Falha ao emitir.'}',
-        details: err['details']?.toString(),
-        eid: err['eid']?.toString(),
-        status: e.response?.statusCode,
+        code: '${errMap['code'] ?? fallbackCode}',
+        message: '${errMap['message'] ?? fallbackMsg}',
+        details: errMap['details']?.toString(),
+        eid: errMap['eid']?.toString(),
+        status: status,
+      );
+    } catch (e) {
+      // Protege contra erros de parsing/conversão inesperados.
+      throw CarteirinhaException(
+        code: 'CARD_ISSUE_ERROR',
+        message: 'Erro inesperado ao emitir.',
+        details: e.toString(),
       );
     }
   }
@@ -51,9 +110,11 @@ class CarteirinhaService {
   Future<void> agendarExpurgo(int dbToken) =>
       api.carteirinhaAgendarExpurgo(dbToken: dbToken);
 
+  /// Valida o token atual (tipicamente: {expired: bool, expires_at_ts: int}).
   Future<Map<String, dynamic>> validar({int? dbToken, int? token}) =>
       api.carteirinhaValidar(dbToken: dbToken, token: token);
 
+  /// Consulta o status do agendamento de expurgo.
   Future<CardScheduleStatus> statusAgendamento(int dbToken) async {
     final m = await api.carteirinhaAgendarStatus(dbToken: dbToken);
     return CardScheduleStatus.fromMap(m);

@@ -12,11 +12,11 @@ class CarteirinhaDigitalScreen extends StatefulWidget {
   final String? nomeTitular;
 
   const CarteirinhaDigitalScreen({
-    Key? key,
+    super.key,
     required this.idMatricula,
     this.idDependente = 0,
     this.nomeTitular,
-  }) : super(key: key);
+  });
 
   @override
   State<CarteirinhaDigitalScreen> createState() => _CarteirinhaDigitalScreenState();
