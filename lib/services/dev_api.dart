@@ -471,4 +471,27 @@ class DevApi {
       error: m['error'],
     );
   }
+
+
+  Future<void> carteirinhaExcluir({required int dbToken}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_excluir_token'},
+      data: {'db_token': dbToken},
+      // usa form-urlencoded como no curl de teste
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+    // Considera sucesso em 200; se quiser, pode também checar body['ok'].
+    final code = r.statusCode ?? 0;
+    if (code == 200) return;
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: r.data,
+    );
+  }
+
+
 }

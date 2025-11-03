@@ -80,9 +80,8 @@ class CarteirinhaService {
           break;
         case DioExceptionType.badResponse:
           fallbackCode = 'CARD_ISSUE_ERROR';
-          fallbackMsg = status == 404
-              ? 'Endpoint de emissão indisponível (404).'
-              : 'Falha ao emitir.';
+          fallbackMsg =
+          status == 404 ? 'Endpoint de emissão indisponível (404).' : 'Falha ao emitir.';
           break;
         default:
           fallbackCode = 'CARD_ISSUE_ERROR';
@@ -109,6 +108,10 @@ class CarteirinhaService {
   /// Agenda o expurgo (202 Accepted quando ok).
   Future<void> agendarExpurgo(int dbToken) =>
       api.carteirinhaAgendarExpurgo(dbToken: dbToken);
+
+  /// Revoga imediatamente (SP_EXCLUI_TOKEN).
+  Future<void> excluir(int dbToken) =>
+      api.carteirinhaExcluir(dbToken: dbToken);
 
   /// Valida o token atual (tipicamente: {expired: bool, expires_at_ts: int}).
   Future<Map<String, dynamic>> validar({int? dbToken, int? token}) =>

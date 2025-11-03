@@ -33,7 +33,7 @@ class CardTokenData {
   final String? sexo;                      // "M"/"F"/null
   final String? sexoTxt;                   // "Masculino"/"Feminino"/"Não informado"
   final String token;                      // sempre texto no backend
-  final int dbToken;                       // inteiro (padrão: igual ao token)
+  final int? dbToken;                      // inteiro (pode ser null se backend não persistiu)
   final String? expiresAt;                 // "YYYY-MM-DD HH:mm:ss"
   final String? expiresAtIso;              // ISO-8601 com TZ
   final int? expiresAtEpoch;               // epoch segundos
@@ -49,7 +49,7 @@ class CardTokenData {
 
   CardTokenData({
     required this.token,
-    required this.dbToken,
+    this.dbToken,
     this.prettyString,
     this.sexo,
     this.sexoTxt,
@@ -66,7 +66,7 @@ class CardTokenData {
   });
 
   factory CardTokenData.fromMap(Map<String, dynamic> m) {
-    final dbTok = _asInt(m['db_token']) ?? _asInt(m['token']) ?? 0;
+    final dbTok = _asInt(m['db_token']) ?? _asInt(m['token']);
     return CardTokenData(
       prettyString: m['string'] as String?,
       sexo: m['sexo'] as String?,

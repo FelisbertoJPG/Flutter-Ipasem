@@ -10,7 +10,7 @@ import '../ui/widgets/digital_card_view.dart';
 // Caso não exista, remova o import e deixe depId = 0 no fluxo.
 import 'carteirinha_beneficiary_sheet.dart';
 
-/// Ponto único de entrada a partir do HomeServicos.
+/// Ponto único de entrada a partir do Home/Serviços.
 /// - (Opcional) pergunta o beneficiário
 /// - emite o token via CarteirinhaService.emitir()
 /// - abre o cartão em overlay full-screen (sem bottom-sheet)
@@ -63,10 +63,8 @@ Future<void> startCarteirinhaFlow(
   // 3) Abre overlay full-screen (sem limitações de bottom-sheet)
   await _openDigitalCardOverlay(context, data);
 
-  // 4) (Opcional) agenda expurgo após exibir o cartão (silencioso)
-  try {
-    await svc.agendarExpurgo(data.dbToken);
-  } catch (_) {/* silencioso */}
+  // 4) NÃO agendar aqui. O DigitalCardView já agenda no pós-frame.
+  // try { await svc.agendarExpurgo(data.dbToken); } catch (_) {}
 }
 
 typedef _Close = void Function();
@@ -119,8 +117,9 @@ Future<void> _openDigitalCardOverlay(
           sexoTxt: (info.sexoTxt ?? '—'),
           nascimento: info.nascimento,
           token: data.token,
+          dbToken: data.dbToken,                 // <— PASSA dbToken p/ agendar expurgo
           expiresAtEpoch: data.expiresAtEpoch,
-          serverNowEpoch: data.serverNowEpoch, // <- NOVO: relógio do servidor
+          serverNowEpoch: data.serverNowEpoch,   // <— usa relógio do servidor
         );
       },
       transitionsBuilder: (_, anim, __, child) =>
@@ -142,8 +141,9 @@ class _CarteirinhaOverlay extends StatefulWidget {
   final String sexoTxt;
   final String? nascimento;
   final String token;
+  final int? dbToken;
   final int? expiresAtEpoch;
-  final int? serverNowEpoch; // <- NOVO
+  final int? serverNowEpoch;
 
   const _CarteirinhaOverlay({
     super.key,
@@ -154,6 +154,7 @@ class _CarteirinhaOverlay extends StatefulWidget {
     required this.nascimento,
     required this.token,
     required this.expiresAtEpoch,
+    this.dbToken,
     this.serverNowEpoch,
   });
 
@@ -196,13 +197,14 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
         matricula: widget.matricula,
         sexoTxt: widget.sexoTxt,
         nascimento: widget.nascimento,
-        token: widget.token,                 // usar widget.*, não data.*
+        token: widget.token,
+        dbToken: widget.dbToken,                   // <— ESSENCIAL para agendar
         expiresAtEpoch: widget.expiresAtEpoch,
-        serverNowEpoch: widget.serverNowEpoch, // <- NOVO
+        serverNowEpoch: widget.serverNowEpoch,
         // Mantemos o card em layout horizontal; quem gira é o PAI (modal).
         forceLandscape: true,
         forceLandscapeOnWide: false,
-        onClose: _close, // fechamento centralizado e protegido
+        onClose: _close,
       ),
     );
 

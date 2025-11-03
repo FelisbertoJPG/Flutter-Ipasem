@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 
 import '../core/formatters.dart';        // fmtData, fmtCpf
@@ -7,7 +8,7 @@ import '../repositories/dependents_repository.dart';
 import '../repositories/comunicados_repository.dart';
 import '../repositories/exames_repository.dart';   // <-- NOVO
 import '../services/dev_api.dart';
-import '../config/app_config.dart';
+import '../services/api_router.dart';
 
 import '../ui/app_shell.dart';           // AppScaffold
 import '../ui/components/exames_inline_status.dart';
@@ -64,15 +65,12 @@ class _HomeScreenState extends State<HomeScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_ctrlReady) {
-      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-          ?? const String.fromEnvironment(
-            'API_BASE',
-            defaultValue: 'https://assistweb.ipasemnh.com.br',
-          );
+      // Fonte única de verdade para base/gateway
+      final DevApi api = ApiRouter.client();
 
-      final depsRepo = DependentsRepository(DevApi(baseUrl));
+      final depsRepo = DependentsRepository(api);
       final comRepo  = const ComunicadosRepository();
-      _exRepo        = ExamesRepository(DevApi(baseUrl)); // NOVO
+      _exRepo        = ExamesRepository(api); // NOVO
 
       _ctrl = HomeController(
         session: SessionStore(),

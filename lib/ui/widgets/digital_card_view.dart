@@ -1,5 +1,9 @@
+// lib/ui/widgets/digital_card_view.dart
 import 'dart:async';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
+
+import '../../services/carteirinha_service.dart';
 
 /// Cartão digital do IPASEM com layout responsivo.
 /// Conteúdo DENTRO do card: Nome, CPF, Sexo, Matrícula, Nascimento, Token
@@ -11,6 +15,9 @@ class DigitalCardView extends StatefulWidget {
   final String sexoTxt;
   final String? nascimento;
   final String token;
+
+  /// db_token retornado na emissão. Usado para agendar expurgo.
+  final int? dbToken;
 
   /// Expiração em EPOCH **segundos** (do backend).
   final int? expiresAtEpoch;
@@ -34,6 +41,7 @@ class DigitalCardView extends StatefulWidget {
     required this.matricula,
     required this.sexoTxt,
     required this.token,
+    this.dbToken,
     this.nascimento,
     this.expiresAtEpoch,
     this.serverNowEpoch,
@@ -74,21 +82,39 @@ class _DigitalCardViewState extends State<DigitalCardView> {
   // Usamos -1 para “desconhecido/sem expiração”.
   int _leftSec = -1;
 
+  // Controle de agendamento para evitar chamadas duplicadas.
+  int? _expurgoAgendadoPara; // guarda o dbToken já agendado
+
   @override
   void initState() {
     super.initState();
     _recalcLeft();
     _t = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+
+    // Agenda expurgo após o primeiro frame exibindo o cartão.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tryAgendarExpurgoOnce();
+    });
   }
 
   @override
   void didUpdateWidget(covariant DigitalCardView oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    // Recalcula contagem quando backend reportar novos tempos.
     if (oldWidget.expiresAtEpoch != widget.expiresAtEpoch ||
         oldWidget.serverNowEpoch != widget.serverNowEpoch) {
-      _sw.reset();
-      _sw.start();
+      _sw
+        ..reset()
+        ..start();
       _recalcLeft();
+    }
+
+    // Se mudou o dbToken, tente agendar para o novo token.
+    if (oldWidget.dbToken != widget.dbToken) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _tryAgendarExpurgoOnce();
+      });
     }
   }
 
@@ -116,8 +142,8 @@ class _DigitalCardViewState extends State<DigitalCardView> {
     final exp = widget.expiresAtEpoch;
     if (exp == null || exp <= 0) return -1; // sem expiração -> não expira na UI
 
-    final baseNow = widget.serverNowEpoch ??
-        (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    final baseNow =
+        widget.serverNowEpoch ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
 
     // avança “agora” do servidor pelo tempo decorrido localmente
     final nowEst = baseNow + _sw.elapsed.inSeconds;
@@ -133,6 +159,22 @@ class _DigitalCardViewState extends State<DigitalCardView> {
     final hh = dt.hour.toString().padLeft(2, '0');
     final mm = dt.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
+  }
+
+  /// Agenda expurgo do token **apenas uma vez por dbToken**.
+  void _tryAgendarExpurgoOnce() async {
+    final token = widget.dbToken;
+    if (!mounted || token == null || token <= 0) return;
+    if (_expurgoAgendadoPara == token) return; // já foi para este token
+
+    _expurgoAgendadoPara = token;
+    try {
+      await CarteirinhaService.fromContext(context).agendarExpurgo(token);
+      debugPrint('DigitalCardView: agendarExpurgo OK (db_token=$token)');
+    } catch (e) {
+      // Não quebra a UI; apenas loga.
+      debugPrint('DigitalCardView: agendarExpurgo falhou: $e');
+    }
   }
 
   @override
@@ -153,23 +195,27 @@ class _DigitalCardViewState extends State<DigitalCardView> {
     return SafeArea(
       child: LayoutBuilder(
         builder: (context, box) {
-          final availableW = (box.maxWidth.isFinite ? box.maxWidth : viewport.width);
-          final availableH = (box.maxHeight.isFinite ? box.maxHeight : viewport.height);
+          final availableW =
+          (box.maxWidth.isFinite ? box.maxWidth : viewport.width);
+          final availableH =
+          (box.maxHeight.isFinite ? box.maxHeight : viewport.height);
 
           final isWideByBox = box.maxWidth.isFinite && box.maxWidth >= 420.0;
           final isWideByAspect = availableW >= availableH * 0.9;
-          final useLandscape =
-              widget.forceLandscape || (widget.forceLandscapeOnWide && (isWideByBox || isWideByAspect));
+          final useLandscape = widget.forceLandscape ||
+              (widget.forceLandscapeOnWide && (isWideByBox || isWideByAspect));
 
           final bool viewportIsPortrait = availableH >= availableW;
           final bool rotate90 = useLandscape && viewportIsPortrait;
 
-          final double designW = useLandscape ? designWLandscape : designWPortrait;
-          final double designH = useLandscape ? designHLandscape : designHPortrait;
+          final double designW =
+          useLandscape ? designWLandscape : designWPortrait;
+          final double designH =
+          useLandscape ? designHLandscape : designHPortrait;
 
           // Slot para o FittedBox — card maior e mais para cima.
-          const double padX = 0.0;          // sem margens laterais
-          const double padTop = 0.0;        // cola no topo
+          const double padX = 0.0; // sem margens laterais
+          const double padTop = 0.0; // cola no topo
           const double padBottomExtra = 36; // folga mínima p/ bottom bar
 
           final slotW = (availableW - padX * 2).clamp(280.0, 4000.0);
@@ -178,7 +224,8 @@ class _DigitalCardViewState extends State<DigitalCardView> {
             slotH = (availableH - padTop - padBottomExtra)
                 .clamp(280.0, availableH - padTop - padBottomExtra);
           } else {
-            final idealH = useLandscape ? (slotW / _cardRatio) : (availableH * 0.98);
+            final idealH =
+            useLandscape ? (slotW / _cardRatio) : (availableH * 0.98);
             slotH = idealH.clamp(260.0, availableH - padTop - padBottomExtra);
           }
 
@@ -205,7 +252,8 @@ class _DigitalCardViewState extends State<DigitalCardView> {
             ),
           );
 
-          final mqNoTextScale = mq.copyWith(textScaler: const TextScaler.linear(1.0));
+          final mqNoTextScale =
+          mq.copyWith(textScaler: const TextScaler.linear(1.0));
           final Widget cardForFit = rotate90
               ? _RotatedBoxWithBounds(
             width: designW,
@@ -216,7 +264,8 @@ class _DigitalCardViewState extends State<DigitalCardView> {
               : baseCard;
 
           return Padding(
-            padding: const EdgeInsets.fromLTRB(padX, padTop, padX, padBottomExtra),
+            padding:
+            const EdgeInsets.fromLTRB(padX, padTop, padX, padBottomExtra),
             child: Align(
               alignment: const Alignment(0, -0.94),
               child: SizedBox(
@@ -284,7 +333,9 @@ class _CardChrome extends StatelessWidget {
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: Colors.white,
-        shadows: const [BoxShadow(blurRadius: 18, offset: Offset(0, 8), color: Color(0x33000000))],
+        shadows: const [
+          BoxShadow(blurRadius: 18, offset: Offset(0, 8), color: Color(0x33000000))
+        ],
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       child: ClipRRect(
@@ -338,9 +389,12 @@ class _Chip extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(999),
-        boxShadow: const [BoxShadow(blurRadius: 8, offset: Offset(0, 2), color: Color(0x22000000))],
+        boxShadow: const [
+          BoxShadow(blurRadius: 8, offset: Offset(0, 2), color: Color(0x22000000))
+        ],
       ),
-      child: Text(text, style: TextStyle(color: c.primary, fontWeight: FontWeight.w700)),
+      child: Text(text,
+          style: TextStyle(color: c.primary, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -400,16 +454,24 @@ class _CardSections extends StatelessWidget {
             defaultVerticalAlignment: TableCellVerticalAlignment.top,
             children: [
               TableRow(children: [
-                _dl('CPF', cpf, _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
-                _dl('Matrícula', matricula, _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
+                _dl('CPF', cpf, _DigitalCardViewState.kLabelFont,
+                    _DigitalCardViewState.kValueFont),
+                _dl('Matrícula', matricula, _DigitalCardViewState.kLabelFont,
+                    _DigitalCardViewState.kValueFont),
               ]),
-              TableRow(children: [
+              const TableRow(children: [
                 SizedBox(height: _DigitalCardViewState.kGapBetweenGridRows),
                 SizedBox(height: _DigitalCardViewState.kGapBetweenGridRows),
               ]),
               TableRow(children: [
-                _dl('Sexo', sexoTxt.toUpperCase(), _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
-                _dl('Nascimento', (nascimento ?? '-'), _DigitalCardViewState.kLabelFont, _DigitalCardViewState.kValueFont),
+                _dl('Sexo', sexoTxt.toUpperCase(),
+                    _DigitalCardViewState.kLabelFont,
+                    _DigitalCardViewState.kValueFont),
+                _dl(
+                    'Nascimento',
+                    (nascimento ?? '-'),
+                    _DigitalCardViewState.kLabelFont,
+                    _DigitalCardViewState.kValueFont),
               ]),
             ],
           ),
@@ -422,7 +484,8 @@ class _CardSections extends StatelessWidget {
       padding: EdgeInsets.only(top: _DigitalCardViewState.kGapGridToToken),
       child: expired
           ? _tokenExpiredPill()
-          : _tokenLine(token: token, validoAte: validoAte, leftSeconds: leftSeconds),
+          : _tokenLine(
+          token: token, validoAte: validoAte, leftSeconds: leftSeconds),
     );
 
     // ======= SEÇÃO C: Texto institucional =======
@@ -454,7 +517,8 @@ class _CardSections extends StatelessWidget {
               backgroundColor: Colors.white,
               foregroundColor: const Color(0xFF143C8D),
               shape: const StadiumBorder(),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               elevation: 0,
             ),
             child: const Text('Sair'),
@@ -492,7 +556,9 @@ Widget _tokenExpiredPill() {
     decoration: BoxDecoration(
       color: const Color(0xFFE53935),
       borderRadius: BorderRadius.circular(12),
-      boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
+      boxShadow: const [
+        BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))
+      ],
     ),
     child: Text(
       'TOKEN EXPIRADO - FECHE E TENTE NOVAMENTE',
@@ -523,10 +589,15 @@ Widget _tokenLine({
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 4, offset: Offset(0, 2))],
+      boxShadow: const [
+        BoxShadow(color: Color(0x14000000), blurRadius: 4, offset: Offset(0, 2))
+      ],
     ),
     child: DefaultTextStyle(
-      style: TextStyle(color: Colors.black87, fontSize: _DigitalCardViewState.kTokenFont, height: 1.24),
+      style: TextStyle(
+          color: Colors.black87,
+          fontSize: _DigitalCardViewState.kTokenFont,
+          height: 1.24),
       child: Wrap(
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: 10,
@@ -562,8 +633,8 @@ Widget _disclaimerBig() {
   );
 
   return Text.rich(
-    TextSpan(
-      children: const [
+    const TextSpan(
+      children: [
         TextSpan(
           text:
           'Esta Carteirinha é pessoal e intransferível. Somente tem VALIDADE '
