@@ -37,12 +37,12 @@ class _ConsentDialogState extends State<ConsentDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Uso como Visitante'),
+      title: const Text('Termos de Uso do IpasemNH Digital'),
       content: SingleChildScrollView(
         child: ListBody(
           children: [
             const Text(
-              'Para continuar como visitante, confirme que leu e aceita a '
+              'Para continuar, confirme que leu e aceita a '
                   'Política de Privacidade e os Termos de Uso.',
               style: TextStyle(height: 1.35),
             ),
