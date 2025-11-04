@@ -1,8 +1,7 @@
 // lib/ui/components/exames_inline_status.dart
 import 'package:flutter/material.dart';
 
-import '../../config/app_config.dart';
-import '../../services/dev_api.dart';
+import '../../services/api_router.dart';
 import '../../services/session.dart';
 import '../../repositories/exames_repository.dart';
 import '../../models/exame.dart';
@@ -47,18 +46,14 @@ class _ExamesInlineStatusListState extends State<ExamesInlineStatusList> {
 
     _onStatusChanged = () => _refreshThrottle();
     AuthEvents.instance.exameStatusChanged.addListener(_onStatusChanged!);
+
+    // Inicializa o repositório já com o DevApi configurado via ApiRouter
+    _repo = ExamesRepository(ApiRouter.client());
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment(
-          'API_BASE',
-          defaultValue: 'https://assistweb.ipasemnh.com.br',
-        );
-    _repo = ExamesRepository(DevApi(baseUrl));
-
     if (_items.isEmpty && !_loading) {
       _load();
     }

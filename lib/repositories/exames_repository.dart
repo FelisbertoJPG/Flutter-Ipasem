@@ -1,28 +1,40 @@
 // lib/repositories/exames_repository.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/widgets.dart'; // BuildContext para fromContext
 
 import '../models/exame.dart';
 import '../services/dev_api.dart';
+import '../services/api_router.dart'; // resolve base via AppConfig/env
 import '../state/auth_events.dart';
 
 class ExamesRepository {
   ExamesRepository(this._api);
   final DevApi _api;
 
+  /// Usa a base do `AppConfig` do contexto atual (main ativo).
+  factory ExamesRepository.fromContext(BuildContext context) {
+    return ExamesRepository(ApiRouter.fromContext(context));
+  }
+
+  /// Usa `API_BASE` (ou PROD como fallback) quando não há contexto.
+  factory ExamesRepository.client({DevApi? api}) {
+    return ExamesRepository(api ?? ApiRouter.client());
+  }
+
   // --------------------------------- Constantes de status ---------------------------------
-  static const _stPendente  = 'P';
-  static const _stAprovado  = 'A';
-  static const _stImpresso  = 'R';
+  static const _stPendente   = 'P';
+  static const _stAprovado   = 'A';
+  static const _stImpresso   = 'R';
   static const _stIndeferido = 'I';
 
   // --------------------------------- Utilidades privadas ----------------------------------
 
-  /// Converte os campos `data_emissao` e `hora_emissao` (ou variações)
-  /// em `DateTime`. Aceita:
+  /// Converte os campos `data_emissao` e `hora_emissao` (ou variações) em `DateTime`.
+  /// Aceita:
   /// - "dd/MM/yyyy" com hora opcional "HH:mm" ou "HH:mm:ss"
   /// - "yyyy-MM-dd" com hora opcional "HH:mm" ou "HH:mm:ss"
-  /// - Casos em que a hora já veio “colada” na data (ex.: "dd/MM/yyyy HH:mm")
+  /// - Casos em que a hora já veio no mesmo campo da data (ex.: "dd/MM/yyyy HH:mm")
   DateTime _parseRowDate(Map<String, dynamic> j) {
     try {
       String d = (j['data_emissao'] ?? '').toString().trim();
@@ -279,8 +291,8 @@ class ExamesRepository {
   // --------------------------------- Conclusão (A -> R) ------------------------------------
 
   /// Marca a autorização como "R" (primeira impressão/conclusão).
-  /// Use **somente após** o PDF ter sido aberto com sucesso (app externo/navegador).
-  /// No backend, mapeia para `exame_concluir` → `SpConcluiAutorizacaoExamesRepository`.
+  /// Use **somente após** o PDF ter sido aberto com sucesso.
+  /// Backend: `exame_concluir` → `SpConcluiAutorizacaoExamesRepository`.
   Future<void> registrarPrimeiraImpressao(int numero) async {
     try {
       final res = await _api.postAction('exame_concluir', data: {'numero': numero});
@@ -304,7 +316,7 @@ class ExamesRepository {
         // ignore: avoid_print
         print('registrarPrimeiraImpressao falhou: $e');
       }
-      // Silencioso em erro genérico para não quebrar fluxos da UI.
+      // Silencioso em erro genérico para não quebrar a UI.
     }
   }
 }

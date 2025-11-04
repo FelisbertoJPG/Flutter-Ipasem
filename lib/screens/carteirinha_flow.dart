@@ -10,9 +10,9 @@ import '../ui/widgets/digital_card_view.dart';
 // Caso não exista, remova o import e deixe depId = 0 no fluxo.
 import 'carteirinha_beneficiary_sheet.dart';
 
-/// Ponto único de entrada a partir do HomeServicos.
+/// Ponto único de entrada a partir do Home/Serviços.
 /// - (Opcional) pergunta o beneficiário
-/// - emite o token via CarteirinhaService.emitir()
+/// - busca token ativo OU emite via CarteirinhaService
 /// - abre o cartão em overlay full-screen (sem bottom-sheet)
 Future<void> startCarteirinhaFlow(
     BuildContext context, {
@@ -31,15 +31,14 @@ Future<void> startCarteirinhaFlow(
     // sem sheet -> segue como titular (depId = 0)
   }
 
-  // 2) Emite token (com loader que SEMPRE fecha)
-  //    Usa a base API vinda do AppConfig (main ou main_local) sem alterar outros arquivos.
+  // 2) Obtém token (reaproveita ativo; senão emite)
   final svc = CarteirinhaService.fromContext(context);
   CardTokenData? data;
   String? errMsg;
 
   final closeLoader = await _showBlockingLoader(context); // abre sem travar
   try {
-    data = await svc.emitir(
+    data = await svc.obterAtivoOuEmitir(
       matricula: idMatricula,
       iddependente: depId.toString(),
     );
@@ -62,11 +61,6 @@ Future<void> startCarteirinhaFlow(
 
   // 3) Abre overlay full-screen (sem limitações de bottom-sheet)
   await _openDigitalCardOverlay(context, data);
-
-  // 4) (Opcional) agenda expurgo após exibir o cartão (silencioso)
-  try {
-    await svc.agendarExpurgo(data.dbToken);
-  } catch (_) {/* silencioso */}
 }
 
 typedef _Close = void Function();
@@ -119,7 +113,9 @@ Future<void> _openDigitalCardOverlay(
           sexoTxt: (info.sexoTxt ?? '—'),
           nascimento: info.nascimento,
           token: data.token,
+          dbToken: data.dbToken,                 // <— ESSENCIAL para revogar/expurgar
           expiresAtEpoch: data.expiresAtEpoch,
+          serverNowEpoch: data.serverNowEpoch,   // <— usa relógio do servidor
         );
       },
       transitionsBuilder: (_, anim, __, child) =>
@@ -128,12 +124,6 @@ Future<void> _openDigitalCardOverlay(
   );
 }
 
-/// Tela transparente que ocupa toda a viewport.
-/// REQUISITO: o MODAL deve rotacionar 90° em retrato.
-/// Implementação:
-/// - Em retrato: rotaciona o CONTEÚDO do modal em +90° (quarterTurns: 1)
-///   e depois escala para caber na viewport.
-/// - Em paisagem: mantém orientação natural.
 class _CarteirinhaOverlay extends StatefulWidget {
   final String nome;
   final String cpf;
@@ -141,7 +131,9 @@ class _CarteirinhaOverlay extends StatefulWidget {
   final String sexoTxt;
   final String? nascimento;
   final String token;
+  final int? dbToken;
   final int? expiresAtEpoch;
+  final int? serverNowEpoch;
 
   const _CarteirinhaOverlay({
     super.key,
@@ -152,6 +144,8 @@ class _CarteirinhaOverlay extends StatefulWidget {
     required this.nascimento,
     required this.token,
     required this.expiresAtEpoch,
+    this.dbToken,
+    this.serverNowEpoch,
   });
 
   @override
@@ -160,14 +154,34 @@ class _CarteirinhaOverlay extends StatefulWidget {
 
 class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
   bool _closing = false;
+  bool _revoked = false;
+
+  // Revoga apenas quando o usuário fecha.
+  Future<void> _revokeNow() async {
+    if (_revoked) return;
+    _revoked = true;
+
+    final id = widget.dbToken ?? 0;
+    if (id <= 0) return;
+
+    try {
+      final svc = CarteirinhaService.fromContext(context);
+      await svc.excluirToken(dbToken: id);
+    } catch (_) {
+      // Silencioso: o expurgo agendado pelo DigitalCardView cobre se necessário.
+    }
+  }
 
   void _close() {
     if (_closing) return;
     _closing = true;
-    final nav = Navigator.of(context, rootNavigator: true);
-    // Evita pop durante o build/animação.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (nav.canPop()) nav.pop();
+
+    // Dispara revogação (aguardando rapidamente para reduzir “tokens órfãos”).
+    _revokeNow().whenComplete(() {
+      final nav = Navigator.of(context, rootNavigator: true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (nav.canPop()) nav.pop();
+      });
     });
   }
 
@@ -180,7 +194,7 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
     final size = mq.size;
     final isPortrait = size.height >= size.width;
 
-    // Canvas de design fixo: dá base estável para o FittedBox escalar.
+    // Canvas de design fixo: base estável para o FittedBox escalar.
     const double baseW = 1280; // landscape
     const double baseH = 800;
 
@@ -193,12 +207,14 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
         matricula: widget.matricula,
         sexoTxt: widget.sexoTxt,
         nascimento: widget.nascimento,
-        token: widget.token,                 // <- usar widget.*, não data.*
+        token: widget.token,
+        dbToken: widget.dbToken,                   // <— DigitalCardView agenda expurgo
         expiresAtEpoch: widget.expiresAtEpoch,
+        serverNowEpoch: widget.serverNowEpoch,
         // Mantemos o card em layout horizontal; quem gira é o PAI (modal).
         forceLandscape: true,
         forceLandscapeOnWide: false,
-        onClose: _close, // <- fechamento centralizado e protegido
+        onClose: _close,
       ),
     );
 

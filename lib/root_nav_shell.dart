@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'config/app_config.dart';
+import 'services/api_router.dart';
 import 'services/dev_api.dart';
 import 'services/polling/exame_status_poller.dart';
 
@@ -55,11 +55,11 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
     super.didChangeDependencies();
 
     if (_poller == null) {
-      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-          ?? const String.fromEnvironment('API_BASE', defaultValue: 'https://assistweb.ipasemnh.com.br');
+      // Usa a configuração central (definida no main/main_local)
+      final DevApi api = ApiRouter.client();
 
       _poller = ExameStatusPoller(
-        api: DevApi(baseUrl),
+        api: api,
         contextProvider: () => context, // sempre não-nulo aqui
       );
       _poller!.start(); // async, não bloqueia o frame

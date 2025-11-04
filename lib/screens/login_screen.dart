@@ -1,12 +1,12 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
 import '../core/validators.dart';
 import '../repositories/auth_repository.dart';
-import '../services/dev_api.dart';
+import '../services/api_router.dart';        // <-- usa o roteador central
 import '../theme/colors.dart';
 import '../route_transitions.dart';
 import '../root_nav_shell.dart';
@@ -38,10 +38,8 @@ class _LoginScreenState extends State<LoginScreen> {
     super.didChangeDependencies();
     if (_controllerReady) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-
-    final repo = AuthRepository(DevApi(baseUrl));
+    // Cliente HTTP agora vem do ApiRouter
+    final repo = AuthRepository(ApiRouter.client());
     _c = LoginController(repo: repo, appConfig: AppConfig.maybeOf(context));
     _controllerReady = true;
 
@@ -53,10 +51,9 @@ class _LoginScreenState extends State<LoginScreen> {
     await _c.init();
     if (!mounted) return;
     if (_c.savedCpf.isNotEmpty) _cpfCtrl.text = _c.savedCpf;
-    if (_c.savedPassword.isNotEmpty) _pwdCtrl.text = _c.savedPassword; // aqui!
+    if (_c.savedPassword.isNotEmpty) _pwdCtrl.text = _c.savedPassword;
     setState(() {});
   }
-
 
   @override
   void dispose() {
@@ -93,8 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
     suffixIcon: suffix,
   );
 
-  void _snack(String m) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
@@ -206,7 +202,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 8),
 
-
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Row(
@@ -266,7 +261,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
 
-
                         const SizedBox(height: 8),
 
                         // ===== Botões
@@ -275,7 +269,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           builder: (_, busy, __) => Column(
                             children: [
                               SizedBox(
-                                width: double.infinity, height: 48,
+                                width: double.infinity,
+                                height: 48,
                                 child: FilledButton(
                                   style: FilledButton.styleFrom(
                                     backgroundColor: kBrand,
@@ -286,20 +281,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                   onPressed: busy ? null : _submit,
                                   child: busy
                                       ? const SizedBox(
-                                    width: 22, height: 22,
+                                    width: 22,
+                                    height: 22,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor:
-                                      AlwaysStoppedAnimation(Colors.white),
+                                      valueColor: AlwaysStoppedAnimation(Colors.white),
                                     ),
                                   )
-                                      : const Text('Logar',
-                                      style: TextStyle(fontWeight: FontWeight.w700)),
+                                      : const Text(
+                                    'Logar',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 10),
                               SizedBox(
-                                width: double.infinity, height: 48,
+                                width: double.infinity,
+                                height: 48,
                                 child: OutlinedButton(
                                   style: OutlinedButton.styleFrom(
                                     side: const BorderSide(color: kBrand, width: 1.5),

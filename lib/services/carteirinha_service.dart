@@ -23,6 +23,56 @@ class CarteirinhaService {
     return data; // {titular:{...}, dependentes:[...]}
   }
 
+  // ---------------------------------------------------------------------------
+  // Consulta/Emissão
+  // ---------------------------------------------------------------------------
+
+  /// Consulta token ativo (se houver) para (matrícula, dependente).
+  /// Retorna null se não existir ativo ou se estiver expirado/inválido.
+  Future<CardTokenData?> consultarAtivo({
+    required int matricula,
+    String iddependente = '0',
+  }) async {
+    try {
+      final map = await api.carteirinhaConsultarAtivo(
+        matricula: matricula,
+        iddependente: iddependente,
+      );
+      if (map is! Map<String, dynamic>) return null;
+
+      final data = CardTokenData.fromMap(map);
+
+      // dbToken pode variar (int ou int? dependendo do teu model). Normalize:
+      final int dbTok = (data as dynamic).dbToken as int? ?? 0;
+      if (data.token.isEmpty || dbTok <= 0) return null;
+
+      if (data.expiresAtEpoch != null) {
+        final left = data.secondsLeft();
+        if (left <= 0) return null;
+      }
+      return data;
+    } on DioException catch (e) {
+      // Trate 404/rota ausente/sem ativo como “não há”.
+      if (e.response?.statusCode == 404) return null;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Reaproveita o token ativo; se não houver, emite outro.
+  Future<CardTokenData> obterAtivoOuEmitir({
+    required int matricula,
+    String iddependente = '0',
+  }) async {
+    final ativo = await consultarAtivo(
+      matricula: matricula,
+      iddependente: iddependente,
+    );
+    if (ativo != null) return ativo;
+    return emitir(matricula: matricula, iddependente: iddependente);
+  }
+
   /// Emite o token (rota mapeada no gateway).
   Future<CardTokenData> emitir({
     required int matricula,
@@ -33,27 +83,111 @@ class CarteirinhaService {
         matricula: matricula,
         iddependente: iddependente,
       );
+
+      // Validação leve do envelope antes do parse.
+      if (map is! Map<String, dynamic>) {
+        throw CarteirinhaException(
+          code: 'CARD_INVALID_RESPONSE',
+          message: 'Resposta inválida da emissão.',
+          status: 200,
+        );
+      }
+
       return CardTokenData.fromMap(map);
     } on DioException catch (e) {
-      final body = (e.response?.data is Map) ? e.response!.data as Map : const {};
-      final err = (body['error'] as Map?) ?? const {};
+      final res = e.response;
+      final status = res?.statusCode;
+
+      Map<String, dynamic> errMap = const {};
+      if (res?.data is Map) {
+        final body = (res!.data as Map).cast<String, dynamic>();
+        if (body['error'] is Map) {
+          errMap = (body['error'] as Map).cast<String, dynamic>();
+        } else if (body['ok'] == false && body['message'] is String) {
+          errMap = {
+            'code': body['code'] ?? 'CARD_ISSUE_ERROR',
+            'message': body['message'],
+            'details': body['details'],
+            'eid': body['eid'],
+          };
+        }
+      }
+
+      String fallbackCode;
+      String fallbackMsg;
+      switch (e.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.sendTimeout:
+          fallbackCode = 'TIMEOUT';
+          fallbackMsg = 'Tempo de resposta excedido.';
+          break;
+        case DioExceptionType.connectionError:
+          fallbackCode = 'NETWORK';
+          fallbackMsg = 'Falha de conexão com o servidor.';
+          break;
+        case DioExceptionType.badResponse:
+          fallbackCode = 'CARD_ISSUE_ERROR';
+          fallbackMsg = status == 404
+              ? 'Endpoint de emissão indisponível (404).'
+              : 'Falha ao emitir.';
+          break;
+        default:
+          fallbackCode = 'CARD_ISSUE_ERROR';
+          fallbackMsg = 'Falha ao emitir.';
+      }
+
       throw CarteirinhaException(
-        code: '${err['code'] ?? 'CARD_ISSUE_ERROR'}',
-        message: '${err['message'] ?? 'Falha ao emitir.'}',
-        details: err['details']?.toString(),
-        eid: err['eid']?.toString(),
-        status: e.response?.statusCode,
+        code: '${errMap['code'] ?? fallbackCode}',
+        message: '${errMap['message'] ?? fallbackMsg}',
+        details: errMap['details']?.toString(),
+        eid: errMap['eid']?.toString(),
+        status: status,
+      );
+    } catch (e) {
+      throw CarteirinhaException(
+        code: 'CARD_ISSUE_ERROR',
+        message: 'Erro inesperado ao emitir.',
+        details: e.toString(),
       );
     }
   }
 
-  /// Agenda o expurgo (202 Accepted quando ok).
-  Future<void> agendarExpurgo(int dbToken) =>
-      api.carteirinhaAgendarExpurgo(dbToken: dbToken);
+  // ---------------------------------------------------------------------------
+  // Manutenção
+  // ---------------------------------------------------------------------------
 
+  /// Agenda o expurgo (202 Accepted quando ok). No-op se dbToken inválido.
+  Future<void> agendarExpurgo(int? dbToken) async {
+    // <<< FIX do warning de nullability
+    final v = dbToken ?? 0;
+    if (v <= 0) return;
+    await api.carteirinhaAgendarExpurgo(dbToken: v);
+  }
+
+  /// Exclui imediatamente o token (fallback da view ao expirar).
+  /// Aceita db_token OU token simples, conforme o gateway.
+  Future<void> excluirToken({int? dbToken, int? token}) async {
+    final d = dbToken ?? 0;
+    if (d > 0) {
+      await api.carteirinhaExcluir(dbToken: d);
+      return;
+    }
+    final t = token ?? 0;
+    if (t > 0) {
+      // Se o gateway aceitar "token" puro, troque por api.carteirinhaExcluirToken(token: t)
+      await api.carteirinhaExcluir(dbToken: t);
+    }
+  }
+
+  /// Alias legado (mantido para compatibilidade).
+  Future<void> excluir(int dbToken) => excluirToken(dbToken: dbToken);
+
+  /// Valida o token atual (tipicamente: {expired: bool, expires_at_ts: int}).
   Future<Map<String, dynamic>> validar({int? dbToken, int? token}) =>
       api.carteirinhaValidar(dbToken: dbToken, token: token);
 
+  /// Consulta o status do agendamento de expurgo.
   Future<CardScheduleStatus> statusAgendamento(int dbToken) async {
     final m = await api.carteirinhaAgendarStatus(dbToken: dbToken);
     return CardScheduleStatus.fromMap(m);

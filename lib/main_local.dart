@@ -32,13 +32,11 @@ import 'services/polling/exame_bg_worker.dart';
 // =================================================================
 import 'services/api_router.dart';
 
-
 // Base local: por padrão .98; pode sobrescrever com --dart-define=API_BASE=http://host
 const String kLocalBase = String.fromEnvironment(
   'API_BASE',
   defaultValue: 'http://192.9.200.98',
 );
-
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,7 +62,18 @@ Future<void> main() async {
   // Bridge de notificações: idempotente (no Web vira no-op)
   await NotificationBridge.I.attach();
 
-  // Agenda worker apenas fora do Web
+  // Parâmetros do app (sem dados sensíveis)
+  final params = AppParams(
+    baseApiUrl: kLocalBase,
+    passwordMinLength: 4,
+    firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
+  );
+
+  // === Fonte única de verdade ===
+  ApiRouter.configure(params.baseApiUrl);
+  await ApiRouter.persistToPrefs(); // <- garante que o worker verá a mesma base
+
+  // Agenda worker apenas fora do Web (após persistir a base)
   if (!kIsWeb) {
     await Workmanager().initialize(
       exameBgDispatcher, // @pragma('vm:entry-point')
@@ -81,15 +90,6 @@ Future<void> main() async {
       backoffPolicyDelay: const Duration(minutes: 5),
     );
   }
-
-  // Parâmetros do app (sem dados sensíveis)
-  final params = AppParams(
-    baseApiUrl: kLocalBase,
-    passwordMinLength: 4,
-    firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
-  );
-  ApiRouter.configure(params.baseApiUrl); // <- única fonte de verdade
-
 
   runApp(
     AppConfig(

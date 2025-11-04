@@ -57,7 +57,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.didChangeDependencies();
     if (!_depsReady) {
       final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-          ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+          ?? const String.fromEnvironment(
+            'API_BASE',
+            defaultValue: 'https://assistweb.ipasemnh.com.br',
+          );
       _depsRepo = DependentsRepository(DevApi(baseUrl));
       _depsReady = true;
     }
@@ -267,35 +270,39 @@ class _UserDataBlocks extends StatelessWidget {
               padding:
               EdgeInsets.all(inPad), // respiro dentro da borda interna
               child: Column(
-                children: const [
+                children: [
                   _InfoRow(
                     icon: Icons.badge_outlined,
                     label: 'Nome completo',
-                    valueKey: _InfoValueKey.nome,
+                    value: profile.nome,
                   ),
-                  _InsetDivider(),
+                  const _InsetDivider(),
                   _InfoRow(
                     icon: Icons.credit_card_outlined,
                     label: 'CPF',
-                    valueKey: _InfoValueKey.cpf,
+                    value: fmtCpf(profile.cpf),
                   ),
-                  _InsetDivider(),
+                  const _InsetDivider(),
                   _InfoRow(
                     icon: Icons.confirmation_number_outlined,
                     label: 'Matrícula',
-                    valueKey: _InfoValueKey.matricula,
+                    value: profile.id.toString(),
                   ),
-                  _InsetDivider(),
+                  const _InsetDivider(),
                   _InfoRow(
                     icon: Icons.mail_outline,
                     label: 'E-mail',
-                    valueKey: _InfoValueKey.email1,
+                    value: (profile.email?.trim().isNotEmpty ?? false)
+                        ? profile.email!
+                        : '—',
                   ),
-                  _InsetDivider(),
+                  const _InsetDivider(),
                   _InfoRow(
                     icon: Icons.alternate_email_outlined,
                     label: 'E-mail 2',
-                    valueKey: _InfoValueKey.email2,
+                    value: (profile.email2?.trim().isNotEmpty ?? false)
+                        ? profile.email2!
+                        : '—',
                   ),
                 ],
               ),
@@ -329,45 +336,19 @@ class _InsetDivider extends StatelessWidget {
   }
 }
 
-/// Chaves para sabermos qual valor renderizar dentro do _InfoRow
-enum _InfoValueKey { nome, cpf, matricula, email1, email2 }
-
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
-  final _InfoValueKey valueKey;
+  final String value;
 
   const _InfoRow({
     required this.icon,
     required this.label,
-    required this.valueKey,
+    required this.value,
   });
 
   @override
   Widget build(BuildContext context) {
-    // pega o Profile “para renderizar” sem propagar tudo no construtor
-    final inherited = context.findAncestorWidgetOfExactType<_UserDataBlocks>()!;
-    final p = inherited.profile;
-
-    String value;
-    switch (valueKey) {
-      case _InfoValueKey.nome:
-        value = p.nome;
-        break;
-      case _InfoValueKey.cpf:
-        value = fmtCpf(p.cpf);
-        break;
-      case _InfoValueKey.matricula:
-        value = p.id.toString();
-        break;
-      case _InfoValueKey.email1:
-        value = p.email?.trim().isNotEmpty == true ? p.email! : '—';
-        break;
-      case _InfoValueKey.email2:
-        value = p.email2?.trim().isNotEmpty == true ? p.email2! : '—';
-        break;
-    }
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
