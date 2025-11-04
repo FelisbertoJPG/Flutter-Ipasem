@@ -23,6 +23,56 @@ class CarteirinhaService {
     return data; // {titular:{...}, dependentes:[...]}
   }
 
+  // ---------------------------------------------------------------------------
+  // Consulta/Emissão
+  // ---------------------------------------------------------------------------
+
+  /// Consulta token ativo (se houver) para (matrícula, dependente).
+  /// Retorna null se não existir ativo ou se estiver expirado/inválido.
+  Future<CardTokenData?> consultarAtivo({
+    required int matricula,
+    String iddependente = '0',
+  }) async {
+    try {
+      final map = await api.carteirinhaConsultarAtivo(
+        matricula: matricula,
+        iddependente: iddependente,
+      );
+      if (map is! Map<String, dynamic>) return null;
+
+      final data = CardTokenData.fromMap(map);
+
+      // dbToken pode variar (int ou int? dependendo do teu model). Normalize:
+      final int dbTok = (data as dynamic).dbToken as int? ?? 0;
+      if (data.token.isEmpty || dbTok <= 0) return null;
+
+      if (data.expiresAtEpoch != null) {
+        final left = data.secondsLeft();
+        if (left <= 0) return null;
+      }
+      return data;
+    } on DioException catch (e) {
+      // Trate 404/rota ausente/sem ativo como “não há”.
+      if (e.response?.statusCode == 404) return null;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Reaproveita o token ativo; se não houver, emite outro.
+  Future<CardTokenData> obterAtivoOuEmitir({
+    required int matricula,
+    String iddependente = '0',
+  }) async {
+    final ativo = await consultarAtivo(
+      matricula: matricula,
+      iddependente: iddependente,
+    );
+    if (ativo != null) return ativo;
+    return emitir(matricula: matricula, iddependente: iddependente);
+  }
+
   /// Emite o token (rota mapeada no gateway).
   Future<CardTokenData> emitir({
     required int matricula,
@@ -103,28 +153,30 @@ class CarteirinhaService {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Manutenção
+  // ---------------------------------------------------------------------------
+
   /// Agenda o expurgo (202 Accepted quando ok). No-op se dbToken inválido.
   Future<void> agendarExpurgo(int? dbToken) async {
-    if (dbToken == null || dbToken <= 0) return;
-    await api.carteirinhaAgendarExpurgo(dbToken: dbToken);
+    // <<< FIX do warning de nullability
+    final v = dbToken ?? 0;
+    if (v <= 0) return;
+    await api.carteirinhaAgendarExpurgo(dbToken: v);
   }
 
   /// Exclui imediatamente o token (fallback da view ao expirar).
   /// Aceita db_token OU token simples, conforme o gateway.
   Future<void> excluirToken({int? dbToken, int? token}) async {
-    // Seu DevApi já expõe `carteirinhaExcluir(dbToken: ...)`. Reutilizamos.
-    // Se você também criar `carteirinhaExcluirToken(dbToken:..., token:...)`,
-    // pode trocar a chamada aqui sem impacto no resto do app.
-    if (dbToken != null && dbToken > 0) {
-      await api.carteirinhaExcluir(dbToken: dbToken);
+    final d = dbToken ?? 0;
+    if (d > 0) {
+      await api.carteirinhaExcluir(dbToken: d);
       return;
     }
-    // Se quiser suportar exclusão por "token" numérico puro:
-    if (token != null && token > 0) {
-      // Opcional: crie um método no DevApi que aceite token simples, ex.:
-      // await api.carteirinhaExcluirToken(token: token);
-      // Como fallback, tente tratar como dbToken.
-      await api.carteirinhaExcluir(dbToken: token);
+    final t = token ?? 0;
+    if (t > 0) {
+      // Se o gateway aceitar "token" puro, troque por api.carteirinhaExcluirToken(token: t)
+      await api.carteirinhaExcluir(dbToken: t);
     }
   }
 
