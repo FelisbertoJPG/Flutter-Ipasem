@@ -6,11 +6,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_config.dart';
 import '../core/validators.dart';
 import '../repositories/auth_repository.dart';
-import '../services/api_router.dart';        // <-- usa o roteador central
+import '../services/api_router.dart';        // roteador HTTP central
 import '../theme/colors.dart';
 import '../route_transitions.dart';
 import '../root_nav_shell.dart';
+
 import '../ui/components/consent_dialog.dart';
+import '../data/consent_store.dart';
+
 import 'privacidade_screen.dart';
 import 'termos_screen.dart';
 
@@ -24,6 +27,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const bool _visitorTemporarilyDisabled = true;
+
   final _formKey = GlobalKey<FormState>();
   final _cpfCtrl = TextEditingController();
   final _pwdCtrl = TextEditingController();
@@ -33,17 +38,20 @@ class _LoginScreenState extends State<LoginScreen> {
   late LoginController _c;
   bool _controllerReady = false;
 
+  // Evita navegação duplicada (toques repetidos).
+  bool _navigatingToApp = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_controllerReady) return;
 
-    // Cliente HTTP agora vem do ApiRouter
+    // Cliente HTTP via ApiRouter
     final repo = AuthRepository(ApiRouter.client());
     _c = LoginController(repo: repo, appConfig: AppConfig.maybeOf(context));
     _controllerReady = true;
 
-    // restaura prefs (NÃO navega)
+    // Restaura prefs (NÃO navega)
     _restoreFromController();
   }
 
@@ -66,12 +74,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _goToApp() async {
+    if (_navigatingToApp) return;
+    _navigatingToApp = true;
     FocusScope.of(context).unfocus();
+
+    // Remove TODAS as rotas e abre a RootNavShell "única".
     await pushAndRemoveAllSharedAxis(
       context,
       const RootNavShell(),
       type: SharedAxisTransitionType.vertical,
     );
+
+    _navigatingToApp = false;
   }
 
   InputDecoration _deco(String label, {String? hint, Widget? suffix}) => InputDecoration(
@@ -92,13 +106,40 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
+  /// Garante aceite dos Termos/Privacidade ANTES do login.
+  Future<bool> _ensureTermsForLogin() async {
+    if (await ConsentStore.isAccepted()) return true;
+
+    final accepted = await ConsentDialog.show(
+      context,
+      onOpenPrivacy: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const PrivacidadeScreen(minimal: true)),
+      ),
+      onOpenTerms: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const TermosScreen(minimal: true)),
+      ),
+    );
+
+    if (accepted == true) {
+      await ConsentStore.setAccepted(true);
+      return true;
+    }
+    _snack('É necessário aceitar os termos para continuar.');
+    return false;
+  }
+
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    // Termos no ato do login
+    if (!await _ensureTermsForLogin()) return;
+
     final (outcome, message) = await _c.submit(
       rawCpfDigits: _cpfCtrl.text.replaceAll(RegExp(r'\D'), ''),
       password: _pwdCtrl.text,
     );
     if (!mounted) return;
+
     switch (outcome) {
       case LoginOutcome.success:
         await _goToApp();
@@ -112,19 +153,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _continueAsGuest() async {
-    final ok = await ConsentDialog.show(
-      context,
-      onOpenPrivacy: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const PrivacidadeScreen(minimal: true)),
-      ),
-      onOpenTerms: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TermosScreen(minimal: true)),
-      ),
-    );
-    if (ok != true) return;
-
-    final (outcome, _) = await _c.continueAsGuest();
-    if (outcome == LoginOutcome.guest && mounted) await _goToApp();
+    // Temporariamente desabilitado para evitar empilhamento de shells/sessões.
+    _snack('Acesso como visitante temporariamente desabilitado.');
   }
 
   Future<void> _openFirstAccess() async {
@@ -220,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           final b = v ?? false;
                                           await _c.setStaySignedIn(b); // salva staySignedIn e limpa senha se desmarcar
                                           await _c.setRememberCpf(b);  // sincroniza CPF
-                                          setState(() {});
+                                          if (mounted) setState(() {});
                                         },
                                       ),
                                     ),
@@ -237,7 +267,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
 
-                              // Direita: link compacto que não força overflow
+                              // Direita: link compacto
                               Flexible(
                                 child: Align(
                                   alignment: Alignment.centerRight,
@@ -295,6 +325,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                               const SizedBox(height: 10),
+
+                              // Visitante temporariamente desabilitado
                               SizedBox(
                                 width: double.infinity,
                                 height: 48,
@@ -306,13 +338,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  onPressed: busy ? null : _continueAsGuest,
+                                  onPressed: (busy || _visitorTemporarilyDisabled) ? null : _continueAsGuest,
                                   child: const Text(
                                     'Entrar como Visitante',
                                     style: TextStyle(fontWeight: FontWeight.w700),
                                   ),
                                 ),
                               ),
+                              if (_visitorTemporarilyDisabled) ...[
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Acesso como visitante desabilitado temporariamente para correção de estabilidade.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 12, color: Color(0xFF475467)),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -331,7 +371,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   child: const Text(
                     'Use seu CPF e senha cadastrados. Caso seja seu primeiro acesso, '
-                        'clique em “Primeiro Acesso?” para criar/recuperar sua senha.',
+                        'clique em “Primeiro Acesso?” para criar/recuperar sua senha. '
+                        'Ao prosseguir com o login, você deverá aceitar os Termos de Uso e a Política de Privacidade.',
                     style: TextStyle(color: Color(0xFF475467)),
                   ),
                 ),
