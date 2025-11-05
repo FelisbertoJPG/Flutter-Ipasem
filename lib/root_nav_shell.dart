@@ -125,6 +125,18 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
     return nav.pushNamed<T>(name, arguments: arguments);
   }
 
+  /// NOVO: empurra uma rota no Navigator **raiz** (fora do Navigator das abas).
+  Future<T?> _pushRootNamed<T>(
+      String routeName, {
+        Object? arguments,
+      }) {
+    // Use microtask para não colidir com animação/fechamento de Drawer/Sheets.
+    return Future.microtask(() {
+      return Navigator.of(context, rootNavigator: true)
+          .pushNamed<T>(routeName, arguments: arguments);
+    });
+  }
+
   Future<bool> _handleSystemBack() async {
     final currentNav = _tabKeys[_currentIndex]!.currentState!;
     if (currentNav.canPop()) {
@@ -261,6 +273,8 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
         currentIndex: _currentIndex,
         pushInServicos: _pushInServicos,
         safeBack: _safeBack,
+        // NOVO: injeta a função para empurrar rotas no Navigator raiz
+        pushRootNamed: _pushRootNamed,
         child: Scaffold(
           body: PageView(
             controller: _pageController,
@@ -377,6 +391,7 @@ class RootNavScope extends InheritedWidget {
     required this.currentIndex,
     required this.pushInServicos,
     required this.safeBack,
+    required this.pushRootNamed, // NOVO
     required super.child,
   });
 
@@ -392,9 +407,14 @@ class RootNavScope extends InheritedWidget {
   /// Exposto para um “voltar com fallback” consistente (opcional).
   final Future<void> Function() safeBack;
 
+  /// NOVO: empurra uma rota no Navigator raiz (fora da shell/abas).
+  final Future<T?> Function<T>(
+      String routeName, {
+      Object? arguments,
+      }) pushRootNamed;
+
   static RootNavScope? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<RootNavScope>();
-    // ignore: unreachable_code
   }
 
   @override
