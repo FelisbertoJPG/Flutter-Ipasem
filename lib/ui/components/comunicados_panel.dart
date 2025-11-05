@@ -1,3 +1,5 @@
+// lib/ui/components/comunicados_panel.dart
+
 import 'package:flutter/material.dart';
 import '../../core/models.dart'; // ComunicadoResumo
 
@@ -27,7 +29,7 @@ class ComunicadosPanel extends StatelessWidget {
         else if (error != null)
           Text(error!, style: const TextStyle(color: Colors.red))
         else if (items.isEmpty)
-            const Text('Sem comunicados Publicados') // <-- fallback pedido
+            const Text('Sem comunicados publicados')
           else
             Column(
               children: [
@@ -64,12 +66,18 @@ class _ComunicadoItem extends StatelessWidget {
   const _ComunicadoItem({required this.item});
   final ComunicadoResumo item;
 
+  String _fmtBR(DateTime dt) {
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final y = dt.year.toString();
+    return '$d/$m/$y';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final data = item.data; // DateTime
-    final dataTxt = data != null
-        ? '${data.day.toString().padLeft(2, '0')}/${data.month.toString().padLeft(2, '0')}/${data.year}'
-        : '—';
+    // Fallback caso a data venha nula do backend
+    final when = item.data ?? DateTime.now();
+    final dataTxt = _fmtBR(when);
 
     return ListTile(
       dense: true,

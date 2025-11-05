@@ -1,7 +1,7 @@
 // lib/ui/components/comunicados_card.dart
 import 'package:flutter/material.dart';
 
-import '../../core/formatters.dart';          // fmtData
+import '../../core/formatters.dart';          // fmtData(DateTime)
 import '../../core/models.dart';              // ComunicadoResumo
 import 'section_card.dart';
 import 'loading_placeholder.dart';
@@ -83,6 +83,14 @@ class _ComTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Garantir DateTime não-nulo para fmtData(DateTime)
+    final when = item.data ?? DateTime.now();
+    final dateTxt = fmtData(when);
+
+    // Evitar "•" solto quando descrição estiver vazia/nula
+    final desc = (item.descricao ?? '').trim();
+    final subtitle = desc.isEmpty ? dateTxt : '$dateTxt • $desc';
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -106,7 +114,7 @@ class _ComTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${fmtData(item.data)} • ${item.descricao}',
+                      subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: Color(0xFF667085), fontSize: 12.5, height: 1.15),

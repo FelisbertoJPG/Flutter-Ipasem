@@ -69,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen>
       final DevApi api = ApiRouter.client();
 
       final depsRepo = DependentsRepository(api);
-      final comRepo  = const ComunicadosRepository();
+      final comRepo  = ComunicadosRepository();
       _exRepo        = ExamesRepository(api); // NOVO
 
       _ctrl = HomeController(
