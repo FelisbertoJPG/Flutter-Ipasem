@@ -124,9 +124,18 @@ class _AppDrawer extends StatelessWidget {
   }
 
   void _goRoute(BuildContext context, String routeName) {
+    // Fecha o Drawer e empurra a rota no Navigator raiz
     Navigator.of(context).pop();
-    if (ModalRoute.of(context)?.settings.name != routeName) {
-      Navigator.of(context).pushNamed(routeName);
+    final shell = RootNavShell.maybeOf(context);
+
+    if (shell != null) {
+      // Usa o helper exposto pela Shell (abre fora das abas)
+      shell.pushRootNamed(routeName);
+    } else {
+      // Fallback direto no rootNavigator
+      Future.microtask(() {
+        Navigator.of(context, rootNavigator: true).pushNamed(routeName);
+      });
     }
   }
 

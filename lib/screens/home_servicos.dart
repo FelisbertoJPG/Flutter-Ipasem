@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+
 
 import '../root_nav_shell.dart';
 import '../ui/app_shell.dart';
@@ -295,7 +297,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       QuickActionItem(
         id: 'aut_exames',
         label: 'Autorização de Exames',
-        icon: FontAwesomeIcons.xRay,
+        icon: Icons.monitor_heart,
         onTap: () {
           final scope = RootNavShell.maybeOf(context);
           if (scope != null) {

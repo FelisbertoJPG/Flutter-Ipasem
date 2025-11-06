@@ -191,7 +191,6 @@ class _ExamTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           child: Row(
             children: [
-              const Icon(Icons.biotech_outlined, size: 22, color: Color(0xFF344054)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

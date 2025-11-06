@@ -114,7 +114,7 @@ class _ExamesInlineStatusListState extends State<ExamesInlineStatusList> {
       children: [
         Row(
           children: const [
-            Icon(Icons.science_outlined, size: 20, color: Color(0xFF344054)),
+            Icon(Icons.monitor_heart, size: 20, color: Color(0xFF344054)),
             SizedBox(width: 8),
             Text('Exames', style: TextStyle(fontWeight: FontWeight.w800)),
           ],
