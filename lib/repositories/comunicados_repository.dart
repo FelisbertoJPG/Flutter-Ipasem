@@ -1,62 +1,52 @@
-// lib/features/comunicados/comunicados_repository.dart
-
 import 'dart:async';
-import '../api/api_myadmin.dart' show ApiMyAdmin, Comunicado;
+
 import '../core/models.dart' show ComunicadoResumo;
+import '../api/cards_page_scraper.dart';
 
 class ComunicadosRepository {
-  // Cliente interno (injeta default se não for passado)
-  final ApiMyAdmin _api;
+  final CardsPageScraper _scraper;
 
-  // >>> MODO COMPATÍVEL: permite chamar ComunicadosRepository() sem args
-  // Ajuste o BASE/PATH conforme seu ambiente.
-  static const String _kDefaultBase = 'http://192.9.200.98:81';
-  static const String _kDefaultPath = '/api-dev.php';
+  ComunicadosRepository([CardsPageScraper? scraper])
+      : _scraper = scraper ?? const CardsPageScraper();
 
-  ComunicadosRepository([ApiMyAdmin? api])
-      : _api = api ?? ApiMyAdmin(_kDefaultBase, apiPath: _kDefaultPath);
-
-  /// NOVO: lista publicados com filtros opcionais
+  /// Lê a página HTML dos cards e converte para ComunicadoResumo.
   Future<List<ComunicadoResumo>> listPublicados({
-    int limit = 10,
+    int limit = 6,
     String? categoria,
-    String? q,
+    String? q, // usa-se como 'tag' opcional na URL (o HTML já filtra no servidor, se implementado)
   }) async {
-    final list = await _api.listarComunicados(
+    final rows = await _scraper.fetch(
       limit: limit,
       categoria: categoria,
-      q: q,
+      tag: q,
     );
 
-    // Mantém o mapping centralizado neste repositório para não quebrar o core/models.dart
-    return list.map(_mapToResumo).toList();
+    // Mapeia para o view-model leve da UI.
+    return rows.map((c) {
+      final descricao = (c.resumo != null && c.resumo!.trim().isNotEmpty)
+          ? c.resumo!.trim()
+          : _firstLines(_stripHtml(c.corpoHtml ?? ''), 160);
+
+      return ComunicadoResumo(
+        id: 0, // não há ID disponível no HTML dos cards
+        titulo: c.titulo,
+        descricao: descricao.isEmpty ? null : descricao,
+        data: c.publicadoEm,
+      );
+    }).toList(growable: false);
   }
 
-  /// COMPAT: alias para não quebrar chamadas antigas
-  Future<List<ComunicadoResumo>> fetchResumos({int limit = 10}) {
+  /// Alias compatível com código antigo.
+  Future<List<ComunicadoResumo>> fetchResumos({int limit = 6}) {
     return listPublicados(limit: limit);
   }
 
-  Future<Comunicado> getDetalhe(int id) => _api.obterComunicado(id);
-
-  // ---- helpers ----
-  static ComunicadoResumo _mapToResumo(Comunicado c) {
-    // Preferir resumo curto; se vier nulo, usar primeiras linhas do corpo.
-    final desc = (c.resumo != null && c.resumo!.trim().isNotEmpty)
-        ? c.resumo!.trim()
-        : _firstLines(c.corpo, 160);
-
-    return ComunicadoResumo(
-      id: c.id,
-      titulo: c.titulo,
-      descricao: desc,
-      data: c.publicadoEm, // pode ser null; UI lida com fallback
-    );
-  }
+  // Helpers
+  static String _stripHtml(String html) =>
+      html.replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
   static String _firstLines(String s, int max) {
-    final t = s.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (t.length <= max) return t;
-    return t.substring(0, max).trimRight() + '…';
+    if (s.length <= max) return s;
+    return s.substring(0, max).trimRight() + '…';
   }
 }

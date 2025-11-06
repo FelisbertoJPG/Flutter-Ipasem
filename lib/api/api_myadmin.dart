@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode, debugPrint;
+
 import '../services/redacting_log_interceptor.dart';
 
 class ApiMyAdmin {
@@ -22,7 +23,7 @@ class ApiMyAdmin {
         _tokenProvider = tokenProvider,
         _formUrlEncoded = formUrlEncoded;
 
-  String get endpoint => '$_base$_apiPath';
+    String get endpoint => '$_base$_apiPath';
   void setSessionToken(String? token) => _sessionToken = token;
 
   Dio _dio() {
@@ -33,9 +34,8 @@ class ApiMyAdmin {
         receiveTimeout: const Duration(seconds: 20),
         responseType: ResponseType.json,
         headers: {
-          Headers.contentTypeHeader: _formUrlEncoded
-              ? Headers.formUrlEncodedContentType
-              : Headers.jsonContentType,
+          Headers.contentTypeHeader:
+          _formUrlEncoded ? Headers.formUrlEncodedContentType : Headers.jsonContentType,
         },
       ),
     );
@@ -86,6 +86,35 @@ class ApiMyAdmin {
     );
   }
 
+  // --------- util de parsing robusto ---------
+  List<dynamic> _extractList(dynamic body) {
+    if (body is Map) {
+      final data = body['data'];
+      if (data is List) return data;
+      if (data is Map) {
+        final cand = data['rows'] ?? data['items'] ?? data['list'] ?? data['data'];
+        if (cand is List) return cand;
+        // Alguns backends mandam um único objeto; padronizamos como lista 1
+        final single = data['item'];
+        if (single is Map) return [single];
+      }
+    }
+    return const <dynamic>[];
+  }
+
+  Map<String, dynamic> _extractItem(dynamic body) {
+    if (body is Map) {
+      final data = body['data'];
+      if (data is Map) {
+        // aceita data.item ou o próprio data como item
+        final item = data['item'];
+        if (item is Map) return item.cast<String, dynamic>();
+        return data.cast<String, dynamic>();
+      }
+    }
+    throw StateError('Resposta inválida: não foi possível extrair o item.');
+  }
+
   // ===== Básico
   Future<Map<String, dynamic>> ping() async {
     final r = await _postAction<Map<String, dynamic>>('ping', data: const {});
@@ -97,7 +126,7 @@ class ApiMyAdmin {
     return (r.data ?? const <String, dynamic>{});
   }
 
-  // ===== Comunicados
+  // ===== Comunicados (gateway por ação)
   Future<List<Comunicado>> listarComunicados({
     int limit = 20,
     int offset = 0,
@@ -111,16 +140,15 @@ class ApiMyAdmin {
       if (q != null && q.isNotEmpty) 'q': q,
     };
 
-    final res =
-    await _postAction<Map<String, dynamic>>('comunicados', data: payload);
+    final res = await _postAction<Map<String, dynamic>>('comunicados', data: payload);
     final body = (res.data ?? const <String, dynamic>{});
+
     if (body['ok'] == true) {
-      final data = (body['data'] as Map?) ?? const {};
-      final rows = (data['rows'] as List?) ?? const [];
+      final rows = _extractList(body);
       return rows
-          .cast<Map>()
+          .whereType<Map>()
           .map((e) => Comunicado.fromMap(e.cast<String, dynamic>()))
-          .toList();
+          .toList(growable: false);
     }
 
     throw DioException(
@@ -132,15 +160,11 @@ class ApiMyAdmin {
   }
 
   Future<Comunicado> obterComunicado(int id) async {
-    final res =
-    await _postAction<Map<String, dynamic>>('comunicado', data: {'id': id});
+    final res = await _postAction<Map<String, dynamic>>('comunicado', data: {'id': id});
     final body = (res.data ?? const <String, dynamic>{});
+
     if (body['ok'] == true) {
-      final data = (body['data'] as Map?) ?? const {};
-      final item = (data['item'] as Map?)?.cast<String, dynamic>();
-      if (item == null) {
-        throw StateError('Resposta sem item.');
-      }
+      final item = _extractItem(body);
       return Comunicado.fromMap(item);
     }
 
@@ -180,7 +204,7 @@ class Comunicado {
     DateTime? _parseDate(String? iso) {
       if (iso == null || iso.isEmpty) return null;
       final d = DateTime.tryParse(iso);
-      return d?.toLocal(); // <-- garante horário local
+      return d?.toLocal();
     }
 
     return Comunicado(

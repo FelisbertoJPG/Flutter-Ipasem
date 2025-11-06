@@ -6,7 +6,7 @@ import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
 import '../repositories/dependents_repository.dart';
 import '../repositories/comunicados_repository.dart';
-import '../repositories/exames_repository.dart';   // <-- NOVO
+import '../repositories/exames_repository.dart';   // ExamesRepository
 import '../services/dev_api.dart';
 import '../services/api_router.dart';
 
@@ -34,6 +34,10 @@ import '../root_nav_shell.dart';
 import '../controllers/home_controller.dart';
 import '../controllers/home_state_controller.dart'; // HomeState
 
+// Comunicados via VIEWS JSON (Yii)
+import '../services/comunicados_service.dart';
+import '../ui/components/comunicado_detail_sheet.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -43,20 +47,23 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with AutomaticKeepAliveClientMixin {
+  // Tabs da RootNavShell
   static const int _TAB_HOME     = 0;
   static const int _TAB_SERVICOS = 1;
   static const int _TAB_PERFIL   = 2;
 
-  late HomeController _ctrl;
-  bool _ctrlReady = false;
+  // Controladores/Serviços
+  late final HomeController _ctrl;
+  late final ComunicadosService _comSvc;
+  late final ExamesRepository _exRepo;
 
+  bool _ctrlReady = false;
   bool _didPromptConsent = false;
 
-  // NOVO: repositório de exames e estado local dos exames da Home
-  late ExamesRepository _exRepo;
+  // Exames (estado local da Home)
   List<ExameResumo> _examesHome = const [];
   bool _exLoading = false;
-  int? _exLoadedForMatricula; // para não refazer desnecessariamente
+  int? _exLoadedForMatricula; // evita recarregar sem necessidade
 
   @override
   bool get wantKeepAlive => true;
@@ -64,29 +71,37 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_ctrlReady) {
-      // Fonte única de verdade para base/gateway
-      final DevApi api = ApiRouter.client();
+    if (_ctrlReady) return;
 
-      final depsRepo = DependentsRepository(api);
-      final comRepo  = ComunicadosRepository();
-      _exRepo        = ExamesRepository(api); // NOVO
+    final DevApi api = ApiRouter.client();
 
-      _ctrl = HomeController(
-        session: SessionStore(),
-        depsRepo: depsRepo,
-        comRepo: comRepo,
-      )..load();
+    final depsRepo = DependentsRepository(api);
+    final comRepo  = ComunicadosRepository(); // mantém seu repo legado para cache/local
+    _exRepo        = ExamesRepository(api);
 
-      _ctrlReady = true;
-    }
+    // Serviço de comunicados que consome as "views JSON" do Yii
+    _comSvc = ComunicadosService(repository: comRepo);
+
+    // Controller principal da Home
+    _ctrl = HomeController(
+      session: SessionStore(),
+      depsRepo: depsRepo,
+      comRepo: comRepo,
+    )..load();
+
+    _ctrlReady = true;
   }
+
+  // ===== Exames (Home) =======================================================
 
   Future<void> _loadExamesHome(int idMatricula) async {
     if (_exLoading) return;
-    setState(() => _exLoading = true);
+    _exLoading = true;
     try {
-      final list = await _exRepo.listarUltimosAP(idMatricula: idMatricula, limit: 3);
+      final list = await _exRepo.listarUltimosAP(
+        idMatricula: idMatricula,
+        limit: 3,
+      );
       if (!mounted) return;
       setState(() {
         _examesHome = list;
@@ -98,15 +113,22 @@ class _HomeScreenState extends State<HomeScreen>
         _examesHome = const [];
       });
     } finally {
-      if (mounted) setState(() => _exLoading = false);
+      if (mounted) {
+        setState(() => _exLoading = false);
+      } else {
+        _exLoading = false;
+      }
     }
   }
 
-  // Chama quando o state do controller muda
   void _ensureExamesFor(HomeState s) {
     if (!s.isLoggedIn) {
-      if (_examesHome.isNotEmpty) setState(() => _examesHome = const []);
-      _exLoadedForMatricula = null;
+      if (_examesHome.isNotEmpty) {
+        setState(() {
+          _examesHome = const [];
+          _exLoadedForMatricula = null;
+        });
+      }
       return;
     }
     final id = s.profile?.id;
@@ -116,7 +138,22 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ====== Navegação mantendo hotbar ======
+  // ===== Comunicados (detalhe) ==============================================
+
+  void _openComunicado(ComunicadoResumo it) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => ComunicadoDetailSheet(
+        id: it.id,
+        service: _comSvc, // usa views JSON (/comunicacao-app/api-* do Yii)
+      ),
+    );
+  }
+
+  // ===== Navegação mantendo hotbar ===========================================
+
   bool _switchTab(int index) {
     final scope = RootNavShell.maybeOf(context);
     if (scope != null) {
@@ -128,12 +165,16 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _goToServicos() {
     if (_switchTab(_TAB_SERVICOS)) return;
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HomeServicos()));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const HomeServicos()),
+    );
   }
 
   void _goToPerfil() {
     if (_switchTab(_TAB_PERFIL)) return;
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
   }
 
   Widget _quickActionsFor(HomeState s) {
@@ -200,6 +241,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ===== Build ===============================================================
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -215,9 +258,10 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (context, _) {
         final s = _ctrl.state;
 
-        // Garante que buscamos os exames quando logar / trocar usuário
+        // Busca exames quando logar/trocar usuário
         _ensureExamesFor(s);
 
+        // Consentimento de visitante (uma única vez, quando não logado e não carregando)
         if (!s.loading && !s.isLoggedIn && !_didPromptConsent) {
           _didPromptConsent = true;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -234,7 +278,9 @@ class _HomeScreenState extends State<HomeScreen>
             onRefresh: () async {
               await _ctrl.load();
               final id = _ctrl.state.profile?.id;
-              if (id != null) await _loadExamesHome(id);
+              if (id != null) {
+                await _loadExamesHome(id);
+              }
             },
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -263,13 +309,13 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 12),
 
-                        // ===== Comunicados
+                        // ===== Comunicados (consumindo as views JSON do Yii)
                         ComunicadosCard(
                           isLoading: s.loading,
                           items: s.comunicados,
                           take: 3,
                           skeletonHeight: 100,
-                          onTapItem: (c) {},
+                          onTapItem: (c) => _openComunicado(c),
                         ),
 
                         const SizedBox(height: 16),
@@ -284,7 +330,6 @@ class _HomeScreenState extends State<HomeScreen>
                           isLoading: s.loading,
                           isLoggedIn: s.isLoggedIn,
                           situacao: s.isLoggedIn ? 'Ativo' : null,
-                          //plano: s.isLoggedIn ? '—' : null,
                           dependentes: dependentesCount,
                         ),
 
@@ -292,16 +337,17 @@ class _HomeScreenState extends State<HomeScreen>
 
                         // ===== Requerimentos + Exames (no mesmo card)
                         RequerimentosEmAndamentoCard(
-                          isLoading: s.loading,        // o widget de exames cuida do loading dele
+                          isLoading: s.loading,        // o widget de exames cuida do loading próprio
                           items: s.reqs,
                           take: 3,
                           skeletonHeight: 100,
                           onTapItem: (req) {
-                            // se quiser, trate o toque do "requerimento" aqui
-                            // (req é RequerimentoResumo, não tem 'numero')
+                            // trate o toque do requerimento se necessário
                           },
-                          extraInner: const ExamesInlineStatusList(take: 3), // << AQUI, fora do onTapItem
+                          // Mostra o status inline dos exames (o widget se integra ao repositório)
+                          extraInner: const ExamesInlineStatusList(take: 3),
                         ),
+
                         const SizedBox(height: 12),
                       ],
                     ),
