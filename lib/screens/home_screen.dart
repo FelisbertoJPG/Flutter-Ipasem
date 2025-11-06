@@ -141,15 +141,13 @@ class _HomeScreenState extends State<HomeScreen>
   // ===== Comunicados (detalhe) ==============================================
 
   void _openComunicado(ComunicadoResumo it) {
-    showModalBottomSheet(
+      showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => ComunicadoDetailSheet(
-        id: it.id,
-        service: _comSvc, // usa views JSON (/comunicacao-app/api-* do Yii)
-      ),
+      builder: (_) => ComunicadoDetailSheet.fromResumo(resumo: it),
     );
+
   }
 
   // ===== Navegação mantendo hotbar ===========================================

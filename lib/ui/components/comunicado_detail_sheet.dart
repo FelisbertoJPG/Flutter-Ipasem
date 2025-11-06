@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import '../../core/models.dart' show ComunicadoResumo;
+import '../../api/cards_page_scraper.dart';
 
-import '../../services/comunicados_service.dart';
-import '../../api/api_myadmin.dart' show Comunicado;
-
+/// Bottom-sheet de detalhe do Comunicado.
+/// Não depende de endpoint JSON: re-scrapeia /comunicacao-app/cards e acha o corpo pelo título.
 class ComunicadoDetailSheet extends StatefulWidget {
-  final int id;
-  final ComunicadosService service;
+  final ComunicadoResumo resumo;
 
-  const ComunicadoDetailSheet({
+  const ComunicadoDetailSheet.fromResumo({
     super.key,
-    required this.id,
-    required this.service,
+    required this.resumo,
   });
 
   @override
@@ -19,103 +17,172 @@ class ComunicadoDetailSheet extends StatefulWidget {
 }
 
 class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
-  late Future<Comunicado> _future;
+  bool _loading = true;
+  String? _error;
+  String? _title;
+  DateTime? _date;
+  String? _bodyPlain; // corpo strippado
 
   @override
   void initState() {
     super.initState();
+    _load();
   }
+
+  Future<void> _load() async {
+    try {
+      final resumo = widget.resumo;
+      _title = resumo.titulo;
+      _date = resumo.data;
+
+      // Busca novamente a página de cards e tenta localizar o mesmo item pelo título
+      final scraper = const CardsPageScraper();
+      final rows = await scraper.fetch(limit: 20); // margem de segurança
+
+      String? html;
+      DateTime? foundDate;
+
+      final needle = resumo.titulo.trim().toLowerCase();
+      for (final r in rows) {
+        final rt = r.titulo.trim().toLowerCase();
+        if (rt == needle) {
+          html = r.corpoHtml;
+          foundDate = r.publicadoEm ?? foundDate;
+          break;
+        }
+      }
+
+      // Fallback: usa descrição do resumo caso não ache HTML
+      String plain = '';
+      if (html != null && html.trim().isNotEmpty) {
+        plain = _stripHtml(html);
+      } else {
+        final desc = (resumo.descricao ?? '').trim();
+        plain = desc.isNotEmpty ? desc : '(sem conteúdo disponível)';
+      }
+
+      setState(() {
+        _date = _date ?? foundDate;
+        _bodyPlain = plain;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  String _fmtDate(DateTime? d) {
+    if (d == null) return '';
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString().padLeft(4, '0');
+    final hh = d.hour.toString().padLeft(2, '0');
+    final mi = d.minute.toString().padLeft(2, '0');
+    return '$dd/$mm/$yyyy $hh:$mi';
+  }
+
+  String _stripHtml(String html) =>
+      html.replaceAll(RegExp(r'<[^>]+>'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
 
   @override
   Widget build(BuildContext context) {
-    final df = DateFormat('dd/MM/yyyy HH:mm');
+    final title = _title ?? 'Comunicado';
+    final date = _fmtDate(_date);
 
     return SafeArea(
-      top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: FutureBuilder<Comunicado>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState != ConnectionState.done) {
-              return const SizedBox(
-                height: 180,
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            if (snap.hasError) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 12),
-                  const Icon(Icons.error_outline),
-                  const SizedBox(height: 8),
-                  Text('Falha ao carregar comunicado.',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 12),
-                  Text('${snap.error}', style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                      });
-                    },
-                    child: const Text('Tentar novamente'),
-                  ),
-                ],
-              );
-            }
-
-            final c = snap.data!;
-            return SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Título + fechar
-                  Row(
-                    children: [
-                      Expanded(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, controller) {
+            return Material(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? _ErrorBox(message: 'Falha ao abrir comunicado.')
+                    : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.campaign_outlined),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    if (date.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, bottom: 12),
                         child: Text(
-                          c.titulo,
-                          style: Theme.of(context).textTheme.titleLarge,
-                          maxLines: 3,
+                          'Publicado em: $date',
+                          style: const TextStyle(
+                            color: Color(0xFF667085),
+                            fontSize: 12.5,
+                          ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.of(context).maybePop(),
+                    const Divider(height: 1),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        controller: controller,
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: SelectableText(
+                          _bodyPlain ?? '',
+                          style: const TextStyle(height: 1.25, fontSize: 14.5),
+                        ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  // Categoria + data
-                  Row(
-                    children: [
-                      if ((c.categoria ?? '').trim().isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Chip(label: Text(c.categoria!.trim())),
-                        ),
-                      if (c.publicadoEm != null)
-                        Text(
-                          df.format(c.publicadoEm!.toLocal()),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-
-                  // Corpo (completo)
-                  SelectableText(
-                    c.corpo.trim(),
-                    textAlign: TextAlign.start,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _ErrorBox extends StatelessWidget {
+  final String message;
+  const _ErrorBox({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        message,
+        style: const TextStyle(color: Colors.red),
+        textAlign: TextAlign.center,
       ),
     );
   }
