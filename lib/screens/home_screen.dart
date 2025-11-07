@@ -38,6 +38,12 @@ import '../controllers/home_state_controller.dart'; // HomeState
 import '../services/comunicados_service.dart';
 import '../ui/components/comunicado_detail_sheet.dart';
 
+// Fluxo da Carteirinha direto na Home
+import '../screens/carteirinha_flow.dart';
+
+// Fallback/tela alvo: Autorização de Exames
+import 'autorizacao_exames_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -76,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen>
     final DevApi api = ApiRouter.client();
 
     final depsRepo = DependentsRepository(api);
-    final comRepo  = ComunicadosRepository(); // mantém seu repo legado para cache/local
+    final comRepo  = ComunicadosRepository(); // mantém repo legado para cache/local
     _exRepo        = ExamesRepository(api);
 
     // Serviço de comunicados que consome as "views JSON" do Yii
@@ -141,13 +147,12 @@ class _HomeScreenState extends State<HomeScreen>
   // ===== Comunicados (detalhe) ==============================================
 
   void _openComunicado(ComunicadoResumo it) {
-      showModalBottomSheet(
+    showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (_) => ComunicadoDetailSheet.fromResumo(resumo: it),
     );
-
   }
 
   // ===== Navegação mantendo hotbar ===========================================
@@ -179,14 +184,43 @@ class _HomeScreenState extends State<HomeScreen>
     final isLogged = s.isLoggedIn;
 
     final items = <QuickActionItem>[
+      // === Carteirinha: chama o fluxo direto usando a matrícula do estado ===
       QuickActionItem(
         id: 'carteirinha',
         label: 'Carteirinha',
         icon: Icons.badge_outlined,
-        onTap: _goToServicos,
+        audience: QaAudience.loggedIn,
+        requiresLogin: true,
+        onTap: () async {
+          if (!mounted) return;
+          final id = s.profile?.id;
+          if (id == null || id <= 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Não foi possível carregar a sua matrícula. Faça login novamente.'),
+              ),
+            );
+            return;
+          }
+          await startCarteirinhaFlow(context, idMatricula: id);
+        },
+      ),
+
+      // === Autorizações: abrir diretamente a tela de Exames ===
+      QuickActionItem(
+        id: 'autorizacoes',
+        label: 'Autorizações',
+        icon: Icons.assignment_turned_in_outlined,
         audience: QaAudience.all,
         requiresLogin: true,
+        onTap: () {
+          // Não use RootNavShell aqui; empurre a tela alvo diretamente
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AutorizacaoExamesScreen()),
+          );
+        },
       ),
+
       QuickActionItem(
         id: 'assistencia',
         label: 'Serviços',
@@ -194,14 +228,6 @@ class _HomeScreenState extends State<HomeScreen>
         onTap: _goToServicos,
         audience: QaAudience.all,
         requiresLogin: false,
-      ),
-      QuickActionItem(
-        id: 'autorizacoes',
-        label: 'Autoriz\u00E7\u00F5es',
-        icon: Icons.assignment_turned_in_outlined,
-        onTap: _goToServicos,
-        audience: QaAudience.all,
-        requiresLogin: true,
       ),
       if (!isLogged)
         QuickActionItem(
@@ -259,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen>
         // Busca exames quando logar/trocar usuário
         _ensureExamesFor(s);
 
-        // Consentimento de visitante (uma única vez, quando não logado e não carregando)
+        // Consentimento de visitante
         if (!s.loading && !s.isLoggedIn && !_didPromptConsent) {
           _didPromptConsent = true;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -267,8 +293,6 @@ class _HomeScreenState extends State<HomeScreen>
             await ensureVisitorConsent(context);
           });
         }
-
-        final dependentesCount = s.isLoggedIn ? s.dependents.length : 0;
 
         return AppScaffold(
           title: 'Início',
@@ -323,26 +347,15 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 16),
 
-                        // ===== Minha Situação
-                        MinhaSituacaoCard(
-                          isLoading: s.loading,
-                          isLoggedIn: s.isLoggedIn,
-                          situacao: s.isLoggedIn ? 'Ativo' : null,
-                          dependentes: dependentesCount,
-                        ),
-
-                        const SizedBox(height: 12),
-
                         // ===== Requerimentos + Exames (no mesmo card)
                         RequerimentosEmAndamentoCard(
-                          isLoading: s.loading,        // o widget de exames cuida do loading próprio
+                          isLoading: s.loading,
                           items: s.reqs,
                           take: 3,
                           skeletonHeight: 100,
                           onTapItem: (req) {
                             // trate o toque do requerimento se necessário
                           },
-                          // Mostra o status inline dos exames (o widget se integra ao repositório)
                           extraInner: const ExamesInlineStatusList(take: 3),
                         ),
 
