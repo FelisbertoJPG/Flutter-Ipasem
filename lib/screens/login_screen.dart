@@ -293,6 +293,45 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         const SizedBox(height: 8),
 
+                        // ===== AVISO: Wi-Fi do IPASEM desconectado (acima do botão Logar)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Color(0xFFFFF7E6), // tom âmbar suave
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Color(0xFFFFE2A1)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Icon(Icons.wifi_off, color: Color(0xFF8A6100)),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Wi-Fi do IPASEM deve estar DESCONECTADO',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF8A6100),
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'Use 4G/5G ou outra rede Wi-Fi. A rede interna do IPASEM impede o acesso às rotinas do app.',
+                                      style: TextStyle(color: Color(0xFF8A6100)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
                         // ===== Botões
                         ValueListenableBuilder<bool>(
                           valueListenable: _c.loading,
