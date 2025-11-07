@@ -13,7 +13,7 @@ class ComunicadosPanel extends StatefulWidget {
 
   const ComunicadosPanel({
     super.key,
-    this.limit = 3,
+    this.limit = 10 ,//limite de publicações
     this.categoria,
     this.tag,
     this.padding = const EdgeInsets.all(12),

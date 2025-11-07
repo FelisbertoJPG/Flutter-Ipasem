@@ -117,20 +117,29 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
         Object? arguments,
         bool switchTab = true,
       }) {
+    // Normaliza: remove barra inicial e espaços acidentais
+    final routeName = name.trim().startsWith('/')
+        ? name.trim().substring(1)
+        : name.trim();
+
     if (switchTab && _currentIndex != 1) {
       setState(() => _currentIndex = 1);
       _pageController.jumpToPage(1);
     }
-    final nav = _tabKeys[1]!.currentState!;
-    return nav.pushNamed<T>(name, arguments: arguments);
+
+    // Agenda o push no próximo micro-tick, garantindo que o Navigator da aba
+    // já esteja “pronto” após o jumpToPage.
+    return Future.microtask(() {
+      final nav = _tabKeys[1]!.currentState!;
+      return nav.pushNamed<T>(routeName, arguments: arguments);
+    });
   }
 
-  /// NOVO: empurra uma rota no Navigator **raiz** (fora do Navigator das abas).
+  /// Empurra uma rota no Navigator **raiz** (fora do Navigator das abas).
   Future<T?> _pushRootNamed<T>(
       String routeName, {
         Object? arguments,
       }) {
-    // Use microtask para não colidir com animação/fechamento de Drawer/Sheets.
     return Future.microtask(() {
       return Navigator.of(context, rootNavigator: true)
           .pushNamed<T>(routeName, arguments: arguments);
@@ -167,6 +176,10 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
   }
 
   Route<dynamic> _routeServicos(RouteSettings settings) {
+    // Log leve para ver o nome recebido
+    // (deixe ligado em debug se quiser investigar)
+    // debugPrint('SERVICOS onGenerateRoute: ${settings.name}');
+
     switch (settings.name) {
       case '/':
       case 'servicos-root':
@@ -174,22 +187,31 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
           builder: (_) => const HomeServicos(),
           settings: const RouteSettings(name: 'servicos-root'),
         );
+
+    // Aceita com e sem barra:
       case 'autorizacao-medica':
+      case '/autorizacao-medica':
         return MaterialPageRoute(
           builder: (_) => const AutorizacaoMedicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-medica'),
         );
+
       case 'autorizacao-odontologica':
+      case '/autorizacao-odontologica':
         return MaterialPageRoute(
           builder: (_) => const AutorizacaoOdontologicaScreen(),
           settings: const RouteSettings(name: 'autorizacao-odontologica'),
         );
+
       case 'autorizacao-exames':
+      case '/autorizacao-exames':
         return MaterialPageRoute(
           builder: (_) => const AutorizacaoExamesScreen(),
           settings: const RouteSettings(name: 'autorizacao-exames'),
         );
+
       default:
+      // Fallback controlado
         return MaterialPageRoute(
           builder: (_) => const HomeServicos(),
           settings: const RouteSettings(name: 'servicos-root'),
@@ -273,7 +295,6 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
         currentIndex: _currentIndex,
         pushInServicos: _pushInServicos,
         safeBack: _safeBack,
-        // NOVO: injeta a função para empurrar rotas no Navigator raiz
         pushRootNamed: _pushRootNamed,
         child: Scaffold(
           body: PageView(
@@ -391,7 +412,7 @@ class RootNavScope extends InheritedWidget {
     required this.currentIndex,
     required this.pushInServicos,
     required this.safeBack,
-    required this.pushRootNamed, // NOVO
+    required this.pushRootNamed,
     required super.child,
   });
 
@@ -407,7 +428,7 @@ class RootNavScope extends InheritedWidget {
   /// Exposto para um “voltar com fallback” consistente (opcional).
   final Future<void> Function() safeBack;
 
-  /// NOVO: empurra uma rota no Navigator raiz (fora da shell/abas).
+  /// Empurra uma rota no Navigator raiz (fora da shell/abas).
   final Future<T?> Function<T>(
       String routeName, {
       Object? arguments,
