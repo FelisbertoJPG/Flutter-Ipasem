@@ -93,7 +93,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     } finally {
       if (mounted) setState(() => _depsLoading = false);
     }
-  }
+  }//ipasemnh-0.1.0-1-internal-2025-11-07-release
 
   void _fallbackSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));

@@ -20,7 +20,7 @@ decorrentes do uso, na máxima extensão permitida em lei.
 9. Alterações — Os Termos podem ser atualizados a qualquer tempo. O uso após
 alterações implica concordância.
 10. Lei e foro — Legislação brasileira. Foro: Novo Hamburgo/RS.
-11. Suporte — suporte@ipasemnh.com.br
+11. Suporte — contato@ipasemnh.com.br
 Vigência: 26/09/2025
 ''';
 
