@@ -41,8 +41,8 @@ import '../ui/components/comunicado_detail_sheet.dart';
 // Fluxo da Carteirinha direto na Home
 import '../screens/carteirinha_flow.dart';
 
-// Fallback/tela alvo: Autorização de Exames
-import 'autorizacao_exames_screen.dart';
+// Sheet com as três autorizações (navega internamente)
+import 'authorizations_picker_sheet.dart' show showAuthorizationsPickerSheet;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -206,18 +206,16 @@ class _HomeScreenState extends State<HomeScreen>
         },
       ),
 
-      // === Autorizações: abrir diretamente a tela de Exames ===
+      // === Autorizações: abre o SHEET com 3 opções; o sheet navega internamente ===
       QuickActionItem(
         id: 'autorizacoes',
         label: 'Autorizações',
         icon: Icons.assignment_turned_in_outlined,
         audience: QaAudience.all,
         requiresLogin: true,
-        onTap: () {
-          // Não use RootNavShell aqui; empurre a tela alvo diretamente
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AutorizacaoExamesScreen()),
-          );
+        onTap: () async {
+          if (!mounted) return;
+          await showAuthorizationsPickerSheet(context);
         },
       ),
 

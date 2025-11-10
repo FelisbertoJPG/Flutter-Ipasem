@@ -102,7 +102,6 @@ class ExameStatusPoller {
       _cache = current;
       await _saveCache();
     } catch (_) {
-      // silencioso: não queremos travar o app por causa do polling
     } finally {
       _busy = false;
     }
