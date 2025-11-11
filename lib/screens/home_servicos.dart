@@ -2,8 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/material.dart';
-
 
 import '../root_nav_shell.dart';
 import '../ui/app_shell.dart';
@@ -14,18 +12,12 @@ import '../ui/components/exames_negadas_card.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/quick_actions.dart';
 import '../ui/components/services_visitor.dart';
-import '../ui/widgets/history_list.dart';
 
 import '../ui/utils/webview_warmup.dart';
 import '../ui/utils/service_launcher.dart';
-import '../ui/utils/print_helpers.dart';
 
-import '../models/reimpressao.dart';
-import '../controllers/home_servicos_controller.dart';
-import '../ui/components/reimp_action_sheet.dart';
-import '../ui/components/reimp_detalhes_sheet.dart';
-
-import '../state/auth_events.dart';
+import '../controllers/home_servicos_controller.dart'; // (segue importado caso use no futuro)
+import '../state/auth_events.dart'; // (idem, não usamos nesta tela após refatoração)
 
 // telas (mantidas)
 import 'login_screen.dart';
@@ -43,7 +35,6 @@ import '../screens/carteirinha_flow.dart';
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
-  static const String _prefsKeyCpf = 'saved_cpf';
   static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
   static const String _siteUrl  = 'https://www.ipasemnh.com.br/home';
 
@@ -57,132 +48,13 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
   int? _matricula; // usada para emissão da carteirinha
 
-  List<HistoryItem> _historico = const [];
-  List<ReimpressaoResumo> _histRows = const [];
-
   late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
-  HomeServicosController? _controller;
-
-  VoidCallback? _issuedListener;
-  VoidCallback? _printedListener;
-
-  // refresh quando o poller sinaliza mudança de status
-  VoidCallback? _statusChangedListener;
-  DateTime? _lastAutoRefresh;
 
   @override
   void initState() {
     super.initState();
     warmupInit();
-
-    _issuedListener = () => Future.microtask(_refreshAfterIssue);
-    AuthEvents.instance.lastIssued.addListener(_issuedListener!);
-
-    _printedListener = () => Future.microtask(_refreshAfterPrint);
-    AuthEvents.instance.lastPrinted.addListener(_printedListener!);
-
-    _statusChangedListener = () => Future.microtask(_refreshAfterStatusChange);
-    AuthEvents.instance.exameStatusChanged.addListener(_statusChangedListener!);
-
     _bootstrap();
-  }
-
-  Future<void> _refreshAfterIssue() async {
-    final numero = AuthEvents.instance.lastIssued.value;
-    if (!mounted || numero == null) return;
-
-    if (_controller != null) {
-      await _controller!.waitUntilInHistorico(numero);
-    }
-    if (!mounted) return;
-    await _bootstrap();
-  }
-
-  Future<void> _refreshAfterPrint() async {
-    final numero = AuthEvents.instance.lastPrinted.value;
-    if (!mounted || numero == null) return;
-
-    if (_controller != null) {
-      await _controller!.waitUntilInHistorico(numero);
-    }
-    if (!mounted) return;
-
-    await _bootstrap();
-  }
-
-  // chamado quando o poller emite AuthEvents.exameStatusChanged
-  Future<void> _refreshAfterStatusChange() async {
-    final evt = AuthEvents.instance.exameStatusChanged.value;
-    if (!mounted || evt == null) return;
-
-    // throttle simples para evitar cascata de refresh
-    final now = DateTime.now();
-    if (_lastAutoRefresh != null &&
-        now.difference(_lastAutoRefresh!) < const Duration(seconds: 2)) {
-      return;
-    }
-    _lastAutoRefresh = now;
-
-    if (_controller != null) {
-      await _controller!.waitUntilInHistorico(evt.numero);
-    }
-    if (!mounted) return;
-
-    await _bootstrap();
-  }
-
-  @override
-  void dispose() {
-    if (_issuedListener != null) {
-      AuthEvents.instance.lastIssued.removeListener(_issuedListener!);
-    }
-    if (_printedListener != null) {
-      AuthEvents.instance.lastPrinted.removeListener(_printedListener!);
-    }
-    if (_statusChangedListener != null) {
-      AuthEvents.instance.exameStatusChanged.removeListener(_statusChangedListener!);
-    }
-    super.dispose();
-  }
-
-  DateTime _parseDateTime(String d, String h) {
-    final ds = d.trim();
-    final hs = h.trim();
-
-    if (ds.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
-
-    // 1) ISO-like: yyyy-MM-dd (opcional HH:mm[:ss])
-    if (ds.contains('-')) {
-      final hh = hs.isEmpty
-          ? '00:00:00'
-          : (hs.split(':').length == 2 ? '${hs}:00' : hs); // garante segundos
-      final iso = '${ds}T$hh';
-      final isoParsed = DateTime.tryParse(iso);
-      if (isoParsed != null) return isoParsed;
-    }
-
-    // 2) Brasileiro: dd/MM/yyyy (opcional HH:mm[:ss])
-    if (ds.contains('/')) {
-      try {
-        final parts = ds.split('/');
-        if (parts.length == 3) {
-          final day = int.tryParse(parts[0]) ?? 1;
-          final mon = int.tryParse(parts[1]) ?? 1;
-          var yr = int.tryParse(parts[2]) ?? 1970;
-          if (yr < 100) yr += 2000;
-          final t = hs.isEmpty ? '00:00' : hs;
-          final tp = t.split(':');
-          final hh = int.tryParse(tp[0]) ?? 0;
-          final mm = (tp.length > 1) ? int.tryParse(tp[1]) ?? 0 : 0;
-          final ss = (tp.length > 2) ? int.tryParse(tp[2]) ?? 0 : 0;
-          return DateTime(yr, mon, day, hh, mm, ss);
-        }
-      } catch (_) {/* fallback abaixo */}
-    }
-
-    // 3) Último recurso
-    final fallback = DateTime.tryParse(ds);
-    return fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   Future<void> _bootstrap() async {
@@ -191,72 +63,22 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     final prefs = await SharedPreferences.getInstance();
     _isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
-    _historico = const [];
-    _histRows  = const [];
-
+    // Apenas carrega a matrícula para o fluxo da carteirinha.
     if (_isLoggedIn) {
       try {
-        _controller = await HomeServicosController.init(context);
-
-        // obtém matrícula do perfil persistido na sessão
-        try {
-          final prof = await Session.getProfile();
-          _matricula = prof?.id;
-        } catch (_) {
-          _matricula = null;
-        }
-
-        final titularNome = await _controller!.profileName();
-        final rows = await _controller!.loadHistorico();
-
-        // Ordena por data/hora (mais recentes primeiro)
-        rows.sort((a, b) {
-          final ta = _parseDateTime(a.dataEmissao, a.horaEmissao);
-          final tb = _parseDateTime(b.dataEmissao, b.horaEmissao);
-          return tb.compareTo(ta); // mais recente primeiro
-        });
-
-        // Limita às 5 mais recentes depois de ordenar
-        final top5 = rows.take(5).toList();
-        _histRows  = top5;
-
-        _historico = top5.map((h) {
-          final paciente = (h.paciente.trim().isNotEmpty)
-              ? h.paciente.trim()
-              : (titularNome?.trim() ?? '');
-
-          final titulo = h.prestadorExec.isNotEmpty
-              ? h.prestadorExec
-              : (paciente.isNotEmpty ? paciente : 'Autorização ${h.numero}');
-
-          final subParts = <String>[];
-          if (h.dataEmissao.isNotEmpty && h.horaEmissao.isNotEmpty) {
-            subParts.add('${h.dataEmissao} • ${h.horaEmissao}');
-          } else if (h.dataEmissao.isNotEmpty) {
-            subParts.add(h.dataEmissao);
-          }
-          if (paciente.isNotEmpty) subParts.add('• $paciente');
-
-          final sub = subParts.join(' ');
-
-          return HistoryItem(
-            title: titulo,
-            subtitle: sub,
-            onTap: () => _onTapHistorico(h),
-          );
-        }).toList();
-      } catch (e) {
-        _historico = const [];
-        _histRows  = const [];
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Falha ao carregar histórico: $e')),
-          );
-        }
+        final prof = await Session.getProfile();
+        _matricula = prof?.id;
+      } catch (_) {
+        _matricula = null;
       }
+    } else {
+      _matricula = null;
     }
+
     if (mounted) setState(() => _loading = false);
   }
+
+  // ================== Ações de navegação ==================
 
   List<QuickActionItem> _loggedActions() {
     return [
@@ -328,6 +150,33 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
           await startCarteirinhaFlow(context, idMatricula: m);
         },
       ),
+
+      // >>> NOVOS CAMPOS (deferem o carregamento):
+      QuickActionItem(
+        id: 'historico_aut',
+        label: 'Histórico de Autorizações',
+        icon: FontAwesomeIcons.clockRotateLeft,
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const HistoricoAutorizacoesScreen()),
+          );
+        },
+        audience: QaAudience.loggedIn,
+        requiresLogin: true,
+      ),
+      QuickActionItem(
+        id: 'retorno_exames',
+        label: 'Retorno de Exames',
+        icon: FontAwesomeIcons.listCheck,
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const _RetornoExamesScreen()),
+          );
+        },
+        audience: QaAudience.loggedIn,
+        requiresLogin: true,
+      ),
+
       QuickActionItem(
         id: 'site',
         label: 'Site',
@@ -337,50 +186,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         requiresLogin: false,
       ),
     ];
-  }
-
-  Future<void> _onTapHistorico(ReimpressaoResumo a) async {
-    if (!mounted) return;
-
-    final action = await showReimpActionSheet(context, a);
-    if (action == null) return;
-
-    switch (action) {
-      case ReimpAction.detalhes:
-        await _showDetalhes(
-          a.numero,
-          pacienteFallback: a.paciente.isNotEmpty ? a.paciente : null,
-        );
-        break;
-      case ReimpAction.pdfLocal:
-        await openPreviewFromNumero(context, a.numero);
-        break;
-    }
-  }
-
-  Future<void> _showDetalhes(int numero, {String? pacienteFallback}) async {
-    if (_controller == null) return;
-
-    ReimpressaoDetalhe? det;
-    try {
-      det = await _controller!.loadDetalhe(numero);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao carregar detalhes: $e')),
-        );
-      }
-    }
-    if (!mounted || det == null) return;
-
-    await showReimpDetalhesSheet(
-      context: context,
-      det: det,
-      pacienteFallback: pacienteFallback,
-      onPrintViaSite: () {
-        launcher.openUrl(HomeServicos._loginUrl, 'Reimpressão de Autorizações');
-      },
-    );
   }
 
   @override
@@ -411,20 +216,6 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             );
           },
         ),
-        const SizedBox(height: 12),
-        SectionCard(
-          title: 'Histórico de Autorizações',
-          child: HistoryList(
-            loading: _loading,
-            isLoggedIn: false,
-            items: const [],
-            onSeeAll: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Faça login para acessar o histórico.')),
-              );
-            },
-          ),
-        ),
       ],
     );
   }
@@ -441,27 +232,33 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
             onRequireLogin: null,
           ),
         ),
-        const ExamesPendentesCard(),
-        const SizedBox(height: 12),
-        const ExamesLiberadosCard(),
-        const SizedBox(height: 12),
-        const ExamesNegadasCard(),
-        const SizedBox(height: 12),
-        SectionCard(
-          title: 'Histórico de Autorizações',
-          child: HistoryList(
-            loading: _loading,
-            isLoggedIn: true,
-            items: _historico, // já limitado a 5
-            maxItems: 5,
-            onSeeAll: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HistoricoAutorizacoesScreen()),
-              );
-            },
-          ),
-        ),
+        // Removidos: ExamesPendentes/ExamesLiberados/ExamesNegadas e Histórico na home.
+        // Agora esses conteúdos são carregados SOMENTE quando o usuário toca nos
+        // atalhos “Histórico de Autorizações” e “Retorno de Exames”.
       ],
+    );
+  }
+}
+
+/// Tela interna (somente para retorno de autorizações de exames).
+/// Reutiliza os mesmos cards, mas o carregamento só ocorre ao abrir esta tela.
+class _RetornoExamesScreen extends StatelessWidget {
+  const _RetornoExamesScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: 'Retorno de Autorizações de Exames',
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: const [
+          ExamesPendentesCard(),
+          SizedBox(height: 12),
+          ExamesLiberadosCard(),
+          SizedBox(height: 12),
+          ExamesNegadasCard(),
+        ],
+      ),
     );
   }
 }

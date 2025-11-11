@@ -29,7 +29,6 @@ class ApiRouter {
   static void configure(String baseOrGateway, {String defaultGatewayPath = _defaultGatewayPath}) {
     var raw = baseOrGateway.trim();
 
-    // Remove barras finais duplicadas (sem mexer no esquema)
     while (raw.endsWith('/')) {
       raw = raw.substring(0, raw.length - 1);
     }
