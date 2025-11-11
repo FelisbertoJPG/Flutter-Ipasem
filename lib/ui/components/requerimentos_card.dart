@@ -84,7 +84,7 @@ class RequerimentosEmAndamentoCard extends StatelessWidget {
     ];
 
     return SectionCard(
-      title: 'Requisições em andamento',
+      title: 'Autorizações em andamento',
       child: Padding(
         padding: EdgeInsets.all(inPad),
         child: Container(
