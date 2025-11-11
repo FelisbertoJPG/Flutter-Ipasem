@@ -1,3 +1,4 @@
+// lib/ui/app_shell.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/colors.dart';
@@ -43,14 +44,14 @@ class AppScaffold extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
+        toolbarHeight: 60, // ↑ mais alto para acomodar melhor o logo
         title: Text(title),
         leading: showBack
             ? BackButton(
           onPressed: () {
-            // Back centralizado (se estiver na Shell)
             final scope = RootNavShell.maybeOf(context);
             if (scope != null) {
-              scope.safeBack(); // ignorar Future é ok aqui
+              scope.safeBack();
             } else {
               Navigator.of(context).maybePop();
             }
@@ -64,10 +65,12 @@ class AppScaffold extends StatelessWidget {
           ),
         ),
         actions: [
+          // Logo maior e sem corte
           const _LogoAction(
             imagePath: 'assets/images/icons/logo_ipasem.png',
-            size: 28,
+            size: 70,        // ↑ tamanho maior
             borderRadius: 6,
+            verticalPadding: 8, // folga para não “grudar” no topo
           ),
           const SizedBox(width: 8),
           if (actions != null) ...actions!,
@@ -124,15 +127,12 @@ class _AppDrawer extends StatelessWidget {
   }
 
   void _goRoute(BuildContext context, String routeName) {
-    // Fecha o Drawer e empurra a rota no Navigator raiz
-    Navigator.of(context).pop();
+    Navigator.of(context).pop(); // fecha o Drawer
     final shell = RootNavShell.maybeOf(context);
 
     if (shell != null) {
-      // Usa o helper exposto pela Shell (abre fora das abas)
       shell.pushRootNamed(routeName);
     } else {
-      // Fallback direto no rootNavigator
       Future.microtask(() {
         Navigator.of(context, rootNavigator: true).pushNamed(routeName);
       });
@@ -195,27 +195,32 @@ class _LogoAction extends StatelessWidget {
   final String imagePath;
   final double size;
   final double borderRadius;
+  final double verticalPadding;
 
   const _LogoAction({
     super.key,
     required this.imagePath,
-    this.size = 28,
+    this.size = 36,
     this.borderRadius = 6,
+    this.verticalPadding = 6,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(right: 4),
+      padding: EdgeInsets.only(right: 4, top: verticalPadding, bottom: verticalPadding),
       child: SizedBox(
         width: size,
         height: size,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(borderRadius),
-          child: Image.asset(
-            imagePath,
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.medium,
+        child: Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(borderRadius),
+            child: Image.asset(
+              imagePath,
+              fit: BoxFit.contain, // ← não corta a imagem
+              alignment: Alignment.center,
+              filterQuality: FilterQuality.medium,
+            ),
           ),
         ),
       ),
