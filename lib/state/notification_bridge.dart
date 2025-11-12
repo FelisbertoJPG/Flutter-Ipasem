@@ -50,7 +50,7 @@ class NotificationBridge {
       if (n != null) {
         AppNotifier.I.showSimple(
           title: 'Autorização enviada',
-          body: 'Vamos avisar quando for liberada.',
+          body: '',
         );
       }
     };
