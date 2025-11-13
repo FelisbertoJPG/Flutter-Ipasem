@@ -41,6 +41,9 @@ class _LoginScreenState extends State<LoginScreen> {
   // Evita navegação duplicada (toques repetidos).
   bool _navigatingToApp = false;
 
+  // Controle de visibilidade da senha
+  bool _obscurePwd = true;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -219,8 +222,16 @@ class _LoginScreenState extends State<LoginScreen> {
                               focusNode: _pwdF,
                               textInputAction: TextInputAction.done,
                               autofillHints: const [AutofillHints.password],
-                              obscureText: true,
-                              decoration: _deco('Senha'),
+                              obscureText: _obscurePwd,
+                              decoration: _deco(
+                                'Senha',
+                                suffix: _PasswordRevealSuffix(
+                                  obscured: _obscurePwd,
+                                  onToggle: () => setState(() => _obscurePwd = !_obscurePwd),
+                                  onPressAndHoldStart: () => setState(() => _obscurePwd = false),
+                                  onPressAndHoldEnd: () => setState(() => _obscurePwd = true),
+                                ),
+                              ),
                               validator: (v) => validatePassword(
                                 v,
                                 minLen: AppConfig.maybeOf(context)?.params.passwordMinLength ?? 4,
@@ -419,6 +430,34 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PasswordRevealSuffix extends StatelessWidget {
+  const _PasswordRevealSuffix({
+    required this.obscured,
+    required this.onToggle,
+    required this.onPressAndHoldStart,
+    required this.onPressAndHoldEnd,
+  });
+
+  final bool obscured;
+  final VoidCallback onToggle;
+  final VoidCallback onPressAndHoldStart;
+  final VoidCallback onPressAndHoldEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    // Ícone + suporte a press-and-hold para visualizar temporariamente
+    return GestureDetector(
+      onLongPress: onPressAndHoldStart,
+      onLongPressUp: onPressAndHoldEnd,
+      child: IconButton(
+        onPressed: onToggle,
+        tooltip: obscured ? 'Mostrar senha' : 'Ocultar senha',
+        icon: Icon(obscured ? Icons.visibility_off : Icons.visibility),
       ),
     );
   }
