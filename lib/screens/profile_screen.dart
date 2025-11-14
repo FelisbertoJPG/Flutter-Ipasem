@@ -1,6 +1,7 @@
 // lib/screens/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart'; // Clipboard
 
 import '../theme/colors.dart';
 import '../ui/app_shell.dart';
@@ -21,6 +22,11 @@ import '../ui/components/visitor_profile_view.dart';
 
 const _createAccountUrl =
     'https://assistweb.ipasemnh.com.br/requerimentos/recuperar-senha-prestador';
+
+// Contatos (mesmos usados no app)
+const String _kTelRaw = 'tel:5135949162';
+const String _kEmail = 'contato@ipasemnh.com.br';
+const String _kEmailSubject = 'Atualização cadastral — App IPASEM';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -56,8 +62,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_depsReady) {
-      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-          ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl ??
+          const String.fromEnvironment(
+            'API_BASE',
+            defaultValue: 'https://assistweb.ipasemnh.com.br',
+          );
       _depsRepo = DependentsRepository(DevApi(baseUrl));
       _depsReady = true;
     }
@@ -90,7 +99,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     } finally {
       if (mounted) setState(() => _depsLoading = false);
     }
-  }
+  } // ipasemnh-0.1.0-1-internal-2025-11-07-release
 
   void _fallbackSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -132,6 +141,138 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  // === Bottom sheet "Dados divergentes?" (acionado ao tocar em qualquer campo) ===
+  Future<void> _showDataHelpSheet(Profile p) async {
+    // Corpo padrão do e-mail, já com dados úteis
+    final String emailBody =
+        'Olá, meus dados estão incorretos/desatualizados no app IPASEM.'
+        '\n\nNome: ${p.nome}'
+        '\nCPF: ${fmtCpf(p.cpf)}'
+        '\nMatrícula: ${p.id}';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCE5EE),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const Text(
+                  'Dados cadastrais divergentes ou desatualizados?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Entre em contato pelos canais abaixo.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: const Icon(Icons.call_outlined),
+                  title: const Text('Ligar'),
+                  subtitle: const Text('(51) 3594-9162'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _launchTel(_kTelRaw);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.alternate_email_outlined),
+                  title: const Text('Enviar E-mail'),
+                  subtitle: const Text(_kEmail),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _launchEmail(
+                      to: _kEmail,
+                      subject: _kEmailSubject,
+                      body: emailBody,
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _launchTel(String raw) async {
+    final uri = Uri.parse(raw);
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) throw Exception('falha ao abrir telefone');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível iniciar a ligação.')),
+      );
+    }
+  }
+
+  Future<void> _launchEmail({
+    required String to,
+    required String subject,
+    required String body,
+  }) async {
+    // Tenta mailto:
+    final mail = Uri(
+      scheme: 'mailto',
+      path: to,
+      queryParameters: {'subject': subject, 'body': body},
+    );
+    try {
+      final ok = await launchUrl(mail, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    } catch (_) {
+      // continua nos fallbacks
+    }
+
+    // Fallback: Gmail Web compose
+    final gmailWeb = Uri.https('mail.google.com', '/mail/', {
+      'view': 'cm',
+      'fs': '1',
+      'to': to,
+      'su': subject,
+      'body': body,
+    });
+    try {
+      final ok = await launchUrl(gmailWeb, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    } catch (_) {}
+
+    // Último recurso: copia o e-mail e avisa
+    await Clipboard.setData(ClipboardData(text: to));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Nenhum app de e-mail encontrado. Endereço copiado.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -157,6 +298,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               dependentes: _deps,
               depsLoading: _depsLoading,
               depsError: _depsError,
+              onAnyFieldTap: () => _showDataHelpSheet(_profile!),
             ),
           ],
         ],
@@ -199,13 +341,14 @@ class _HeaderCardUser extends StatelessWidget {
                   profile.nome,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 4),
-                const Wrap(
+                Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children: [
+                  children: const [
                     _StatusChip(
                       label: 'Acesso autenticado',
                       color: Color(0xFF027A48),
@@ -237,28 +380,78 @@ class _UserDataBlocks extends StatelessWidget {
   final List<Dependent>? dependentes;
   final bool depsLoading;
   final String? depsError;
+  final VoidCallback? onAnyFieldTap;
 
   const _UserDataBlocks({
     required this.profile,
     this.dependentes,
     this.depsLoading = false,
     this.depsError,
+    this.onAnyFieldTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    // mesmo respiro que usamos nos demais cards
+    final w = MediaQuery.of(context).size.width;
+    final double inPad = w < 360 ? 12 : 16;
+
     return Column(
       children: [
         SectionCard(
           title: 'Dados do usuário',
-          child: Column(
-            children: [
-              _InfoRow(label: 'Nome completo ', value: profile.nome),
-              _InfoRow(label: 'CPF', value: fmtCpf(profile.cpf)),
-              _InfoRow(label: 'Matrícula', value: profile.id.toString()),
-              _InfoRow(label: 'E-mail', value: profile.email ?? '—'),
-              _InfoRow(label: 'E-mail 2', value: profile.email2 ?? '—'),
-            ],
+          child: Padding(
+            padding: EdgeInsets.all(inPad), // respiro do SectionCard
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
+              ),
+              padding: EdgeInsets.all(inPad), // respiro dentro da borda interna
+              child: Column(
+                children: [
+                  _InfoRow(
+                    icon: Icons.badge_outlined,
+                    label: 'Nome completo',
+                    value: profile.nome,
+                    onTap: onAnyFieldTap,
+                  ),
+                  const _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.credit_card_outlined,
+                    label: 'CPF',
+                    value: fmtCpf(profile.cpf),
+                    onTap: onAnyFieldTap,
+                  ),
+                  const _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.confirmation_number_outlined,
+                    label: 'Matrícula',
+                    value: profile.id.toString(),
+                    onTap: onAnyFieldTap,
+                  ),
+                  const _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.mail_outline,
+                    label: 'E-mail',
+                    value: (profile.email?.trim().isNotEmpty ?? false)
+                        ? profile.email!
+                        : '—',
+                    onTap: onAnyFieldTap,
+                  ),
+                  const _InsetDivider(),
+                  _InfoRow(
+                    icon: Icons.alternate_email_outlined,
+                    label: 'E-mail 2',
+                    value: (profile.email2?.trim().isNotEmpty ?? false)
+                        ? profile.email2!
+                        : '—',
+                    onTap: onAnyFieldTap,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -276,41 +469,92 @@ class _UserDataBlocks extends StatelessWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _InfoRow({required this.label, required this.value});
-
+/// Divider fininho com espaçamento vertical, igual aos outros cards
+class _InsetDivider extends StatelessWidget {
+  const _InsetDivider();
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.person_outline, color: Color(0xFF667085)),
-      title: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF101828)),
-      ),
-      subtitle: Text(
-        value,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Color(0xFF475467)),
-      ),
-      minLeadingWidth: 0,
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Divider(height: 1),
     );
   }
 }
 
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // InkWell para permitir toque em qualquer campo
+    final content = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: const Color(0xFF667085)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF101828),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF475467),
+                  fontSize: 13,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    // Para ripple funcionar, precisamos de um Material ancestor (o Scaffold já provê).
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: content,
+      ),
+    );
+  }
+}
+
+// Badge simples do cabeçalho
 class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;
   final Color bg;
 
-  const _StatusChip({required this.label, required this.color, required this.bg});
+  const _StatusChip({
+    required this.label,
+    required this.color,
+    required this.bg,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -325,7 +569,11 @@ class _StatusChip extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

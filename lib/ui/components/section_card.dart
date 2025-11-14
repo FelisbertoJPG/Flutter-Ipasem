@@ -1,30 +1,43 @@
 import 'package:flutter/material.dart';
-import '../../theme/colors.dart';
 
 class SectionCard extends StatelessWidget {
-  final String title;
+  final String? title;
   final Widget child;
+  final Widget? trailing;
 
-  const SectionCard({super.key, required this.title, required this.child});
+  const SectionCard({
+    super.key,
+    this.title,
+    required this.child,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: blockDecoration(),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+    return Card(
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF475467),
+          if (title != null || trailing != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Row(
+                children: [
+                  if (title != null)
+                    Expanded(
+                      child: Text(
+                        title!,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  if (trailing != null) trailing!,
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
           child,
         ],
       ),
