@@ -128,7 +128,7 @@ class _LockedDataBlocks extends StatelessWidget {
               _LockedInfoRow(label: 'E-mail'),
               _LockedInfoRow(label: 'Telefone'),
               _LockedInfoRow(label: 'Data de nascimento'),
-              _LockedInfoRow(label: 'Vínculo / Situação'),
+
             ],
           ),
         ),
@@ -137,9 +137,9 @@ class _LockedDataBlocks extends StatelessWidget {
           title: 'Benefícios',
           child: Column(
             children: [
-              _LockedInfoRow(label: 'Plano de saúde'),
+
               _LockedInfoRow(label: 'Dependentes'),
-              _LockedInfoRow(label: 'Autorizações recentes'),
+
             ],
           ),
         ),
@@ -162,7 +162,7 @@ class _VisitorHint extends StatelessWidget {
       ),
       child: const Text(
         'Você está logado como Visitante. Faça login para visualizar seus dados '
-            'pessoais e informações de benefícios.',
+            'pessoais.',
         style: TextStyle(color: Color(0xFF475467)),
       ),
     );
