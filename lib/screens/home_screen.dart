@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 
 import '../core/formatters.dart';        // fmtData, fmtCpf
@@ -5,33 +6,43 @@ import '../core/models.dart';            // RequerimentoResumo, ComunicadoResumo
 import '../data/session_store.dart';     // SessionStore
 import '../repositories/dependents_repository.dart';
 import '../repositories/comunicados_repository.dart';
+import '../repositories/exames_repository.dart';   // ExamesRepository
 import '../services/dev_api.dart';
-import '../config/app_config.dart';
+import '../services/api_router.dart';
 
 import '../ui/app_shell.dart';           // AppScaffold
-import '../ui/components/quick_actions.dart'; // << novo flexível
+import '../ui/components/exames_inline_status.dart';
+import '../ui/components/quick_actions.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/section_list.dart';
 import '../ui/components/loading_placeholder.dart';
 import '../ui/components/locked_notice.dart';
 import '../ui/components/resumo_row.dart';
 import '../ui/components/welcome_card.dart';
-import '../ui/components/minha_situacao_card.dart'; // card "Minha Situação"
+import '../ui/components/minha_situacao_card.dart';
 import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
 import '../ui/components/requerimentos_card.dart';
 import '../ui/components/comunicados_card.dart';
 
-
+import '../models/exame.dart';           // ExameResumo
 import '../flows/visitor_consent.dart';
-
-// Navegação via Shell (para manter hotbar)
 import '../root_nav_shell.dart';
 
-// ===== Controller/State =====
+// Controller/State
 import '../controllers/home_controller.dart';
-import '../controllers/home_state_controller.dart'; // reexporta HomeState
+import '../controllers/home_state_controller.dart'; // HomeState
+
+// Comunicados via VIEWS JSON (Yii)
+import '../services/comunicados_service.dart';
+import '../ui/components/comunicado_detail_sheet.dart';
+
+// Fluxo da Carteirinha direto na Home
+import '../screens/carteirinha_flow.dart';
+
+// Sheet com as três autorizações (navega internamente)
+import 'authorizations_picker_sheet.dart' show showAuthorizationsPickerSheet;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,16 +53,23 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with AutomaticKeepAliveClientMixin {
-  // Índices de abas na RootNavShell
+  // Tabs da RootNavShell
   static const int _TAB_HOME     = 0;
   static const int _TAB_SERVICOS = 1;
   static const int _TAB_PERFIL   = 2;
 
-  late HomeController _ctrl;
-  bool _ctrlReady = false;
+  // Controladores/Serviços
+  late final HomeController _ctrl;
+  late final ComunicadosService _comSvc;
+  late final ExamesRepository _exRepo;
 
-  // Para exibir o consent uma única vez
+  bool _ctrlReady = false;
   bool _didPromptConsent = false;
+
+  // Exames (estado local da Home)
+  List<ExameResumo> _examesHome = const [];
+  bool _exLoading = false;
+  int? _exLoadedForMatricula; // evita recarregar sem necessidade
 
   @override
   bool get wantKeepAlive => true;
@@ -59,27 +77,86 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_ctrlReady) {
-      final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-          ?? const String.fromEnvironment(
-            'API_BASE',
-            defaultValue: 'https://assistweb.ipasemnh.com.br',
-          );
+    if (_ctrlReady) return;
 
-      final depsRepo = DependentsRepository(DevApi(baseUrl));
-      final comRepo  = const ComunicadosRepository();
+    final DevApi api = ApiRouter.client();
 
-      _ctrl = HomeController(
-        session: SessionStore(),
-        depsRepo: depsRepo,
-        comRepo: comRepo, // comunicados via repositório
-      )..load();
+    final depsRepo = DependentsRepository(api);
+    final comRepo  = ComunicadosRepository(); // mantém repo legado para cache/local
+    _exRepo        = ExamesRepository(api);
 
-      _ctrlReady = true;
+    // Serviço de comunicados que consome as "views JSON" do Yii
+    _comSvc = ComunicadosService(repository: comRepo);
+
+    // Controller principal da Home
+    _ctrl = HomeController(
+      session: SessionStore(),
+      depsRepo: depsRepo,
+      comRepo: comRepo,
+    )..load();
+
+    _ctrlReady = true;
+  }
+
+  // ===== Exames (Home) =======================================================
+
+  Future<void> _loadExamesHome(int idMatricula) async {
+    if (_exLoading) return;
+    _exLoading = true;
+    try {
+      final list = await _exRepo.listarUltimosAP(
+        idMatricula: idMatricula,
+        limit: 3,
+      );
+      if (!mounted) return;
+      setState(() {
+        _examesHome = list;
+        _exLoadedForMatricula = idMatricula;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _examesHome = const [];
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _exLoading = false);
+      } else {
+        _exLoading = false;
+      }
     }
   }
 
-  // ====== Navegação mantendo hotbar ======
+  void _ensureExamesFor(HomeState s) {
+    if (!s.isLoggedIn) {
+      if (_examesHome.isNotEmpty) {
+        setState(() {
+          _examesHome = const [];
+          _exLoadedForMatricula = null;
+        });
+      }
+      return;
+    }
+    final id = s.profile?.id;
+    if (id == null) return;
+    if (_exLoadedForMatricula != id && !_exLoading) {
+      _loadExamesHome(id);
+    }
+  }
+
+  // ===== Comunicados (detalhe) ==============================================
+
+  void _openComunicado(ComunicadoResumo it) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => ComunicadoDetailSheet.fromResumo(resumo: it),
+    );
+  }
+
+  // ===== Navegação mantendo hotbar ===========================================
+
   bool _switchTab(int index) {
     final scope = RootNavShell.maybeOf(context);
     if (scope != null) {
@@ -91,30 +168,57 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _goToServicos() {
     if (_switchTab(_TAB_SERVICOS)) return;
-    // Fallback (evite no dia a dia)
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HomeServicos()));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const HomeServicos()),
+    );
   }
 
   void _goToPerfil() {
     if (_switchTab(_TAB_PERFIL)) return;
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
   }
 
-  // ====== NOVA ROTINA: monta as ações por tipo de login ======
   Widget _quickActionsFor(HomeState s) {
     final isLogged = s.isLoggedIn;
 
     final items = <QuickActionItem>[
-      // Disponível para todos, mas exige login para funcionar
+      // === Carteirinha: chama o fluxo direto usando a matrícula do estado ===
       QuickActionItem(
         id: 'carteirinha',
         label: 'Carteirinha',
         icon: Icons.badge_outlined,
-        onTap: _goToServicos,
+        audience: QaAudience.loggedIn,
+        requiresLogin: true,
+        onTap: () async {
+          if (!mounted) return;
+          final id = s.profile?.id;
+          if (id == null || id <= 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Não foi possível carregar a sua matrícula. Faça login novamente.'),
+              ),
+            );
+            return;
+          }
+          await startCarteirinhaFlow(context, idMatricula: id);
+        },
+      ),
+
+      // === Autorizações: abre o SHEET com 3 opções; o sheet navega internamente ===
+      QuickActionItem(
+        id: 'autorizacoes',
+        label: 'Autorizações',
+        icon: Icons.assignment_turned_in_outlined,
         audience: QaAudience.all,
         requiresLogin: true,
+        onTap: () async {
+          if (!mounted) return;
+          await showAuthorizationsPickerSheet(context);
+        },
       ),
-      // Disponível para todos, sem exigir login (pode abrir serviços/infos públicas)
+
       QuickActionItem(
         id: 'assistencia',
         label: 'Serviços',
@@ -123,17 +227,6 @@ class _HomeScreenState extends State<HomeScreen>
         audience: QaAudience.all,
         requiresLogin: false,
       ),
-      // Exige login
-      QuickActionItem(
-        id: 'autorizacoes',
-        label: 'Autoriz\u00E7\u00F5es', // evita problemas de encoding
-        icon: Icons.assignment_turned_in_outlined,
-        onTap: _goToServicos,
-        audience: QaAudience.all,
-        requiresLogin: true,
-      ),
-
-      // Exemplo de item só para visitante (se quiser estimular login)
       if (!isLogged)
         QuickActionItem(
           id: 'login',
@@ -147,8 +240,6 @@ class _HomeScreenState extends State<HomeScreen>
           audience: QaAudience.visitor,
           requiresLogin: false,
         ),
-
-      // Exemplo de item só para logado (se quiser atalho ao Perfil)
       if (isLogged)
         QuickActionItem(
           id: 'perfil',
@@ -165,7 +256,6 @@ class _HomeScreenState extends State<HomeScreen>
       items: items,
       isLoggedIn: isLogged,
       onRequireLogin: () {
-        // Comportamento padrão ao tocar em item bloqueado quando visitante:
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
         );
@@ -173,12 +263,13 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ===== Build ===============================================================
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
     if (!_ctrlReady) {
-      // proteção rápida (primeiro build antes do didChangeDependencies)
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -189,7 +280,10 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (context, _) {
         final s = _ctrl.state;
 
-        // dispara o consent para visitante (uma única vez)
+        // Busca exames quando logar/trocar usuário
+        _ensureExamesFor(s);
+
+        // Consentimento de visitante
         if (!s.loading && !s.isLoggedIn && !_didPromptConsent) {
           _didPromptConsent = true;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -198,12 +292,16 @@ class _HomeScreenState extends State<HomeScreen>
           });
         }
 
-        final dependentesCount = s.isLoggedIn ? s.dependents.length : 0;
-
         return AppScaffold(
           title: 'Início',
           body: RefreshIndicator(
-            onRefresh: _ctrl.load,
+            onRefresh: () async {
+              await _ctrl.load();
+              final id = _ctrl.state.profile?.id;
+              if (id != null) {
+                await _loadExamesHome(id);
+              }
+            },
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
@@ -213,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen>
                     child: ListView(
                       padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
                       children: [
-                        // ===== Cabeçalho (sempre mostra; o card decide o layout)
+                        // ===== Cabeçalho
                         WelcomeCard(
                           isLoggedIn: s.isLoggedIn,
                           name: s.isLoggedIn ? s.profile?.nome : null,
@@ -222,53 +320,44 @@ class _HomeScreenState extends State<HomeScreen>
                               ? fmtCpf(s.profile!.cpf)
                               : null)
                               : (s.cpf == null || s.cpf!.isEmpty ? null : fmtCpf(s.cpf!)),
-                          // onLogin é required; quando logado, passo no-op.
                           onLogin: s.isLoggedIn
                               ? () {}
                               : () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const LoginScreen()),
                           ),
                         ),
+
                         const SizedBox(height: 12),
-                        // ===== Comunicados
+
+                        // ===== Comunicados (consumindo as views JSON do Yii)
                         ComunicadosCard(
                           isLoading: s.loading,
                           items: s.comunicados,
                           take: 3,
                           skeletonHeight: 100,
-                          onTapItem: (c) {
-                            // abrir detalhe/navegar...
-                          },
+                          onTapItem: (c) => _openComunicado(c),
                         ),
+
                         const SizedBox(height: 16),
 
-                        // ===== Ações rápidas (controladas por rotina)
+                        // ===== Ações rápidas
                         _quickActionsFor(s),
 
                         const SizedBox(height: 16),
 
-                        // ===== Minha Situação
-                        MinhaSituacaoCard(
-                          isLoading: s.loading,
-                          isLoggedIn: s.isLoggedIn,
-                          situacao: s.isLoggedIn ? 'Ativo' : null, // padrão quando logado
-                          plano: s.isLoggedIn ? '—' : null,        // placeholder até SP
-                          dependentes: dependentesCount,
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // ===== Requerimentos em andamento
+                        // ===== Requerimentos + Exames (no mesmo card)
                         RequerimentosEmAndamentoCard(
                           isLoading: s.loading,
                           items: s.reqs,
                           take: 3,
                           skeletonHeight: 100,
-                          // onTapItem: (req) { ... abrir detalhe se quiser ... },
+                          onTapItem: (req) {
+                            // trate o toque do requerimento se necessário
+                          },
+                          extraInner: const ExamesInlineStatusList(take: 3),
                         ),
 
                         const SizedBox(height: 12),
-
                       ],
                     ),
                   ),

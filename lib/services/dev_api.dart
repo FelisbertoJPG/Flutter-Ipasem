@@ -47,12 +47,10 @@ class DevApi {
       ),
     );
 
-    // logs (com redaction)
     try {
       d.interceptors.add(RedactingLogInterceptor());
     } catch (_) {}
 
-    // injeta X-Session e loga erros
     d.interceptors.add(
       InterceptorsWrapper(
         onRequest: (opt, h) {
@@ -60,11 +58,18 @@ class DevApi {
           if (t != null && t.isNotEmpty) opt.headers['X-Session'] = t;
           h.next(opt);
         },
+        onResponse: (res, h) {
+          final eid = res.headers.value('x-eid');
+          if (!kReleaseMode && eid != null) {
+            debugPrint('<<< X-EID=$eid status=${res.statusCode}');
+          }
+          h.next(res);
+        },
         onError: (e, h) {
-          // log detalhado de erro
+          final eid = e.response?.headers.value('x-eid');
           debugPrint('*** HTTP ERROR *** '
               '${e.requestOptions.method} ${e.requestOptions.uri}\n'
-              'status: ${e.response?.statusCode}\n'
+              'status: ${e.response?.statusCode}  X-EID: ${eid ?? '-'}\n'
               'data  : ${e.response?.data}');
           h.next(e);
         },
@@ -85,7 +90,6 @@ class DevApi {
     return _dio().post<T>(path, data: data, queryParameters: queryParameters, options: options);
   }
 
-  /// Helper para rotas do api-dev.php com ?action=...
   Future<Response<T>> postAction<T>(
       String action, {
         Object? data,
@@ -99,26 +103,20 @@ class DevApi {
     );
   }
 
-  /// Upload multipart (com logs bem explícitos)
   Future<Response<dynamic>> uploadAction(
       String action, {
-        required Map<String, String> fields,              // campos simples
-        required List<MultipartFile> files,               // arquivos (mesmo campo 'images' repetido)
+        required Map<String, String> fields,
+        required List<MultipartFile> files,
         String fileFieldName = 'images',
       }) async {
     final d = _dio();
-
     final form = FormData();
 
-    // campos simples
     fields.forEach((k, v) => form.fields.add(MapEntry(k, v)));
-
-    // arquivos (mesmo campo repetido -> PHP preenche $_FILES['images'])
     for (final f in files) {
       form.files.add(MapEntry(fileFieldName, f));
     }
 
-    // LOG do que está indo
     if (!kReleaseMode) {
       final names = files.map((f) => f.filename).toList();
       debugPrint('>>> UPLOAD -> $_base$_apiPath?action=$action\n'
@@ -154,8 +152,11 @@ class DevApi {
     final body = res.data as Map<String, dynamic>;
     if (body['ok'] == true) {
       final data = (body['data'] as Map?) ?? const {};
-      final token = data['session_token'] as String?;
-      if (token != null && token.isNotEmpty) setSessionToken(token);
+      // FIX: nada de cascade aqui; só faça trim no valor retornado.
+      final rawToken = (data['session_token'] as String?)?.trim();
+      if (rawToken != null && rawToken.isNotEmpty) {
+        setSessionToken(rawToken);
+      }
       final profile = (data['profile'] as Map?)?.cast<String, dynamic>() ?? const {};
       return profile;
     }
@@ -338,4 +339,166 @@ class DevApi {
       error: m['error'],
     );
   }
+
+  // ========= ROTAS CARTEIRINHA =========
+
+  Future<Map<String, dynamic>> carteirinhaEmitir({
+    required int matricula,
+    String iddependente = '0',
+  }) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_pessoa'},
+      data: {
+        'matricula': matricula,
+        'iddependente': iddependente,
+      },
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      return (m['data'] as Map).cast<String, dynamic>();
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  Future<Map<String, dynamic>> carteirinhaConsultarAtivo({
+    required int matricula,
+    String iddependente = '0',
+  }) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_consultar_ativo'},
+      data: {
+        'matricula': matricula,
+        'iddependente': iddependente,
+      },
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      final data = m['data'];
+      if (data is Map) return (data as Map).cast<String, dynamic>();
+      return const <String, dynamic>{};
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  Future<void> carteirinhaAgendarExpurgo({required int dbToken}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_agendar_expurgo'},
+      data: {'db_token': dbToken},
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+    final code = r.statusCode ?? 0;
+    if (code == 200 || code == 202) return;
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: r.data,
+    );
+  }
+
+  Future<Map<String, dynamic>> carteirinhaValidar({int? dbToken, int? token}) async {
+    final payload = <String, dynamic>{};
+    if (dbToken != null && dbToken > 0) {
+      payload['db_token'] = dbToken;
+    } else if (token != null && token > 0) {
+      payload['token'] = token;
+    } else {
+      throw ArgumentError('Informe dbToken ou token.');
+    }
+
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_validar'},
+      data: payload,
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      return (m['data'] as Map).cast<String, dynamic>();
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  Future<Map<String, dynamic>> carteirinhaAgendarStatus({required int dbToken}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_agendar_status'},
+      data: {'db_token': dbToken},
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      return (m['data'] as Map).cast<String, dynamic>();
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  Future<Map<String, dynamic>> carteirinhaDados({required int idMatricula}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha'},
+      data: {'idmatricula': idMatricula},
+    );
+
+    final m = (r.data as Map).cast<String, dynamic>();
+    if (m['ok'] == true) {
+      return (m['data'] as Map).cast<String, dynamic>();
+    }
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: m['error'],
+    );
+  }
+
+  Future<void> carteirinhaExcluir({required int dbToken}) async {
+    final r = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'carteirinha_excluir_token'},
+      data: {'db_token': dbToken},
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+    final code = r.statusCode ?? 0;
+    if (code == 200) return;
+
+    throw DioException(
+      requestOptions: r.requestOptions,
+      response: r,
+      type: DioExceptionType.badResponse,
+      error: r.data,
+    );
+  }
+
 }

@@ -28,7 +28,7 @@ class ExameDetalheSheet extends StatefulWidget {
     required this.numero,
     this.resumo,
     this.onImprimirViaSite,
-    this.onPdfNoApp, Future<PrestadorRow?> Function(String nome)? resolvePrestador, required bool forcePodeImprimir,
+    this.onPdfNoApp, Future<PrestadorRow?> Function(String nome)? resolvePrestador,
   });
 
   @override
@@ -74,7 +74,7 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
   @override
   Widget build(BuildContext context) {
     final det = _detalhe;
-    final temDetalhe = det != null && det.hasCoreInfo;
+    final temDetalhe = det != null;
 
     // Só permite impressão quando: status == 'A' e temos detalhe com dados.
     final status = (widget.resumo?.status ?? '').trim().toUpperCase();
@@ -220,24 +220,6 @@ class _ExameDetalheSheetState extends State<ExameDetalheSheet> {
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
       child: Column(
         children: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.print_outlined),
-              label: const Text('Imprimir via site'),
-              onPressed: () async {
-                if (widget.onImprimirViaSite != null) {
-                  await widget.onImprimirViaSite!(widget.numero);
-                } else {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Conecte o callback de impressão do site.')),
-                    );
-                  }
-                }
-              },
-            ),
-          ),
           if (widget.onPdfNoApp != null) ...[
             const SizedBox(height: 10),
             SizedBox(

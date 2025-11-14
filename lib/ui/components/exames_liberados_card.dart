@@ -1,4 +1,4 @@
-// lib/ui/cards/exames_liberados_card.dart
+// lib/ui/components/exames_liberados_card.dart
 import 'package:flutter/material.dart';
 
 import '../../config/app_config.dart';
@@ -11,7 +11,7 @@ import '../components/section_card.dart';
 import '../components/loading_placeholder.dart';
 import '../sheets/exame_detalhe_sheet.dart';
 
-// util que abre o preview/print do PDF no app
+// abre o preview/print do PDF no app
 import '../utils/print_helpers.dart';
 
 class ExamesLiberadosCard extends StatefulWidget {
@@ -45,9 +45,13 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() { _loading = true; _error = null; _itens = const []; });
+
     try {
       final profile = await Session.getProfile();
+      if (!mounted) return;
+
       if (profile == null) {
         setState(() {
           _error = 'Faça login para ver suas autorizações.';
@@ -55,17 +59,21 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         });
         return;
       }
+
       final rows = await _repo.listarLiberadas(idMatricula: profile.id, limit: 0);
-      rows.sort((a, b) => b.dataHora.compareTo(a.dataHora)); // mais recentes primeiro
+      if (!mounted) return;
+
+      rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
       setState(() { _itens = rows; _loading = false; });
     } catch (_) {
+      if (!mounted) return;
       setState(() { _error = 'Erro ao carregar autorizações.'; _loading = false; });
     }
   }
 
   Future<void> _openPdfNoApp(int numero) async {
     if (!mounted) return;
-    await openPreviewFromNumero(context, numero);
+    await openPreviewFromNumeroExame(context, numero, useRootNavigator: true);
   }
 
   void _abrirDetalhe(ExameResumo a) async {
@@ -85,10 +93,13 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         numero: a.numero,
         resumo: a,
         onPdfNoApp: _openPdfNoApp,
-        // vindo de “liberadas” → força o botão habilitado
-        forcePodeImprimir: true,
+        // vindo da lista de "liberadas": força o botão habilitado se quiser
+        // forcePodeImprimir: true,
       ),
-    ).then((_) => _load());
+    ).then((_) {
+      if (!mounted) return;
+      _load();
+    });
   }
 
   void _verTodas() async {
@@ -107,7 +118,10 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         idMatricula: profile.id,
         onPdfNoApp: _openPdfNoApp,
       ),
-    ).then((_) => _load());
+    ).then((_) {
+      if (!mounted) return;
+      _load();
+    });
   }
 
   @override
@@ -177,12 +191,15 @@ class _LiberadasModalState extends State<_LiberadasModal> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() { _loading = true; _error = null; _rows = const []; });
     try {
       final rows = await widget.repo.listarLiberadas(idMatricula: widget.idMatricula, limit: 0);
+      if (!mounted) return;
       rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
       setState(() { _rows = rows; _loading = false; });
     } catch (_) {
+      if (!mounted) return;
       setState(() { _error = 'Erro ao carregar.'; _loading = false; });
     }
   }
@@ -201,10 +218,12 @@ class _LiberadasModalState extends State<_LiberadasModal> {
         numero: a.numero,
         resumo: a,
         onPdfNoApp: widget.onPdfNoApp,
-        // vindo de “liberadas” → força o botão habilitado
-        forcePodeImprimir: true,
+        // forcePodeImprimir: true,
       ),
-    );
+    ).then((_) {
+      if (!mounted) return;
+      _load(); // se imprimiu, já some daqui
+    });
   }
 
   @override
@@ -219,11 +238,15 @@ class _LiberadasModalState extends State<_LiberadasModal> {
           return Column(
             children: [
               const SizedBox(height: 12),
-              Container(width: 40, height: 5,
-                  decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3))),
+              Container(
+                width: 40, height: 5,
+                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+              ),
               const SizedBox(height: 10),
-              const Text('Autorizações de Exames (liberadas)',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              const Text(
+                'Autorizações de Exames (liberadas)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
               const SizedBox(height: 8),
               Expanded(
                 child: _loading
@@ -257,3 +280,4 @@ class _LiberadasModalState extends State<_LiberadasModal> {
     );
   }
 }
+
