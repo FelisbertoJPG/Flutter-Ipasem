@@ -5,14 +5,16 @@ class WelcomeCard extends StatelessWidget {
   const WelcomeCard({
     super.key,
     required this.isLoggedIn,
-    this.name,            // ← nome opcional para saudar
+    this.name,            // nome opcional para saudar
     this.cpf,             // envie já formatado se quiser (ex.: 123.456.789-00)
+    this.sexoTxt,         // "M", "F", "MASCULINO", "FEMININO" etc. (titular)
     required this.onLogin, // usado somente no modo visitante
   });
 
   final bool isLoggedIn;
   final String? name;
   final String? cpf;
+  final String? sexoTxt;
   final VoidCallback onLogin;
 
   String _firstName(String full) {
@@ -20,12 +22,32 @@ class WelcomeCard extends StatelessWidget {
     return parts.isEmpty ? full : parts.first;
   }
 
+  /// Decide a saudação com base no login + sexo do titular.
+  /// - Visitante: mantém "Bem-vindo"
+  /// - Logado:
+  ///    • sexoTxt começando com "F" → "Bem-vinda"
+  ///    • caso contrário → "Bem-vindo"
+  String _buildTitle() {
+    if (!isLoggedIn) {
+      // Visitante não tem sexo conhecido, mantém neutro
+      return 'Bem-vindo';
+    }
+
+    final hasName = name != null && name!.trim().isNotEmpty;
+
+    final sexo = (sexoTxt ?? '').trim().toUpperCase();
+    final prefixo = sexo.startsWith('F') ? 'Bem-vinda' : 'Bem-vindo';
+
+    if (!hasName) {
+      return prefixo;
+    }
+
+    return '$prefixo, ${_firstName(name!)}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasName = (name != null && name!.trim().isNotEmpty);
-    final title = isLoggedIn && hasName
-        ? 'Bem-vindo, ${_firstName(name!)}'
-        : 'Bem-vindo';
+    final title = _buildTitle();
 
     return Container(
       decoration: BoxDecoration(
@@ -66,7 +88,9 @@ class WelcomeCard extends StatelessWidget {
               ),
               if (cpf != null && cpf!.isNotEmpty)
                 const _StatusChip(
-                  label: '', color: Color(0xFF475467), bg: Color(0xFFEFF6F9),
+                  label: '',
+                  color: Color(0xFF475467),
+                  bg: Color(0xFFEFF6F9),
                 ).copyWith(label: 'CPF: $cpf'),
             ],
           ),
@@ -121,7 +145,11 @@ class _StatusChip extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
