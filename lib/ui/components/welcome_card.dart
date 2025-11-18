@@ -28,20 +28,20 @@ class WelcomeCard extends StatelessWidget {
   ///    • sexoTxt começando com "F" → "Bem-vinda"
   ///    • caso contrário → "Bem-vindo"
   String _buildTitle() {
-    if (!isLoggedIn) {
-      // Visitante não tem sexo conhecido, mantém neutro
-      return 'Bem-vindo';
-    }
+
 
     final hasName = name != null && name!.trim().isNotEmpty;
 
     final sexo = (sexoTxt ?? '').trim().toUpperCase();
-    final prefixo = sexo.startsWith('F') ? 'Bem-vinda' : 'Bem-vindo';
+    final prefixo = sexo.startsWith('M') ? 'Bem-vinda' : 'Bem-vindo';
 
     if (!hasName) {
       return prefixo;
     }
-
+    if (!isLoggedIn) {
+      // Visitante não tem sexo conhecido, mantém neutro
+      return 'Bem-vindo';
+    }
     return '$prefixo, ${_firstName(name!)}';
   }
 
