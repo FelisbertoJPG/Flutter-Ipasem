@@ -62,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen>
   late final HomeController _ctrl;
   late final ComunicadosService _comSvc;
   late final ExamesRepository _exRepo;
+  late final DevApi _api;
 
   bool _ctrlReady = false;
   bool _didPromptConsent = false;
@@ -71,6 +72,11 @@ class _HomeScreenState extends State<HomeScreen>
   bool _exLoading = false;
   int? _exLoadedForMatricula; // evita recarregar sem necessidade
 
+  // Sexo do titular (puxado via carteirinha)
+  String? _sexoTxtHome;
+  bool _sexoLoading = false;
+  int? _sexoLoadedForMatricula; // para não ficar batendo sempre
+
   @override
   bool get wantKeepAlive => true;
 
@@ -79,11 +85,11 @@ class _HomeScreenState extends State<HomeScreen>
     super.didChangeDependencies();
     if (_ctrlReady) return;
 
-    final DevApi api = ApiRouter.client();
+    _api = ApiRouter.client();
 
-    final depsRepo = DependentsRepository(api);
+    final depsRepo = DependentsRepository(_api);
     final comRepo  = ComunicadosRepository(); // mantém repo legado para cache/local
-    _exRepo        = ExamesRepository(api);
+    _exRepo        = ExamesRepository(_api);
 
     // Serviço de comunicados que consome as "views JSON" do Yii
     _comSvc = ComunicadosService(repository: comRepo);
@@ -142,6 +148,65 @@ class _HomeScreenState extends State<HomeScreen>
     if (_exLoadedForMatricula != id && !_exLoading) {
       _loadExamesHome(id);
     }
+  }
+
+  // ===== Sexo (via carteirinha) =============================================
+
+  Future<void> _loadSexoForMatricula(int idMatricula) async {
+    if (_sexoLoading) return;
+    _sexoLoading = true;
+    try {
+      final res = await _api.postAction<dynamic>(
+        'carteirinha',
+        data: {'idmatricula': idMatricula},
+      );
+      final root = (res.data as Map).cast<String, dynamic>();
+      if (root['ok'] == true && root['data'] is Map) {
+        final data = (root['data'] as Map).cast<String, dynamic>();
+        final titularRaw = data['titular'];
+        String? sexoTxt;
+        if (titularRaw is Map) {
+          final tit = titularRaw.cast<String, dynamic>();
+          sexoTxt = (tit['sexo_txt'] ??
+              tit['sexoTxt'] ??
+              tit['sexo'])
+              ?.toString();
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _sexoTxtHome = sexoTxt;
+          _sexoLoadedForMatricula = idMatricula;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _sexoTxtHome = null;
+        _sexoLoadedForMatricula = idMatricula; // evita bater sem parar em caso de erro
+      });
+    } finally {
+      _sexoLoading = false;
+    }
+  }
+
+  void _ensureSexoFor(HomeState s) {
+    if (!s.isLoggedIn) {
+      if (_sexoTxtHome != null || _sexoLoadedForMatricula != null) {
+        setState(() {
+          _sexoTxtHome = null;
+          _sexoLoadedForMatricula = null;
+        });
+      }
+      return;
+    }
+
+    final id = s.profile?.id;
+    if (id == null || id <= 0) return;
+
+    if (_sexoLoadedForMatricula == id || _sexoLoading) return;
+
+    _loadSexoForMatricula(id);
   }
 
   // ===== Comunicados (detalhe) ==============================================
@@ -283,6 +348,9 @@ class _HomeScreenState extends State<HomeScreen>
         // Busca exames quando logar/trocar usuário
         _ensureExamesFor(s);
 
+        // Busca sexo do titular (via carteirinha) quando logar/trocar usuário
+        _ensureSexoFor(s);
+
         // Consentimento de visitante
         if (!s.loading && !s.isLoggedIn && !_didPromptConsent) {
           _didPromptConsent = true;
@@ -300,6 +368,7 @@ class _HomeScreenState extends State<HomeScreen>
               final id = _ctrl.state.profile?.id;
               if (id != null) {
                 await _loadExamesHome(id);
+                await _loadSexoForMatricula(id);
               }
             },
             child: LayoutBuilder(
@@ -319,7 +388,10 @@ class _HomeScreenState extends State<HomeScreen>
                               ? (s.profile != null && (s.profile!.cpf).isNotEmpty
                               ? fmtCpf(s.profile!.cpf)
                               : null)
-                              : (s.cpf == null || s.cpf!.isEmpty ? null : fmtCpf(s.cpf!)),
+                              : (s.cpf == null || s.cpf!.isEmpty
+                              ? null
+                              : fmtCpf(s.cpf!)),
+                          sexoTxt: s.isLoggedIn ? _sexoTxtHome : null,
                           onLogin: s.isLoggedIn
                               ? () {}
                               : () => Navigator.of(context).push(

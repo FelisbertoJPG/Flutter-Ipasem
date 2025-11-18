@@ -32,6 +32,9 @@ import '../services/session.dart';
 // fluxo NOVO da carteirinha (overlay)
 import '../screens/carteirinha_flow.dart';
 
+// >>> NOVA TELA: Extrato de Coparticipação
+import 'relatorio_coparticipacao_screen.dart';
+
 class HomeServicos extends StatefulWidget {
   const HomeServicos({super.key});
 
@@ -46,7 +49,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
   bool _loading = true;
   bool _isLoggedIn = false;
 
-  int? _matricula; // usada para emissão da carteirinha
+  int? _matricula; // usada para emissão da carteirinha e relatórios
 
   late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
 
@@ -63,7 +66,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     final prefs = await SharedPreferences.getInstance();
     _isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
-    // Apenas carrega a matrícula para o fluxo da carteirinha.
+    // Apenas carrega a matrícula para os fluxos que exigem idmatricula.
     if (_isLoggedIn) {
       try {
         final prof = await Session.getProfile();
@@ -171,6 +174,29 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const _RetornoExamesScreen()),
+          );
+        },
+        audience: QaAudience.loggedIn,
+        requiresLogin: true,
+      ),
+
+      // >>> NOVA AÇÃO: Extrato de Coparticipação
+      QuickActionItem(
+        id: 'extrato_copart',
+        label: 'Extrato Coparticipação',
+        icon: FontAwesomeIcons.fileInvoiceDollar,
+        onTap: () {
+          final m = _matricula;
+          if (m == null || m <= 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Não foi possível carregar a sua matrícula. Faça login novamente.')),
+            );
+            return;
+          }
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => RelatorioCoparticipacaoScreen(idMatricula: m),
+            ),
           );
         },
         audience: QaAudience.loggedIn,
