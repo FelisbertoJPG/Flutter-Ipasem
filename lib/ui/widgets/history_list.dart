@@ -1,4 +1,4 @@
-//C:\Users\suporteti2\StudioProjects\ipa_app_flutter\lib\ui\widgets\history_list.dart
+// lib/ui/widgets/history_list.dart
 import 'package:flutter/material.dart';
 
 class HistoryItem {
@@ -14,12 +14,16 @@ class HistoryList extends StatelessWidget {
   final List<HistoryItem> items;
   final VoidCallback? onSeeAll;
 
+  /// Limite opcional de itens exibidos. Se null, mostra todos.
+  final int? maxItems;
+
   const HistoryList({
     super.key,
     required this.loading,
     required this.isLoggedIn,
     required this.items,
     this.onSeeAll,
+    this.maxItems, // <- novo
   });
 
   @override
@@ -54,9 +58,13 @@ class HistoryList extends StatelessWidget {
       );
     }
 
+    final visibleItems = (maxItems != null && items.length > maxItems!)
+        ? items.take(maxItems!).toList()
+        : items;
+
     return Column(
       children: [
-        ...items.map((it) => ListTile(
+        ...visibleItems.map((it) => ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
           title: Text(it.title, style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(it.subtitle),
