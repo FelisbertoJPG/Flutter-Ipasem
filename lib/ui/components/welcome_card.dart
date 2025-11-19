@@ -22,21 +22,35 @@ class WelcomeCard extends StatelessWidget {
     return parts.isEmpty ? full : parts.first;
   }
 
+  String _onlyDigits(String? input) {
+    if (input == null) return '';
+    return input.replaceAll(RegExp(r'\D'), '');
+  }
+
   /// Decide a saudação com base no login + sexo do titular.
-  /// - Regra especial: se o nome vier como "USUARIO", força "Bem-vindo, JOÃO"
+  /// Regras:
+  /// - Se CPF for o 78945612300 → "Bem-vindo, João"
+  /// - Se o nome vier como "USUARIO"/"USUÁRIO" → "Bem-vindo, João"
   /// - Visitante: mantém "Bem-vindo"
   /// - Logado:
   ///    • sexoTxt começando com "F" → "Bem-vinda"
   ///    • caso contrário → "Bem-vindo"
   String _buildTitle() {
     final rawName = (name ?? '').trim();
-    final hasName = rawName.isNotEmpty;
+    final upperName = rawName.toUpperCase();
+    final digitsCpf = _onlyDigits(cpf);
 
-    // Regra especial: backend mandou apenas "USUARIO"
-    if (rawName.toUpperCase() == 'USUARIO') {
-      return 'Bem-vindo, JOÃO';
+    // 1) Regra especial pelo CPF (tratando formatado ou não)
+    if (digitsCpf == '78945612300') {
+      return 'Bem-vindo, João';
     }
 
+    // 2) Regra especial pelo nome placeholder
+    if (upperName == 'USUARIO' || upperName == 'USUÁRIO') {
+      return 'Bem-vindo, João';
+    }
+
+    final hasName = rawName.isNotEmpty;
     final sexo = (sexoTxt ?? '').trim().toUpperCase();
     final prefixo = sexo.startsWith('F') ? 'Bem-vinda' : 'Bem-vindo';
 
