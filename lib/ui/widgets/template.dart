@@ -1,0 +1,534 @@
+// lib/ui/widgets/digital_card_view.dart
+import 'dart:async';
+import 'package:flutter/material.dart';
+
+/// Cartão digital do IPASEM com layout responsivo e degradê superior.
+///
+/// Assinatura estável (somente params nomeados):
+/// - nome, cpf, matricula, sexoTxt, nascimento (dd/mm/aaaa)
+/// - token
+/// - expiresAtEpoch (epoch em segundos)
+/// - onClose (opcional)
+/// - forceLandscape (força sempre horizontal)
+/// - forceLandscapeOnWide (força horizontal apenas em telas largas; default: true)
+class DigitalCardView extends StatefulWidget {
+  final String nome;
+  final String cpf;
+  final String matricula;
+  final String sexoTxt;
+  final String? nascimento;
+  final String token;
+  final int? expiresAtEpoch; // epoch (segundos)
+  final VoidCallback? onClose;
+
+  /// Força SEMPRE o layout horizontal (independente da largura).
+  final bool forceLandscape;
+
+  /// Mantém o comportamento antigo: força horizontal se a tela for larga.
+  final bool forceLandscapeOnWide;
+
+  const DigitalCardView({
+    super.key,
+    required this.nome,
+    required this.cpf,
+    required this.matricula,
+    required this.sexoTxt,
+    required this.token,
+    this.nascimento,
+    this.expiresAtEpoch,
+    this.onClose,
+    this.forceLandscape = false,
+    this.forceLandscapeOnWide = true,
+  });
+
+  @override
+  State<DigitalCardView> createState() => _DigitalCardViewState();
+}
+
+class _DigitalCardViewState extends State<DigitalCardView> {
+  late Timer _t;
+  Duration _left = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _recalcLeft();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    final next = _remaining();
+    if (next.inSeconds != _left.inSeconds) {
+      setState(() => _left = next);
+    }
+  }
+
+  Duration _remaining() {
+    final exp = widget.expiresAtEpoch;
+    if (exp == null || exp <= 0) return Duration.zero;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final leftSec = exp - now;
+    return Duration(seconds: leftSec.clamp(0, 24 * 3600));
+  }
+
+  void _recalcLeft() => _left = _remaining();
+
+  @override
+  void didUpdateWidget(covariant DigitalCardView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.expiresAtEpoch != widget.expiresAtEpoch) {
+      _recalcLeft();
+    }
+  }
+
+  @override
+  void dispose() {
+    _t.cancel();
+    super.dispose();
+  }
+
+  String? _fmtValidoAte() {
+    final exp = widget.expiresAtEpoch;
+    if (exp == null || exp <= 0) return null;
+    final dt = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Proporção CR80 (~85.6 × 54 mm) — usamos isto como "design ratio".
+    const cardRatio = 85.6 / 54.0;
+
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final isWide = box.maxWidth >= 420.0;
+
+          // Novo: força absoluta OU (força em telas largas)
+          final useLandscape =
+              widget.forceLandscape || (widget.forceLandscapeOnWide && isWide);
+
+          // Tamanhos de "design" (grandes). O FittedBox escala para caber
+          // no espaço disponível, evitando overflow de Column/Row internos.
+          const double designWLandscape = 900.0;
+          const double designWPortrait  = 560.0;
+          final double designW = useLandscape ? designWLandscape : designWPortrait;
+          final double designH = designW / cardRatio;
+
+          final gradient = const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF143C8D), Color(0xFF3257B4)],
+          );
+
+          final expired = _left.inSeconds <= 0;
+
+          // Evita que o fator de acessibilidade de texto quebre o layout do cartão:
+          final mq = MediaQuery.of(context);
+          final mqNoTextScale = mq.copyWith(textScaler: const TextScaler.linear(1.0));
+
+          // Cartão no tamanho de "design", embrulhado por FittedBox(BoxFit.contain)
+          // para SEMPRE caber no viewport, sem "RenderFlex overflow".
+          final card = SizedBox(
+            width: designW,
+            height: designH,
+            child: _CardChrome(
+              gradient: gradient,
+              child: Padding(
+                padding: const EdgeInsets.all(18.0),
+                child: useLandscape
+                    ? _LandscapeContent(
+                  nome: widget.nome,
+                  cpf: widget.cpf,
+                  matricula: widget.matricula,
+                  sexoTxt: widget.sexoTxt,
+                  nascimento: widget.nascimento,
+                  token: widget.token,
+                  validoAte: _fmtValidoAte(),
+                  expLeft: _left,
+                  expired: expired,
+                  onClose: widget.onClose,
+                )
+                    : _PortraitContent(
+                  nome: widget.nome,
+                  cpf: widget.cpf,
+                  matricula: widget.matricula,
+                  sexoTxt: widget.sexoTxt,
+                  nascimento: widget.nascimento,
+                  token: widget.token,
+                  validoAte: _fmtValidoAte(),
+                  expLeft: _left,
+                  expired: expired,
+                  onClose: widget.onClose,
+                ),
+              ),
+            ),
+          );
+
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.contain,
+                // Importante: o FittedBox só escala. Para garantir que o
+                // texto não se reexpanda com o TextScaleFactor do SO,
+                // travamos o textScaler dentro do cartão.
+                child: MediaQuery(data: mqNoTextScale, child: card),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Moldura com cantos 20, sombra e “degradê superior”.
+class _CardChrome extends StatelessWidget {
+  final Widget child;
+  final Gradient gradient;
+
+  const _CardChrome({required this.child, required this.gradient});
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: Colors.white,
+        shadows: const [
+          BoxShadow(blurRadius: 18, offset: Offset(0, 8), color: Color(0x33000000)),
+        ],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(color: const Color(0xFFF7F8FC)),
+            Align(
+              alignment: Alignment.topCenter,
+              child: Container(height: 64, decoration: BoxDecoration(gradient: gradient)),
+            ),
+            Positioned(
+              top: 60,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 24,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x33000000), Colors.transparent],
+                  ),
+                ),
+              ),
+            ),
+            child,
+            Positioned(top: 12, right: 12, child: _Chip('Digital')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String text;
+  const _Chip(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: const [BoxShadow(blurRadius: 8, offset: Offset(0, 2), color: Color(0x22000000))],
+      ),
+      child: Text(text, style: TextStyle(color: c.primary, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+class _PortraitContent extends StatelessWidget {
+  final String nome;
+  final String cpf;
+  final String matricula;
+  final String sexoTxt;
+  final String? nascimento;
+  final String token;
+  final String? validoAte;
+  final Duration expLeft;
+  final bool expired;
+  final VoidCallback? onClose;
+
+  const _PortraitContent({
+    required this.nome,
+    required this.cpf,
+    required this.matricula,
+    required this.sexoTxt,
+    required this.nascimento,
+    required this.token,
+    required this.validoAte,
+    required this.expLeft,
+    required this.expired,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          nome.toUpperCase(),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: t.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            shadows: const [Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _dl('CPF', cpf)),
+            const SizedBox(width: 16),
+            Expanded(child: _dl('Matrícula', matricula)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _dl('Sexo', sexoTxt)),
+            const SizedBox(width: 16),
+            Expanded(child: _dl('Nascimento', nascimento ?? '-')),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _tokenBlock(token: token, validoAte: validoAte, expLeft: expLeft, expired: expired),
+        const Spacer(),
+        _disclaimer(),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight,
+          child: ElevatedButton(
+            onPressed: onClose,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF143C8D),
+              shape: const StadiumBorder(),
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+              elevation: 0,
+            ),
+            child: const Text('Sair'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LandscapeContent extends StatelessWidget {
+  final String nome;
+  final String cpf;
+  final String matricula;
+  final String sexoTxt;
+  final String? nascimento;
+  final String token;
+  final String? validoAte;
+  final Duration expLeft;
+  final bool expired;
+  final VoidCallback? onClose;
+
+  const _LandscapeContent({
+    required this.nome,
+    required this.cpf,
+    required this.matricula,
+    required this.sexoTxt,
+    required this.nascimento,
+    required this.token,
+    required this.validoAte,
+    required this.expLeft,
+    required this.expired,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
+    return Row(
+      children: [
+        Expanded(
+          flex: 6,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 16, top: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nome.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: .2,
+                    shadows: const [Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 20,
+                  runSpacing: 6,
+                  children: [
+                    _dl('CPF', cpf),
+                    _dl('Matrícula', matricula),
+                    _dl('Sexo', sexoTxt),
+                    _dl('Nascimento', nascimento ?? '-'),
+                  ],
+                ),
+                const Spacer(),
+                _disclaimer(),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 4,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const SizedBox(height: 4),
+              _tokenBlock(
+                token: token,
+                validoAte: validoAte,
+                expLeft: expLeft,
+                expired: expired,
+                alignEnd: true,
+              ),
+              const Spacer(),
+              ElevatedButton(
+                onPressed: onClose,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF143C8D),
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+                  elevation: 0,
+                ),
+                child: const Text('Sair'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// --- Helpers visuais ---------------------------------------------------------
+
+Widget _dl(String label, String value) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+      const SizedBox(height: 2),
+      Text(
+        value,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+          height: 1.1,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _tokenBlock({
+  required String token,
+  required String? validoAte,
+  required Duration expLeft,
+  required bool expired,
+  bool alignEnd = false,
+}) {
+  if (expired) {
+    // AVISO VERMELHO (token expirado)
+    return Align(
+      alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE53935), // vermelho
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
+        ),
+        child: const Text(
+          'TOKEN EXPIRADO - FECHE E TENTE NOVAMENTE',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
+  final left = expLeft.inSeconds > 0 ? _fmtLeftStatic(expLeft) : '00:00';
+  return Align(
+    alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0x1A000000),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DefaultTextStyle(
+        style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.2),
+        child: Column(
+          crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text('Token: ', style: TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 2),
+            if (validoAte != null) Text('válido até $validoAte'),
+            Text('Expira em $left'),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _disclaimer() {
+  return const Text(
+    'Esta Carteirinha é pessoal e intransferível. Somente tem VALIDADE '
+        'junto a um documento de identidade com foto - RG. '
+        'Mantenha seu cadastro SEMPRE atualizado.',
+    style: TextStyle(fontSize: 12.5, color: Colors.white, height: 1.25),
+  );
+}
+
+String _fmtLeftStatic(Duration d) {
+  final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  final hh = d.inHours;
+  return hh > 0 ? '$hh:$mm:$ss' : '$mm:$ss';
+}
