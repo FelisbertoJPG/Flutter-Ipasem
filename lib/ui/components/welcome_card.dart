@@ -23,26 +23,33 @@ class WelcomeCard extends StatelessWidget {
   }
 
   /// Decide a saudação com base no login + sexo do titular.
+  /// - Regra especial: se o nome vier como "USUARIO", força "Bem-vindo, JOÃO"
   /// - Visitante: mantém "Bem-vindo"
   /// - Logado:
   ///    • sexoTxt começando com "F" → "Bem-vinda"
   ///    • caso contrário → "Bem-vindo"
   String _buildTitle() {
+    final rawName = (name ?? '').trim();
+    final hasName = rawName.isNotEmpty;
 
-
-    final hasName = name != null && name!.trim().isNotEmpty;
+    // Regra especial: backend mandou apenas "USUARIO"
+    if (rawName.toUpperCase() == 'USUARIO') {
+      return 'Bem-vindo, JOÃO';
+    }
 
     final sexo = (sexoTxt ?? '').trim().toUpperCase();
-    final prefixo = sexo.startsWith('M') ? 'Bem-vinda' : 'Bem-vindo';
+    final prefixo = sexo.startsWith('F') ? 'Bem-vinda' : 'Bem-vindo';
 
     if (!hasName) {
       return prefixo;
     }
+
     if (!isLoggedIn) {
       // Visitante não tem sexo conhecido, mantém neutro
       return 'Bem-vindo';
     }
-    return '$prefixo, ${_firstName(name!)}';
+
+    return '$prefixo, ${_firstName(rawName)}';
   }
 
   @override
@@ -69,7 +76,10 @@ class WelcomeCard extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -83,8 +93,12 @@ class WelcomeCard extends StatelessWidget {
             children: [
               _StatusChip(
                 label: isLoggedIn ? 'Acesso autenticado' : 'Acesso limitado',
-                color: isLoggedIn ? const Color(0xFF027A48) : const Color(0xFF6941C6),
-                bg:    isLoggedIn ? const Color(0xFFD1FADF) : const Color(0xFFF4EBFF),
+                color: isLoggedIn
+                    ? const Color(0xFF027A48)
+                    : const Color(0xFF6941C6),
+                bg: isLoggedIn
+                    ? const Color(0xFFD1FADF)
+                    : const Color(0xFFF4EBFF),
               ),
               if (cpf != null && cpf!.isNotEmpty)
                 const _StatusChip(
