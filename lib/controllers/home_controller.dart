@@ -1,9 +1,9 @@
-// lib/controllers/home_controller.dart
 import 'package:flutter/foundation.dart';
 
 import '../data/session_store.dart';
 import '../services/session.dart';
 import '../repositories/dependents_repository.dart';
+import '../repositories/comunicados_repository.dart';
 import '../services/dependent_utils.dart';     // removeTitularFromList(Profile, List<Dependent>)
 import '../core/models.dart';                 // RequerimentoResumo, ComunicadoResumo
 import '../models/dependent.dart';            // Tipo Dependent
@@ -15,10 +15,12 @@ import 'home_state_controller.dart';          // reexporta HomeState
 /// Controlador da Home.
 /// - Carrega status de login, CPF salvo e perfil atual.
 /// - Busca dependentes via repo e remove o titular da contagem/exibição.
+/// - Busca comunicados via repositório dedicado.
 /// - Expõe um `HomeState` que a tela observa (AnimatedBuilder/ChangeNotifier).
 class HomeController extends ChangeNotifier {
   final SessionStore session;
   final DependentsRepository depsRepo;
+  final ComunicadosRepository comRepo;
 
   HomeState _state = HomeState.initial();
   HomeState get state => _state;
@@ -26,6 +28,7 @@ class HomeController extends ChangeNotifier {
   HomeController({
     required this.session,
     required this.depsRepo,
+    required this.comRepo,
   });
 
   /// Atalho para atualizar o estado e notificar a UI.
@@ -38,27 +41,16 @@ class HomeController extends ChangeNotifier {
   /// - login/CPF
   /// - perfil atual (se logado)
   /// - dependentes (já sem o titular)
-  /// - stubs de requerimentos/comunicados
+  /// - requerimentos (stub por enquanto)
+  /// - comunicados (via repo; se vazio, o front mostra "Sem comunicados Publicados")
   Future<void> load() async {
     _set(_state.copyWith(loading: true));
 
     final logged = await session.getIsLoggedIn();
     final cpf    = await session.getSavedCpf();
 
-    // Stubs (mantidos)
+    // Stubs de requerimentos mantidos (preencha conforme evoluir)
     final reqs = <RequerimentoResumo>[];
-    final avisos = <ComunicadoResumo>[
-      ComunicadoResumo(
-        titulo: 'Manutenção programada',
-        descricao: 'Sistema de autorizações ficará indisponível no domingo, 02:00–04:00.',
-        data: DateTime.now(),
-      ),
-      ComunicadoResumo(
-        titulo: 'Novo canal de atendimento',
-        descricao: 'WhatsApp do setor de benefícios atualizado.',
-        data: DateTime.now().subtract(const Duration(days: 2)),
-      ),
-    ];
 
     // Perfil + dependentes reais
     var prof = logged ? await Session.getProfile() : null;
@@ -71,6 +63,14 @@ class HomeController extends ChangeNotifier {
       } catch (_) {
         deps = const [];
       }
+    }
+
+    // Comunicados via repositório (públicos)
+    List<ComunicadoResumo> avisos = const [];
+    try {
+      avisos = await comRepo.listPublicados(limit: 10);
+    } catch (_) {
+      avisos = const [];
     }
 
     _set(_state.copyWith(
