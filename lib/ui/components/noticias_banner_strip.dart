@@ -7,11 +7,11 @@ import '../../models/noticia_banner.dart';
 import '../../services/noticias_banner_service.dart';
 
 /// Faixa de notícias em destaque para a parte superior do app,
-/// logo abaixo do AppBar.
+/// ou dentro do Drawer abaixo de "Menu".
 ///
-/// Uso típico dentro do AppScaffold ou Drawer:
+/// Uso típico:
 ///   const NoticiasBannerStrip(
-///     feedUrl: 'https://www.ipasemnh.com.br/materias', // ajustar para JSON
+///     feedUrl: 'https://www.ipasemnh.com.br/materias?ordenacao=1',
 ///     limit: 3,
 ///   );
 class NoticiasBannerStrip extends StatefulWidget {
@@ -113,14 +113,21 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
         }
 
         if (snap.hasError) {
-          // Em caso de erro, não reserva espaço nenhum.
-          return const SizedBox.shrink();
+          // Em caso de erro, mostra um card com mensagem e erro real.
+          return _ErrorStrip(
+            height: widget.height,
+            margin: widget.margin,
+            error: snap.error!,
+          );
         }
 
         final rows = snap.data ?? const <NoticiaBanner>[];
         if (rows.isEmpty) {
-          // Sem notícias → não mostra nada e não ocupa espaço.
-          return const SizedBox.shrink();
+          // Sem notícias → mostra um estado vazio discreto.
+          return _EmptyStrip(
+            height: widget.height,
+            margin: widget.margin,
+          );
         }
 
         // Autoplay configurado somente depois de ter dados.
@@ -221,7 +228,6 @@ class _NoticiaSlide extends StatelessWidget {
   const _NoticiaSlide({required this.item});
 
   String _buildTitle() {
-    // Garante string não-nula antes de chamar trim()
     final t = (item.titulo ?? '').trim();
     return t.isEmpty ? 'Notícia' : t;
   }
@@ -326,13 +332,13 @@ class _NoticiaSlide extends StatelessWidget {
       ),
     );
 
-    // Se quiser abrir um detalhe ou link externo, este é o ponto:
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          // Exemplo de ação mínima: no futuro, navegar para tela de notícias
-          // ou abrir item.linkUrl via url_launcher.
+          // Ponto para futura navegação:
+          // - abrir item.linkUrl com url_launcher
+          // - ou navegar para uma tela interna de notícia
         },
         child: content,
       ),
@@ -358,6 +364,101 @@ class _SkeletonStrip extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.05),
           borderRadius: BorderRadius.circular(18),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyStrip extends StatelessWidget {
+  final double height;
+  final EdgeInsetsGeometry margin;
+
+  const _EmptyStrip({
+    required this.height,
+    required this.margin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: margin,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: const Text(
+          'Nenhuma notícia publicada no momento.',
+          style: TextStyle(
+            fontSize: 13,
+            color: Color(0xFF667085),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorStrip extends StatelessWidget {
+  final double height;
+  final EdgeInsetsGeometry margin;
+  final Object error;
+
+  const _ErrorStrip({
+    required this.height,
+    required this.margin,
+    required this.error,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final errText = error.toString();
+
+    return Padding(
+      padding: margin,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF2F2),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFDC2626).withOpacity(0.4)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Color(0xFFB91C1C)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Falha ao carregar notícias.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF991B1B),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    errText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFFB91C1C),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

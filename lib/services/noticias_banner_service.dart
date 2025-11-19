@@ -19,28 +19,35 @@ class NoticiasBannerService {
     final url = feedUrl.trim();
     if (url.isEmpty) return const <NoticiaBanner>[];
 
-    final uri = Uri.parse(url);
-    final resp = await http.get(uri);
+    try {
+      final uri = Uri.parse(url);
+      final resp = await http
+          .get(uri)
+          .timeout(const Duration(seconds: 10)); // timeout básico
 
-    if (resp.statusCode != 200) {
-      return const <NoticiaBanner>[];
-    }
+      if (resp.statusCode != 200) {
+        throw Exception(
+          'HTTP ${resp.statusCode} ao acessar $url',
+        );
+      }
 
-    final body = resp.body;
-    final trimmed = body.trimLeft();
+      final body = resp.body;
+      final trimmed = body.trimLeft();
 
-    // 1) Tenta tratar como JSON (cenário MyAdmin / API nova)
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
+      // 1) Tenta tratar como JSON (cenário MyAdmin / API nova)
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
         final decoded = json.decode(body);
         return _fromJson(decoded, limit: limit);
-      } catch (_) {
-        // Se falhar, cai para parsing de HTML.
       }
-    }
 
-    // 2) Fallback: scraping de HTML de /materias
-    return _fromHtml(body, baseUri: uri, limit: limit);
+      // 2) Fallback: scraping de HTML de /materias
+      return _fromHtml(body, baseUri: uri, limit: limit);
+    } catch (e, st) {
+      // Log opcional para debug
+      // ignore: avoid_print
+      print('NoticiasBannerService error: $e\n$st');
+      rethrow; // deixa o FutureBuilder ver o erro real
+    }
   }
 
   // --------- Parsing JSON genérico ---------
@@ -88,12 +95,14 @@ class NoticiasBannerService {
       }) {
     final doc = html_parser.parse(html);
 
-    // Os cards de notícias estão dentro do <section ...> com class row...
-    // Vamos pegar todos os .card dentro desse section.
-    final section = doc.querySelector('section');
-    if (section == null) return const <NoticiaBanner>[];
+    // Cards de notícias: <section ...><div class="card shadow ...">...</div></section>
+    var cards = doc.querySelectorAll('section .card.shadow');
 
-    final cards = section.querySelectorAll('.card');
+    // Fallback: qualquer .card dentro do section principal
+    if (cards.isEmpty) {
+      cards = doc.querySelectorAll('section .card');
+    }
+
     if (cards.isEmpty) return const <NoticiaBanner>[];
 
     final List<NoticiaBanner> result = [];
@@ -153,7 +162,7 @@ class NoticiasBannerService {
     return NoticiaBanner(
       id: id,
       titulo: titulo,
-      resumo: null, // banner pode mostrar só o título, resumo é opcional
+      resumo: null, // banner pode mostrar só o título; resumo é opcional
       imagemUrl: imagemUrl,
       linkUrl: linkUrl,
       data: data,

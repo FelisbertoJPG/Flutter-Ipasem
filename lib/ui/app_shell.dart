@@ -26,27 +26,22 @@ class AppScaffold extends StatelessWidget {
       return Scaffold(body: body);
     }
 
-    // Dentro da RootNavShell?
     final shell = RootNavShell.maybeOf(context);
     final inShell = shell != null;
 
-    // Nome da rota atual (definido pela shell nas abas raiz)
     final routeName = ModalRoute.of(context)?.settings.name ?? '';
 
-    // Conjunto de rotas RAIZ das abas (nessas, queremos SEMPRE hambúrguer)
     const tabRoots = {'home-root', 'servicos-root', 'perfil-root'};
     final isTabRoot = inShell && tabRoots.contains(routeName);
 
-    // Pode dar pop neste Navigator local?
     final canPopHere = Navigator.of(context).canPop();
 
-    // Regra final: mostra "voltar" apenas se NÃO for raiz de aba
     final showBack = !inShell || (!isTabRoot && canPopHere);
 
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        toolbarHeight: 60, // ↑ mais alto para acomodar melhor o logo
+        toolbarHeight: 60,
         title: Text(title),
         leading: showBack
             ? BackButton(
@@ -67,12 +62,11 @@ class AppScaffold extends StatelessWidget {
           ),
         ),
         actions: [
-          // Logo maior e sem corte
           const _LogoAction(
             imagePath: 'assets/images/icons/logo_ipasem.png',
-            size: 70, // ↑ tamanho maior
+            size: 70,
             borderRadius: 6,
-            verticalPadding: 8, // folga para não “grudar” no topo
+            verticalPadding: 8,
           ),
           const SizedBox(width: 8),
           if (actions != null) ...actions!,
@@ -80,10 +74,10 @@ class AppScaffold extends StatelessWidget {
       ),
       drawer: isTabRoot
           ? const _AppDrawer(
-        noticiasFeedUrl: 'https://www.ipasemnh.com.br/materias?ordenacao=1',
+        noticiasFeedUrl:
+        'https://www.ipasemnh.com.br/materias?ordenacao=1',
       )
           : null,
-      // Agora o body é só o conteúdo da tela.
       body: body,
     );
   }
@@ -100,14 +94,11 @@ class _AppDrawer extends StatelessWidget {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Flag “manter login” (se não existir, default true)
       final remember = prefs.getBool('remember_login') ?? true;
 
-      // Sempre encerra a sessão
       await prefs.setBool('is_logged_in', false);
       await prefs.remove('auth_token');
 
-      // Só limpa credenciais se NÃO quiser manter login
       if (!remember) {
         await prefs.remove('saved_cpf');
         await prefs.remove('saved_pwd');
@@ -128,7 +119,7 @@ class _AppDrawer extends StatelessWidget {
   }
 
   void _goTab(BuildContext context, int index) {
-    Navigator.of(context).pop(); // fecha o drawer
+    Navigator.of(context).pop();
     final shell = RootNavShell.maybeOf(context);
     if (shell != null) {
       shell.setTab(index);
@@ -139,7 +130,7 @@ class _AppDrawer extends StatelessWidget {
   }
 
   void _goRoute(BuildContext context, String routeName) {
-    Navigator.of(context).pop(); // fecha o Drawer
+    Navigator.of(context).pop();
     final shell = RootNavShell.maybeOf(context);
 
     if (shell != null) {
@@ -158,7 +149,6 @@ class _AppDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Cabeçalho compacto "Menu"
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Center(
@@ -173,7 +163,6 @@ class _AppDrawer extends StatelessWidget {
             ),
 
             // Banner de notícias logo abaixo do texto "Menu".
-            // Se não houver notícias / erro, o widget se auto-esconde.
             if (noticiasFeedUrl.isNotEmpty)
               NoticiasBannerStrip(
                 feedUrl: noticiasFeedUrl,
@@ -184,7 +173,6 @@ class _AppDrawer extends StatelessWidget {
 
             const Divider(height: 1),
 
-            // Lista de opções do menu rolável
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
@@ -261,7 +249,7 @@ class _LogoAction extends StatelessWidget {
             borderRadius: BorderRadius.circular(borderRadius),
             child: Image.asset(
               imagePath,
-              fit: BoxFit.contain, // não corta a imagem
+              fit: BoxFit.contain,
               alignment: Alignment.center,
               filterQuality: FilterQuality.medium,
             ),

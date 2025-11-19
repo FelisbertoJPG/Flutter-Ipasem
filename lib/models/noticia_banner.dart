@@ -2,8 +2,7 @@
 import 'dart:convert';
 
 /// Modelo de notícia para o banner/strip.
-/// Funciona tanto com payload JSON (API) quanto com scraping de HTML,
-/// desde que os campos sejam mapeados via `fromApi`.
+/// Funciona tanto com payload JSON (API) quanto com scraping de HTML.
 class NoticiaBanner {
   final int id;
   final String? titulo;
@@ -66,17 +65,17 @@ class NoticiaBanner {
         final s = v.trim();
         if (s.isEmpty) continue;
 
-        // Tenta ISO direto
+        // ISO
         try {
           return DateTime.parse(s);
         } catch (_) {
-          // Tenta normalizar "YYYY-MM-DD HH:mm:ss"
+          // Normaliza "YYYY-MM-DD HH:mm:ss"
           final norm = s.replaceFirst(' ', 'T');
           try {
             return DateTime.parse(norm);
           } catch (_) {}
 
-          // Tenta dd/MM/yyyy bem simples
+          // dd/MM/yyyy
           final br = RegExp(r'^(\d{2})/(\d{2})/(\d{4})$').firstMatch(s);
           if (br != null) {
             final d = int.parse(br.group(1)!);
@@ -97,7 +96,7 @@ class NoticiaBanner {
   /// - titulo:        `titulo` | `title`
   /// - resumo:        `subtitulo` | `resumo` | `summary`
   /// - imagemUrl:     `imagem_url` | `image_url` | `imagem` | `image`
-  /// - linkUrl:       `link_url` | `url` | `permalink`
+  /// - linkUrl:       `link_url` | `url` | `permalink` | `href`
   /// - data:          `data_postagem` | `data_post` | `published_at`
   static NoticiaBanner fromApi(Map<String, dynamic> row) {
     final id = _pickInt(row, const ['id', 'noticia_id']) ?? 0;
