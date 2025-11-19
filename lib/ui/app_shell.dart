@@ -1,8 +1,10 @@
 // lib/ui/app_shell.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../theme/colors.dart';
 import '../root_nav_shell.dart';
+import 'components/noticias_banner_strip.dart';
 
 class AppScaffold extends StatelessWidget {
   final String title;
@@ -68,7 +70,7 @@ class AppScaffold extends StatelessWidget {
           // Logo maior e sem corte
           const _LogoAction(
             imagePath: 'assets/images/icons/logo_ipasem.png',
-            size: 70,        // ↑ tamanho maior
+            size: 70, // ↑ tamanho maior
             borderRadius: 6,
             verticalPadding: 8, // folga para não “grudar” no topo
           ),
@@ -76,15 +78,23 @@ class AppScaffold extends StatelessWidget {
           if (actions != null) ...actions!,
         ],
       ),
-      // Drawer só aparece no root das abas
-      drawer: isTabRoot ? const _AppDrawer() : null,
+      drawer: isTabRoot
+          ? const _AppDrawer(
+        noticiasFeedUrl: 'https://www.ipasemnh.com.br/materias?ordenacao=1',
+      )
+          : null,
+      // Agora o body é só o conteúdo da tela.
       body: body,
     );
   }
 }
 
 class _AppDrawer extends StatelessWidget {
-  const _AppDrawer();
+  final String noticiasFeedUrl;
+
+  const _AppDrawer({
+    this.noticiasFeedUrl = '',
+  });
 
   Future<void> _logout(BuildContext context) async {
     try {
@@ -110,7 +120,9 @@ class _AppDrawer extends StatelessWidget {
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível encerrar a sessão.')),
+        const SnackBar(
+          content: Text('Não foi possível encerrar a sessão.'),
+        ),
       );
     }
   }
@@ -143,46 +155,77 @@ class _AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Drawer(
       child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const DrawerHeader(
-              child: Text('Menu', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            // Cabeçalho compacto "Menu"
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Center(
+                child: Text(
+                  'Menu',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.home_outlined),
-              title: const Text('Início'),
-              onTap: () => _goTab(context, 0),
-            ),
-            ListTile(
-              leading: const Icon(Icons.grid_view_rounded),
-              title: const Text('Serviços'),
-              onTap: () => _goTab(context, 1),
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: const Text('Perfil'),
-              onTap: () => _goTab(context, 2),
-            ),
+
+            // Banner de notícias logo abaixo do texto "Menu".
+            // Se não houver notícias / erro, o widget se auto-esconde.
+            if (noticiasFeedUrl.isNotEmpty)
+              NoticiasBannerStrip(
+                feedUrl: noticiasFeedUrl,
+                limit: 3,
+                height: 140,
+                margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              ),
+
             const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Sobre'),
-              onTap: () => _goRoute(context, '/sobre'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text('Privacidade'),
-              onTap: () => _goRoute(context, '/privacidade'),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Sair'),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _logout(context);
-              },
+
+            // Lista de opções do menu rolável
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.home_outlined),
+                    title: const Text('Início'),
+                    onTap: () => _goTab(context, 0),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.grid_view_rounded),
+                    title: const Text('Serviços'),
+                    onTap: () => _goTab(context, 1),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.person_outline),
+                    title: const Text('Perfil'),
+                    onTap: () => _goTab(context, 2),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('Sobre'),
+                    onTap: () => _goRoute(context, '/sobre'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.privacy_tip_outlined),
+                    title: const Text('Privacidade'),
+                    onTap: () => _goRoute(context, '/privacidade'),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.logout),
+                    title: const Text('Sair'),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await _logout(context);
+                    },
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -208,7 +251,8 @@ class _LogoAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(right: 4, top: verticalPadding, bottom: verticalPadding),
+      padding:
+      EdgeInsets.only(right: 4, top: verticalPadding, bottom: verticalPadding),
       child: SizedBox(
         width: size,
         height: size,
@@ -217,7 +261,7 @@ class _LogoAction extends StatelessWidget {
             borderRadius: BorderRadius.circular(borderRadius),
             child: Image.asset(
               imagePath,
-              fit: BoxFit.contain, // ← não corta a imagem
+              fit: BoxFit.contain, // não corta a imagem
               alignment: Alignment.center,
               filterQuality: FilterQuality.medium,
             ),
