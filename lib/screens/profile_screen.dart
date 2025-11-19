@@ -25,7 +25,7 @@ const _createAccountUrl =
 
 // Contatos (mesmos usados no app)
 const String _kTelRaw = 'tel:5135949162';
-const String _kEmail = 'contato@ipasemnh.com.br';
+const String _kEmail = 'beneficios@ipasemnh.com.br';
 const String _kEmailSubject = 'Atualização cadastral — App IPASEM';
 
 class ProfileScreen extends StatefulWidget {
