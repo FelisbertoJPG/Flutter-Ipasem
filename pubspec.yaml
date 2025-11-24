@@ -20,6 +20,7 @@ dependencies:
   path_provider:
   shared_preferences: ^2.3.2
   http: ^1.2.2
+  html: ^0.15.0
   package_info_plus: ^8.0.0
   in_app_update: ^4.2.3
   url_launcher:

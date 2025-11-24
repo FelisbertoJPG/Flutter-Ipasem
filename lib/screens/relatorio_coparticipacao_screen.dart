@@ -5,7 +5,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../config/app_config.dart';
 import '../services/api_router.dart';
 import '../theme/colors.dart';
 import '../ui/app_shell.dart';
@@ -55,7 +54,89 @@ class _RelatorioCoparticipacaoScreenState
     super.dispose();
   }
 
+  /// Aplica máscara MM/AAAA a um texto contendo mês/ano.
+  ///
+  /// Exemplos:
+  /// - "092025"      -> "09/2025"
+  /// - "09-2025"     -> "09/2025"
+  /// - "09/2025"     -> "09/2025" (mantém)
+  /// - "09/25"       -> permanece "09/25" (vai falhar na validação e mostrar erro)
+  String _applyMmYyyyMask(String input) {
+    final raw = input.trim();
+    if (raw.isEmpty) return raw;
+
+    // Mantém apenas dígitos
+    var digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 6) {
+      // Não temos 6 dígitos (MM + AAAA) -> mantém como está
+      return raw;
+    }
+    if (digits.length > 6) {
+      digits = digits.substring(0, 6);
+    }
+
+    final mm = digits.substring(0, 2);
+    final yyyy = digits.substring(2, 6);
+    return '$mm/$yyyy';
+  }
+
+  /// Normaliza ambos os campos para MM/AAAA antes de validar/enviar.
+  void _normalizeInputs() {
+    _inicioCtrl.text = _applyMmYyyyMask(_inicioCtrl.text);
+    _fimCtrl.text = _applyMmYyyyMask(_fimCtrl.text);
+  }
+
+  /// Extrai uma mensagem de erro amigável a partir de um payload de backend.
+  ///
+  /// Tenta usar:
+  /// - message
+  /// - msg
+  /// - error_description
+  /// - error
+  /// e, se existir, adiciona o EID/código no final.
+  String _extractBackendError(
+      dynamic data, {
+        String fallback = 'Falha ao consultar. Tente novamente.',
+      }) {
+    if (data == null) return fallback;
+
+    // Se já for String, usa direto (desde que não vazia).
+    if (data is String) {
+      final s = data.trim();
+      return s.isEmpty ? fallback : s;
+    }
+
+    if (data is Map) {
+      final map = data.cast<String, dynamic>();
+      final msg = (map['message'] ??
+          map['msg'] ??
+          map['error_description'] ??
+          map['error'])
+          ?.toString();
+      final eid = map['eid']?.toString();
+
+      String base;
+      if (msg != null && msg.trim().isNotEmpty) {
+        base = msg.trim();
+      } else {
+        base = fallback;
+      }
+
+      if (eid != null && eid.trim().isNotEmpty) {
+        return '$base (código: $eid)';
+      }
+      return base;
+    }
+
+    // Qualquer outra coisa: tenta toString, se não, fallback.
+    final s = data.toString().trim();
+    return s.isEmpty ? fallback : s;
+  }
+
   Future<void> _fetch() async {
+    // Primeiro normaliza para MM/AAAA
+    _normalizeInputs();
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() {
       _busy = true;
@@ -64,16 +145,14 @@ class _RelatorioCoparticipacaoScreenState
 
     try {
       final dio = ApiRouter.client(); // mesmo cliente central
-      // Assumindo que o baseUrl já aponta para api-dev.php (como em outros fluxos).
-      // Se seu ApiRouter apontar para a pasta do site, a chamada abaixo
-      // continuará válida (rota com query ?action=...).
+
       final resp = await dio.post(
         '',
         queryParameters: {'action': 'relatorio_coparticipacao'},
         data: {
           'idmatricula': widget.idMatricula,
           'data_inicio': _inicioCtrl.text.trim(), // "MM/YYYY"
-          'data_fim': _fimCtrl.text.trim(),      // "MM/YYYY"
+          'data_fim': _fimCtrl.text.trim(),       // "MM/YYYY"
         },
         options: Options(
           contentType: Headers.formUrlEncodedContentType,
@@ -85,26 +164,41 @@ class _RelatorioCoparticipacaoScreenState
           : json.decode(resp.data as String) as Map<String, dynamic>;
 
       final parsed = RelatorioResponse.fromMap(payload);
+
       if (!parsed.ok) {
+        // Tenta extrair mensagem detalhada do próprio payload.
+        final msg = _extractBackendError(
+          payload,
+          fallback: 'Falha ao consultar. Tente novamente.',
+        );
         setState(() {
           _busy = false;
-          _error = 'Falha ao consultar. Tente novamente.';
+          _error = msg;
         });
         return;
       }
+
       setState(() {
         _data = parsed.data;
         _busy = false;
       });
     } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = data != null
+          ? _extractBackendError(
+        data,
+        fallback: e.message ?? 'Erro de rede.',
+      )
+          : (e.message ?? 'Erro de rede.');
+
       setState(() {
         _busy = false;
-        _error = e.response?.data?.toString() ?? e.message ?? 'Erro de rede.';
+        _error = msg;
       });
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = e.toString();
+        _error = 'Erro inesperado: $e';
       });
     }
   }
@@ -154,8 +248,10 @@ class _RelatorioCoparticipacaoScreenState
                           child: TextFormField(
                             controller: _inicioCtrl,
                             keyboardType: TextInputType.datetime,
-                            decoration:
-                            _deco('Início', hint: 'MM/AAAA (ex.: 09/2025)'),
+                            decoration: _deco(
+                              'Início',
+                              hint: 'MM/AAAA (ex.: 09/2025)',
+                            ),
                             validator: _validateMonthYear,
                           ),
                         ),
@@ -164,8 +260,10 @@ class _RelatorioCoparticipacaoScreenState
                           child: TextFormField(
                             controller: _fimCtrl,
                             keyboardType: TextInputType.datetime,
-                            decoration:
-                            _deco('Fim', hint: 'MM/AAAA (ex.: 11/2025)'),
+                            decoration: _deco(
+                              'Fim',
+                              hint: 'MM/AAAA (ex.: 11/2025)',
+                            ),
                             validator: _validateMonthYear,
                           ),
                         ),
@@ -236,9 +334,11 @@ class _RelatorioCoparticipacaoScreenState
         children: [
           _kv('Entrada', '${en.dataInicio ?? '—'} → ${en.dataFim ?? '—'}'),
           const SizedBox(height: 6),
-          _kv('Efetivo',
-              '${ef.mesInicio?.toString().padLeft(2, '0') ?? '--'}/${ef.anoInicio ?? '----'}'
-                  ' → ${ef.mesFim?.toString().padLeft(2, '0') ?? '--'}/${ef.anoFim ?? '----'}'),
+          _kv(
+            'Efetivo',
+            '${ef.mesInicio?.toString().padLeft(2, '0') ?? '--'}/${ef.anoInicio ?? '----'}'
+                ' → ${ef.mesFim?.toString().padLeft(2, '0') ?? '--'}/${ef.anoFim ?? '----'}',
+          ),
           if (d.usuario?.idmatricula != null) ...[
             const SizedBox(height: 6),
             _kv('Matrícula', d.usuario!.idmatricula.toString()),
@@ -266,13 +366,21 @@ class _RelatorioCoparticipacaoScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 12, color: Color(0xFF475467))),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF475467),
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(value,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 16)),
+            Text(
+              value,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
           ],
         ),
       );
@@ -285,13 +393,17 @@ class _RelatorioCoparticipacaoScreenState
           Row(
             children: [
               Expanded(
-                child: cell('A — Saldo Meses Anteriores',
-                    _brMoney(t.A_saldoMesesAnteriores)),
+                child: cell(
+                  'A — Saldo Meses Anteriores',
+                  _brMoney(t.A_saldoMesesAnteriores),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: cell(
-                    'B — Total Coparticipação', _brMoney(t.B_totalCoparticipacao)),
+                  'B — Total Coparticipação',
+                  _brMoney(t.B_totalCoparticipacao),
+                ),
               ),
             ],
           ),
@@ -299,12 +411,17 @@ class _RelatorioCoparticipacaoScreenState
           Row(
             children: [
               Expanded(
-                child: cell('C — Débitos Avulsos', _brMoney(t.C_debitosAvulsos)),
+                child: cell(
+                  'C — Débitos Avulsos',
+                  _brMoney(t.C_debitosAvulsos),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: cell('D — Descontado Copart.',
-                    _brMoney(t.D_descontadoCopart)),
+                child: cell(
+                  'D — Descontado Copart.',
+                  _brMoney(t.D_descontadoCopart),
+                ),
               ),
             ],
           ),
@@ -312,12 +429,17 @@ class _RelatorioCoparticipacaoScreenState
           Row(
             children: [
               Expanded(
-                child:
-                cell('E — Créditos Avulsos', _brMoney(t.E_creditosAvulsos)),
+                child: cell(
+                  'E — Créditos Avulsos',
+                  _brMoney(t.E_creditosAvulsos),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: cell('ABC — Débitos Totais', _brMoney(t.ABC_debitosTotal)),
+                child: cell(
+                  'ABC — Débitos Totais',
+                  _brMoney(t.ABC_debitosTotal),
+                ),
               ),
             ],
           ),
@@ -325,11 +447,17 @@ class _RelatorioCoparticipacaoScreenState
           Row(
             children: [
               Expanded(
-                child: cell('DE — Créditos Totais', _brMoney(t.DE_creditosTotal)),
+                child: cell(
+                  'DE — Créditos Totais',
+                  _brMoney(t.DE_creditosTotal),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: cell('Saldo a Transportar', _brMoney(t.saldoATransportar)),
+                child: cell(
+                  'Saldo a Transportar',
+                  _brMoney(t.saldoATransportar),
+                ),
               ),
             ],
           ),
@@ -337,13 +465,17 @@ class _RelatorioCoparticipacaoScreenState
           Row(
             children: [
               Expanded(
-                child: cell('Total Enviado para Desconto',
-                    _brMoney(t.totalEnviadoDesconto)),
+                child: cell(
+                  'Total Enviado para Desconto',
+                  _brMoney(t.totalEnviadoDesconto),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: cell('Total Pago (período)',
-                    _brMoney(d.totaisPagos.totalPago ?? 0)),
+                child: cell(
+                  'Total Pago (período)',
+                  _brMoney(d.totaisPagos.totalPago ?? 0),
+                ),
               ),
             ],
           ),
@@ -460,9 +592,13 @@ class _RelatorioCoparticipacaoScreenState
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('$k: ',
-            style:
-            const TextStyle(fontWeight: FontWeight.w600, color: kBrand)),
+        Text(
+          '$k: ',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: kBrand,
+          ),
+        ),
         Expanded(child: Text(v)),
       ],
     );

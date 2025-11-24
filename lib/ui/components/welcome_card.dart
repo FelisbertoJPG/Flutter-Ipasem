@@ -22,27 +22,48 @@ class WelcomeCard extends StatelessWidget {
     return parts.isEmpty ? full : parts.first;
   }
 
+  String _onlyDigits(String? input) {
+    if (input == null) return '';
+    return input.replaceAll(RegExp(r'\D'), '');
+  }
+
   /// Decide a saudação com base no login + sexo do titular.
+  /// Regras:
+  /// - Se CPF for o 78945612300 → "Bem-vindo, João"
+  /// - Se o nome vier como "USUARIO"/"USUÁRIO" → "Bem-vindo, João"
   /// - Visitante: mantém "Bem-vindo"
   /// - Logado:
   ///    • sexoTxt começando com "F" → "Bem-vinda"
   ///    • caso contrário → "Bem-vindo"
   String _buildTitle() {
+    final rawName = (name ?? '').trim();
+    final upperName = rawName.toUpperCase();
+    final digitsCpf = _onlyDigits(cpf);
 
+    // 1) Regra especial pelo CPF (tratando formatado ou não)
+    if (digitsCpf == '78945612300') {
+      return 'Bem-vindo, João';
+    }
 
-    final hasName = name != null && name!.trim().isNotEmpty;
+    // 2) Regra especial pelo nome placeholder
+    if (upperName == 'USUARIO' || upperName == 'USUÁRIO') {
+      return 'Bem-vindo, João';
+    }
 
+    final hasName = rawName.isNotEmpty;
     final sexo = (sexoTxt ?? '').trim().toUpperCase();
-    final prefixo = sexo.startsWith('M') ? 'Bem-vinda' : 'Bem-vindo';
+    final prefixo = sexo.startsWith('F') ? 'Bem-vinda' : 'Bem-vindo';
 
     if (!hasName) {
       return prefixo;
     }
+
     if (!isLoggedIn) {
       // Visitante não tem sexo conhecido, mantém neutro
       return 'Bem-vindo';
     }
-    return '$prefixo, ${_firstName(name!)}';
+
+    return '$prefixo, ${_firstName(rawName)}';
   }
 
   @override
@@ -69,7 +90,10 @@ class WelcomeCard extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -83,8 +107,12 @@ class WelcomeCard extends StatelessWidget {
             children: [
               _StatusChip(
                 label: isLoggedIn ? 'Acesso autenticado' : 'Acesso limitado',
-                color: isLoggedIn ? const Color(0xFF027A48) : const Color(0xFF6941C6),
-                bg:    isLoggedIn ? const Color(0xFFD1FADF) : const Color(0xFFF4EBFF),
+                color: isLoggedIn
+                    ? const Color(0xFF027A48)
+                    : const Color(0xFF6941C6),
+                bg: isLoggedIn
+                    ? const Color(0xFFD1FADF)
+                    : const Color(0xFFF4EBFF),
               ),
               if (cpf != null && cpf!.isNotEmpty)
                 const _StatusChip(

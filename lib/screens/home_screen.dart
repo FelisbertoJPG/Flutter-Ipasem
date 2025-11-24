@@ -13,6 +13,7 @@ import '../services/api_router.dart';
 import '../ui/app_shell.dart';           // AppScaffold
 import '../ui/components/exames_inline_status.dart';
 import '../ui/components/quick_actions.dart';
+import '../ui/components/quick_action_items.dart';
 import '../ui/components/section_card.dart';
 import '../ui/components/section_list.dart';
 import '../ui/components/loading_placeholder.dart';
@@ -231,98 +232,23 @@ class _HomeScreenState extends State<HomeScreen>
     return false;
   }
 
-  void _goToServicos() {
-    if (_switchTab(_TAB_SERVICOS)) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HomeServicos()),
-    );
-  }
-
-  void _goToPerfil() {
-    if (_switchTab(_TAB_PERFIL)) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ProfileScreen()),
-    );
-  }
+  // ===== Quick Actions (via presets) ========================================
 
   Widget _quickActionsFor(HomeState s) {
-    final isLogged = s.isLoggedIn;
-
-    final items = <QuickActionItem>[
-      // === Carteirinha: chama o fluxo direto usando a matrícula do estado ===
-      QuickActionItem(
-        id: 'carteirinha',
-        label: 'Carteirinha',
-        icon: Icons.badge_outlined,
-        audience: QaAudience.loggedIn,
-        requiresLogin: true,
-        onTap: () async {
-          if (!mounted) return;
-          final id = s.profile?.id;
-          if (id == null || id <= 0) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Não foi possível carregar a sua matrícula. Faça login novamente.'),
-              ),
-            );
-            return;
-          }
-          await startCarteirinhaFlow(context, idMatricula: id);
-        },
-      ),
-
-      // === Autorizações: abre o SHEET com 3 opções; o sheet navega internamente ===
-      QuickActionItem(
-        id: 'autorizacoes',
-        label: 'Autorizações',
-        icon: Icons.assignment_turned_in_outlined,
-        audience: QaAudience.all,
-        requiresLogin: true,
-        onTap: () async {
-          if (!mounted) return;
-          await showAuthorizationsPickerSheet(context);
-        },
-      ),
-
-      QuickActionItem(
-        id: 'assistencia',
-        label: 'Serviços',
-        icon: Icons.local_hospital_outlined,
-        onTap: _goToServicos,
-        audience: QaAudience.all,
-        requiresLogin: false,
-      ),
-      if (!isLogged)
-        QuickActionItem(
-          id: 'login',
-          label: 'Fazer login',
-          icon: Icons.login_outlined,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
-            );
-          },
-          audience: QaAudience.visitor,
-          requiresLogin: false,
-        ),
-      if (isLogged)
-        QuickActionItem(
-          id: 'perfil',
-          label: 'Meu Perfil',
-          icon: Icons.person_outline,
-          onTap: _goToPerfil,
-          audience: QaAudience.loggedIn,
-          requiresLogin: false,
-        ),
-    ];
+    final items = QuickActionItems.homeDefault(
+      context: context,
+      idMatricula: s.profile?.id,
+    );
 
     return QuickActions(
       title: 'Ações rápidas',
       items: items,
-      isLoggedIn: isLogged,
+      isLoggedIn: s.isLoggedIn,
       onRequireLogin: () {
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(),
+          ),
         );
       },
     );
@@ -395,7 +321,9 @@ class _HomeScreenState extends State<HomeScreen>
                           onLogin: s.isLoggedIn
                               ? () {}
                               : () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                            MaterialPageRoute(
+                              builder: (_) => const LoginScreen(),
+                            ),
                           ),
                         ),
 

@@ -1,8 +1,11 @@
 // lib/ui/app_shell.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../theme/colors.dart';
 import '../root_nav_shell.dart';
+import '../config/app_config.dart';
+import 'components/noticias_banner_strip.dart';
 
 class AppScaffold extends StatelessWidget {
   final String title;
@@ -18,33 +21,87 @@ class AppScaffold extends StatelessWidget {
     this.minimal = false,
   });
 
+  /// Monta a URL do feed de notícias a partir da base configurada no AppConfig.
+  /// Aqui fazemos o roteamento "especial" para o banner, conforme o ambiente.
+  String _buildNoticiasFeedUrl(BuildContext context) {
+    final config = AppConfig.of(context);
+    final base = config.params.baseApiUrl.trim();
+
+    if (base.isEmpty) return '';
+
+    Uri uri;
+    try {
+      uri = Uri.parse(base);
+    } catch (_) {
+      return '';
+    }
+
+    final host = uri.host.toLowerCase();
+    final scheme = uri.scheme.isNotEmpty ? uri.scheme : 'http';
+
+    // === CASOS ESPECÍFICOS ===
+
+    // Dev/homolog local: API em 192.9.200.98, mas banner no :81
+    if (host == '192.9.200.98') {
+      return Uri(
+        scheme: scheme,
+        host: '192.9.200.98',
+        port: 81,
+        path: '/app-banner/banner-app',
+      ).toString();
+    }
+
+    // Produção: API no assistweb, banner no site público ipasemnh
+    if (host == 'assistweb.ipasemnh.com.br') {
+      return Uri(
+        scheme: 'https',
+        host: 'www.ipasemnh.com.br',
+        path: '/app-banner/banner-app',
+      ).toString();
+    }
+
+    // Caso a base já seja ipasemnh.com.br (ex.: build web apontando direto pra lá)
+    if (host == 'ipasemnh.com.br' || host == 'www.ipasemnh.com.br') {
+      return Uri(
+        scheme: uri.scheme.isNotEmpty ? uri.scheme : 'https',
+        host: 'www.ipasemnh.com.br',
+        path: '/app-banner/banner-app',
+      ).toString();
+    }
+
+    // === FALLBACK GENÉRICO ===
+    // Usa o mesmo host/porta da API e só força o path do banner.
+    return uri.replace(
+      path: '/app-banner/banner-app',
+      query: null,
+    ).toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (minimal) {
       return Scaffold(body: body);
     }
 
-    // Dentro da RootNavShell?
     final shell = RootNavShell.maybeOf(context);
     final inShell = shell != null;
 
-    // Nome da rota atual (definido pela shell nas abas raiz)
     final routeName = ModalRoute.of(context)?.settings.name ?? '';
 
-    // Conjunto de rotas RAIZ das abas (nessas, queremos SEMPRE hambúrguer)
     const tabRoots = {'home-root', 'servicos-root', 'perfil-root'};
     final isTabRoot = inShell && tabRoots.contains(routeName);
 
-    // Pode dar pop neste Navigator local?
     final canPopHere = Navigator.of(context).canPop();
 
-    // Regra final: mostra "voltar" apenas se NÃO for raiz de aba
     final showBack = !inShell || (!isTabRoot && canPopHere);
+
+    // Usa a mesma base do main/main_local, com regras especiais pro banner.
+    final noticiasFeedUrl = _buildNoticiasFeedUrl(context);
 
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        toolbarHeight: 60, // ↑ mais alto para acomodar melhor o logo
+        toolbarHeight: 60,
         title: Text(title),
         leading: showBack
             ? BackButton(
@@ -65,39 +122,45 @@ class AppScaffold extends StatelessWidget {
           ),
         ),
         actions: [
-          // Logo maior e sem corte
           const _LogoAction(
             imagePath: 'assets/images/icons/logo_ipasem.png',
-            size: 70,        // ↑ tamanho maior
+            size: 70,
             borderRadius: 6,
-            verticalPadding: 8, // folga para não “grudar” no topo
+            verticalPadding: 8,
           ),
           const SizedBox(width: 8),
           if (actions != null) ...actions!,
         ],
       ),
-      // Drawer só aparece no root das abas
-      drawer: isTabRoot ? const _AppDrawer() : null,
+
+      // Drawer só nas roots das abas
+      drawer: isTabRoot
+          ? _AppDrawer(
+        noticiasFeedUrl: noticiasFeedUrl,
+      )
+          : null,
+
       body: body,
     );
   }
 }
 
 class _AppDrawer extends StatelessWidget {
-  const _AppDrawer();
+  final String noticiasFeedUrl;
+
+  const _AppDrawer({
+    this.noticiasFeedUrl = '',
+  });
 
   Future<void> _logout(BuildContext context) async {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Flag “manter login” (se não existir, default true)
       final remember = prefs.getBool('remember_login') ?? true;
 
-      // Sempre encerra a sessão
       await prefs.setBool('is_logged_in', false);
       await prefs.remove('auth_token');
 
-      // Só limpa credenciais se NÃO quiser manter login
       if (!remember) {
         await prefs.remove('saved_cpf');
         await prefs.remove('saved_pwd');
@@ -110,13 +173,15 @@ class _AppDrawer extends StatelessWidget {
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível encerrar a sessão.')),
+        const SnackBar(
+          content: Text('Não foi possível encerrar a sessão.'),
+        ),
       );
     }
   }
 
   void _goTab(BuildContext context, int index) {
-    Navigator.of(context).pop(); // fecha o drawer
+    Navigator.of(context).pop();
     final shell = RootNavShell.maybeOf(context);
     if (shell != null) {
       shell.setTab(index);
@@ -127,7 +192,7 @@ class _AppDrawer extends StatelessWidget {
   }
 
   void _goRoute(BuildContext context, String routeName) {
-    Navigator.of(context).pop(); // fecha o Drawer
+    Navigator.of(context).pop();
     final shell = RootNavShell.maybeOf(context);
 
     if (shell != null) {
@@ -143,46 +208,73 @@ class _AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Drawer(
       child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const DrawerHeader(
-              child: Text('Menu', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Center(
+                child: Text(
+                  'Menu',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.home_outlined),
-              title: const Text('Início'),
-              onTap: () => _goTab(context, 0),
-            ),
-            ListTile(
-              leading: const Icon(Icons.grid_view_rounded),
-              title: const Text('Serviços'),
-              onTap: () => _goTab(context, 1),
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: const Text('Perfil'),
-              onTap: () => _goTab(context, 2),
-            ),
+
+            // Banner de notícias logo abaixo do texto "Menu".
+            if (noticiasFeedUrl.isNotEmpty)
+              NoticiasBannerStrip(
+                feedUrl: noticiasFeedUrl,
+                height: 140,
+                margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              ),
+
             const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Sobre'),
-              onTap: () => _goRoute(context, '/sobre'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text('Privacidade'),
-              onTap: () => _goRoute(context, '/privacidade'),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Sair'),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _logout(context);
-              },
+
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.home_outlined),
+                    title: const Text('Início'),
+                    onTap: () => _goTab(context, 0),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.grid_view_rounded),
+                    title: const Text('Serviços'),
+                    onTap: () => _goTab(context, 1),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.person_outline),
+                    title: const Text('Perfil'),
+                    onTap: () => _goTab(context, 2),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('Sobre'),
+                    onTap: () => _goRoute(context, '/sobre'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.privacy_tip_outlined),
+                    title: const Text('Privacidade'),
+                    onTap: () => _goRoute(context, '/privacidade'),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.logout),
+                    title: const Text('Sair'),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await _logout(context);
+                    },
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -208,7 +300,11 @@ class _LogoAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(right: 4, top: verticalPadding, bottom: verticalPadding),
+      padding: EdgeInsets.only(
+        right: 4,
+        top: verticalPadding,
+        bottom: verticalPadding,
+      ),
       child: SizedBox(
         width: size,
         height: size,
@@ -217,7 +313,7 @@ class _LogoAction extends StatelessWidget {
             borderRadius: BorderRadius.circular(borderRadius),
             child: Image.asset(
               imagePath,
-              fit: BoxFit.contain, // ← não corta a imagem
+              fit: BoxFit.contain,
               alignment: Alignment.center,
               filterQuality: FilterQuality.medium,
             ),
