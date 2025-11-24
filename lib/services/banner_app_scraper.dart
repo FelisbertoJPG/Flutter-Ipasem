@@ -8,6 +8,7 @@ import 'package:html/dom.dart' as dom;
 
 /// Um banner lido da página /app-banner/banner-app.
 class ScrapedBannerImage {
+  /// Pode ser uma URL http/https ou um data URI (data:image/jpeg;base64,...).
   final String imageUrl;
   final String? title;
 
@@ -30,7 +31,7 @@ class BannerAppScraper {
   Future<List<ScrapedBannerImage>> fetchBanners() async {
     if (pageUrl.isEmpty) {
       if (kDebugMode) {
-        debugPrint('[BannerAppScraper] pageUrl vazio, nada a fazer.');
+        debugPrint('[BannerAppScraper] pageUrl vazio, retornando lista vazia.');
       }
       return const <ScrapedBannerImage>[];
     }
@@ -51,9 +52,7 @@ class BannerAppScraper {
     );
 
     if (kDebugMode) {
-      debugPrint(
-        '[BannerAppScraper] status=${resp.statusCode} bodyLen=${resp.body.length}',
-      );
+      debugPrint('[BannerAppScraper] status=${resp.statusCode} bodyLen=${resp.body.length}');
     }
 
     if (resp.statusCode != 200) {
@@ -70,9 +69,7 @@ class BannerAppScraper {
     final cards = doc.querySelectorAll('div.card.border-0.shadow.h-100');
     if (cards.isEmpty) {
       if (kDebugMode) {
-        debugPrint(
-          '[BannerAppScraper] nenhum card "div.card.border-0.shadow.h-100" encontrado em $uri',
-        );
+        debugPrint('[BannerAppScraper] nenhum card de banner encontrado.');
       }
       return const <ScrapedBannerImage>[];
     }
@@ -94,12 +91,6 @@ class BannerAppScraper {
       final String? title =
       (rawTitle == null || rawTitle.isEmpty) ? null : rawTitle;
 
-      if (kDebugMode) {
-        debugPrint(
-          '[BannerAppScraper] banner encontrado: src.length=${src.length} title="${title ?? ''}"',
-        );
-      }
-
       result.add(
         ScrapedBannerImage(
           imageUrl: src,
@@ -109,6 +100,13 @@ class BannerAppScraper {
     }
 
     if (kDebugMode) {
+      if (result.isNotEmpty) {
+        final first = result.first;
+        debugPrint(
+          '[BannerAppScraper] banner encontrado: src.length=${first.imageUrl.length} '
+              'title="${first.title ?? ''}"',
+        );
+      }
       debugPrint('[BannerAppScraper] total de banners: ${result.length}');
     }
 

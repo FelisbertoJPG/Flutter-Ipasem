@@ -1,10 +1,15 @@
 // lib/ui/components/noticias_banner_strip.dart
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/banner_app_scraper.dart';
 
 class NoticiasBannerStrip extends StatefulWidget {
+  /// URL completa da página HTML que contém os banners
+  /// (ex.: https://www.ipasemnh.com.br/app-banner/banner-app).
   final String feedUrl;
   final double height;
   final EdgeInsetsGeometry? margin;
@@ -38,8 +43,8 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
     if (oldWidget.feedUrl != widget.feedUrl) {
       if (kDebugMode) {
         debugPrint(
-          '[NoticiasBannerStrip] feedUrl alterado: '
-              '"${oldWidget.feedUrl}" -> "${widget.feedUrl}"',
+          '[NoticiasBannerStrip] feedUrl alterado '
+              'de=${oldWidget.feedUrl} para=${widget.feedUrl}',
         );
       }
       _future = BannerAppScraper(pageUrl: widget.feedUrl).fetchBanners();
@@ -69,19 +74,15 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
                   '[NoticiasBannerStrip] erro ao carregar: ${snapshot.error}');
             }
             return _NoticiasErrorCard(
-              message: 'Não foi possível carregar as notícias.',
+              message: 'Não foi possível carregar os banners.',
               detail: kDebugMode ? snapshot.error.toString() : null,
             );
           }
 
           final banners = snapshot.data ?? const <ScrapedBannerImage>[];
           if (banners.isEmpty) {
-            if (kDebugMode) {
-              debugPrint(
-                  '[NoticiasBannerStrip] nenhum banner retornado da página.');
-            }
             return const _NoticiasErrorCard(
-              message: 'Sem banners para o período atual.',
+              message: 'Nenhum banner disponível para o período atual.',
             );
           }
 
@@ -108,9 +109,67 @@ class _BannerCard extends StatelessWidget {
 
   const _BannerCard({required this.banner});
 
+  ImageProvider<Object>? _buildImageProvider(String raw) {
+    final src = raw.trim();
+    if (src.isEmpty) return null;
+
+    // Caso 1: data:image/...;base64,...
+    if (src.startsWith('data:image')) {
+      if (kDebugMode) {
+        debugPrint(
+          '[NoticiasBannerStrip] _buildImageProvider: data URI '
+              'prefix=${src.substring(0, src.length > 40 ? 40 : src.length)}...',
+        );
+      }
+      try {
+        final commaIndex = src.indexOf(',');
+        if (commaIndex <= 0 || commaIndex >= src.length - 1) {
+          return null;
+        }
+        final base64Part = src.substring(commaIndex + 1);
+        final Uint8List bytes = base64Decode(base64Part);
+        return MemoryImage(bytes);
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint(
+              '[NoticiasBannerStrip] erro ao decodificar data URI: $e');
+        }
+        return null;
+      }
+    }
+
+    // Caso 2: URL http/https normal.
+    if (kDebugMode) {
+      debugPrint('[NoticiasBannerStrip] _buildImageProvider: NetworkImage=$src');
+    }
+    return NetworkImage(src);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final provider = _buildImageProvider(banner.imageUrl);
+
+    if (provider == null) {
+      if (kDebugMode) {
+        debugPrint(
+            '[NoticiasBannerStrip] provider nulo, exibindo placeholder de imagem.');
+      }
+      return Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        clipBehavior: Clip.antiAlias,
+        child: Container(
+          color: Colors.grey.shade200,
+          alignment: Alignment.center,
+          child: const Icon(
+            Icons.image_not_supported_outlined,
+            size: 48,
+            color: Colors.grey,
+          ),
+        ),
+      );
+    }
 
     return Card(
       elevation: 0,
@@ -119,9 +178,9 @@ class _BannerCard extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Imagem de fundo
-          Image.network(
-            banner.imageUrl,
+          // Imagem de fundo (aceita tanto MemoryImage quanto NetworkImage).
+          Image(
+            image: provider,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
               if (kDebugMode) {
@@ -185,38 +244,42 @@ class _NoticiasErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Junta mensagem + detalhe (apenas em debug) em um único Text,
-    // sem Column vertical, pra não dar overflow.
-    String fullText = message;
-    if (detail != null &&
-        detail!.isNotEmpty &&
-        kDebugMode) {
-      fullText = '$message\n$detail';
-    }
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Card(
+        color: Colors.red.shade50,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        clipBehavior: Clip.antiAlias,
-        child: Container(
-          color: Colors.grey.shade200,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
+              Icon(Icons.error_outline, color: Colors.red.shade700),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  fullText,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.red.shade800,
-                    fontWeight: FontWeight.w500,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.red.shade800,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (detail != null && detail!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        detail!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.red.shade800.withOpacity(0.9),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
