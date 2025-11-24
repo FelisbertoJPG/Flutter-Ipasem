@@ -66,8 +66,7 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
           if (snapshot.hasError) {
             if (kDebugMode) {
               debugPrint(
-                '[NoticiasBannerStrip] erro ao carregar: ${snapshot.error}',
-              );
+                  '[NoticiasBannerStrip] erro ao carregar: ${snapshot.error}');
             }
             return _NoticiasErrorCard(
               message: 'Não foi possível carregar as notícias.',
@@ -79,11 +78,10 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
           if (banners.isEmpty) {
             if (kDebugMode) {
               debugPrint(
-                '[NoticiasBannerStrip] nenhum banner retornado da página.',
-              );
+                  '[NoticiasBannerStrip] nenhum banner retornado da página.');
             }
             return const _NoticiasErrorCard(
-              message: 'Nenhum banner disponível no momento.',
+              message: 'Sem banners para o período atual.',
             );
           }
 
@@ -128,8 +126,7 @@ class _BannerCard extends StatelessWidget {
             errorBuilder: (context, error, stackTrace) {
               if (kDebugMode) {
                 debugPrint(
-                  '[NoticiasBannerStrip] erro ao desenhar imagem: $error',
-                );
+                    '[NoticiasBannerStrip] erro ao desenhar imagem: $error');
               }
               return Container(
                 color: Colors.grey.shade200,
@@ -188,40 +185,38 @@ class _NoticiasErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Junta mensagem + detalhe (apenas em debug) em um único Text,
+    // sem Column vertical, pra não dar overflow.
+    String fullText = message;
+    if (detail != null &&
+        detail!.isNotEmpty &&
+        kDebugMode) {
+      fullText = '$message\n$detail';
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Card(
-        color: Colors.red.shade50,
         elevation: 0,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        clipBehavior: Clip.antiAlias,
+        child: Container(
+          color: Colors.grey.shade200,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, color: Colors.red.shade700),
+              Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      message,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.red.shade800,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (detail != null && detail!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        detail!,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.red.shade800.withOpacity(0.9),
-                        ),
-                      ),
-                    ],
-                  ],
+                child: Text(
+                  fullText,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.red.shade800,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],
