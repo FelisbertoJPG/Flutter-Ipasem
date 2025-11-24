@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/colors.dart';
 import '../root_nav_shell.dart';
+import '../config/app_config.dart';
 import 'components/noticias_banner_strip.dart';
 
 class AppScaffold extends StatelessWidget {
@@ -19,6 +20,62 @@ class AppScaffold extends StatelessWidget {
     this.actions,
     this.minimal = false,
   });
+
+  /// Monta a URL do feed de notícias a partir da base configurada no AppConfig.
+  /// Aqui fazemos o roteamento "especial" para o banner, conforme o ambiente.
+  String _buildNoticiasFeedUrl(BuildContext context) {
+    final config = AppConfig.of(context);
+    final base = config.params.baseApiUrl.trim();
+
+    if (base.isEmpty) return '';
+
+    Uri uri;
+    try {
+      uri = Uri.parse(base);
+    } catch (_) {
+      return '';
+    }
+
+    final host = uri.host.toLowerCase();
+    final scheme = uri.scheme.isNotEmpty ? uri.scheme : 'http';
+
+    // === CASOS ESPECÍFICOS ===
+
+    // Dev/homolog local: API em 192.9.200.98, mas banner no :81
+    if (host == '192.9.200.98') {
+      return Uri(
+        scheme: scheme,
+        host: '192.9.200.98',
+        port: 81,
+        path: '/app-banner/banner-app',
+      ).toString();
+    }
+
+    // Produção: API no assistweb, banner no site público ipasemnh
+    if (host == 'assistweb.ipasemnh.com.br') {
+      return Uri(
+        scheme: 'https',
+        host: 'www.ipasemnh.com.br',
+        path: '/app-banner/banner-app',
+      ).toString();
+    }
+
+    // Caso a base já seja ipasemnh.com.br (ex.: build web apontando direto pra lá)
+    if (host == 'ipasemnh.com.br' || host == 'www.ipasemnh.com.br') {
+      return Uri(
+        scheme: uri.scheme.isNotEmpty ? uri.scheme : 'https',
+        host: 'www.ipasemnh.com.br',
+        path: '/app-banner/banner-app',
+      ).toString();
+    }
+
+    // === FALLBACK GENÉRICO ===
+    // Usa o mesmo host/porta da API e só força o path do banner.
+    return uri.replace(
+      path: '/app-banner/banner-app',
+      query: null,
+    ).toString();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +94,9 @@ class AppScaffold extends StatelessWidget {
     final canPopHere = Navigator.of(context).canPop();
 
     final showBack = !inShell || (!isTabRoot && canPopHere);
+
+    // Usa a mesma base do main/main_local, com regras especiais pro banner.
+    final noticiasFeedUrl = _buildNoticiasFeedUrl(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -73,9 +133,10 @@ class AppScaffold extends StatelessWidget {
         ],
       ),
 
+      // Drawer só nas roots das abas
       drawer: isTabRoot
-          ? const _AppDrawer(
-        noticiasFeedUrl: 'http://192.9.200.98:81/app-banner/banner-app',
+          ? _AppDrawer(
+        noticiasFeedUrl: noticiasFeedUrl,
       )
           : null,
 
@@ -170,7 +231,6 @@ class _AppDrawer extends StatelessWidget {
                 height: 140,
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               ),
-
 
             const Divider(height: 1),
 

@@ -26,6 +26,9 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
   @override
   void initState() {
     super.initState();
+    if (kDebugMode) {
+      debugPrint('[NoticiasBannerStrip] initState feedUrl=${widget.feedUrl}');
+    }
     _future = BannerAppScraper(pageUrl: widget.feedUrl).fetchBanners();
   }
 
@@ -33,6 +36,12 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
   void didUpdateWidget(covariant NoticiasBannerStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.feedUrl != widget.feedUrl) {
+      if (kDebugMode) {
+        debugPrint(
+          '[NoticiasBannerStrip] feedUrl alterado: '
+              '"${oldWidget.feedUrl}" -> "${widget.feedUrl}"',
+        );
+      }
       _future = BannerAppScraper(pageUrl: widget.feedUrl).fetchBanners();
     }
   }
@@ -55,6 +64,11 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
           }
 
           if (snapshot.hasError) {
+            if (kDebugMode) {
+              debugPrint(
+                '[NoticiasBannerStrip] erro ao carregar: ${snapshot.error}',
+              );
+            }
             return _NoticiasErrorCard(
               message: 'Não foi possível carregar as notícias.',
               detail: kDebugMode ? snapshot.error.toString() : null,
@@ -63,6 +77,11 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
 
           final banners = snapshot.data ?? const <ScrapedBannerImage>[];
           if (banners.isEmpty) {
+            if (kDebugMode) {
+              debugPrint(
+                '[NoticiasBannerStrip] nenhum banner retornado da página.',
+              );
+            }
             return const _NoticiasErrorCard(
               message: 'Nenhum banner disponível no momento.',
             );
@@ -107,6 +126,11 @@ class _BannerCard extends StatelessWidget {
             banner.imageUrl,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
+              if (kDebugMode) {
+                debugPrint(
+                  '[NoticiasBannerStrip] erro ao desenhar imagem: $error',
+                );
+              }
               return Container(
                 color: Colors.grey.shade200,
                 alignment: Alignment.center,

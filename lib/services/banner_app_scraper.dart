@@ -1,6 +1,7 @@
 // lib/services/banner_app_scraper.dart
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as html;
 import 'package:html/dom.dart' as dom;
@@ -27,9 +28,18 @@ class BannerAppScraper {
   }) : _client = client ?? http.Client();
 
   Future<List<ScrapedBannerImage>> fetchBanners() async {
-    if (pageUrl.isEmpty) return const <ScrapedBannerImage>[];
+    if (pageUrl.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('[BannerAppScraper] pageUrl vazio, nada a fazer.');
+      }
+      return const <ScrapedBannerImage>[];
+    }
 
     final uri = Uri.parse(pageUrl);
+
+    if (kDebugMode) {
+      debugPrint('[BannerAppScraper] GET $uri');
+    }
 
     final resp = await _client.get(
       uri,
@@ -39,6 +49,12 @@ class BannerAppScraper {
         'User-Agent': 'IPASEMNH-Digital/1.0 (+banner-app)',
       },
     );
+
+    if (kDebugMode) {
+      debugPrint(
+        '[BannerAppScraper] status=${resp.statusCode} bodyLen=${resp.body.length}',
+      );
+    }
 
     if (resp.statusCode != 200) {
       throw StateError('HTTP ${resp.statusCode} ao carregar $uri');
@@ -53,6 +69,11 @@ class BannerAppScraper {
     // </div>
     final cards = doc.querySelectorAll('div.card.border-0.shadow.h-100');
     if (cards.isEmpty) {
+      if (kDebugMode) {
+        debugPrint(
+          '[BannerAppScraper] nenhum card "div.card.border-0.shadow.h-100" encontrado em $uri',
+        );
+      }
       return const <ScrapedBannerImage>[];
     }
 
@@ -73,12 +94,22 @@ class BannerAppScraper {
       final String? title =
       (rawTitle == null || rawTitle.isEmpty) ? null : rawTitle;
 
+      if (kDebugMode) {
+        debugPrint(
+          '[BannerAppScraper] banner encontrado: src.length=${src.length} title="${title ?? ''}"',
+        );
+      }
+
       result.add(
         ScrapedBannerImage(
           imageUrl: src,
           title: title,
         ),
       );
+    }
+
+    if (kDebugMode) {
+      debugPrint('[BannerAppScraper] total de banners: ${result.length}');
     }
 
     return result;
