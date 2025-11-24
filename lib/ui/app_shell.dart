@@ -72,12 +72,13 @@ class AppScaffold extends StatelessWidget {
           if (actions != null) ...actions!,
         ],
       ),
+
       drawer: isTabRoot
           ? const _AppDrawer(
-        noticiasFeedUrl:
-        'https://www.ipasemnh.com.br/materias?ordenacao=1',
+        noticiasFeedUrl: 'http://192.9.200.98:81/app-banner/banner-app',
       )
           : null,
+
       body: body,
     );
   }
@@ -166,10 +167,10 @@ class _AppDrawer extends StatelessWidget {
             if (noticiasFeedUrl.isNotEmpty)
               NoticiasBannerStrip(
                 feedUrl: noticiasFeedUrl,
-                limit: 3,
                 height: 140,
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               ),
+
 
             const Divider(height: 1),
 
@@ -239,8 +240,11 @@ class _LogoAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding:
-      EdgeInsets.only(right: 4, top: verticalPadding, bottom: verticalPadding),
+      padding: EdgeInsets.only(
+        right: 4,
+        top: verticalPadding,
+        bottom: verticalPadding,
+      ),
       child: SizedBox(
         width: size,
         height: size,

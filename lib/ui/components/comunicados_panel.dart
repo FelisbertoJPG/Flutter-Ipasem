@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import '../../models/comunicado.dart';
 import '../../services/comunicados_app_service.dart';
 
@@ -13,7 +13,7 @@ class ComunicadosPanel extends StatefulWidget {
 
   const ComunicadosPanel({
     super.key,
-    this.limit = 10 ,//limite de publicações
+    this.limit = 3 ,//limite de publicações
     this.categoria,
     this.tag,
     this.padding = const EdgeInsets.all(12),
