@@ -1,8 +1,11 @@
 // lib/main.dart
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:ipasemnhdigital/services/api_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'certificado/ipasem_http_overrides.dart';
 import 'config/app_config.dart';
 import 'config/params.dart';
 import 'update_enforcer.dart';
@@ -40,6 +43,10 @@ const String kLocalBase = String.fromEnvironment(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  //ignora o https
+  HttpOverrides.global = IpasemHttpOverrides();
+
 
   // Registra implementação da WebView no Web (no-op nas outras plataformas)
   ensureWebViewRegisteredForWeb();
@@ -95,7 +102,7 @@ class MyAppLocal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'IpasemNH (Local)', // mude se quiser diferenciar o título
+      title: 'IpasemNH (Local)',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

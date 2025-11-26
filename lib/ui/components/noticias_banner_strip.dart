@@ -1,4 +1,5 @@
 // lib/ui/components/noticias_banner_strip.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -71,7 +72,8 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
           if (snapshot.hasError) {
             if (kDebugMode) {
               debugPrint(
-                  '[NoticiasBannerStrip] erro ao carregar: ${snapshot.error}');
+                '[NoticiasBannerStrip] erro ao carregar: ${snapshot.error}',
+              );
             }
             return _NoticiasErrorCard(
               message: 'Não foi possível carregar os banners.',
@@ -79,17 +81,26 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
             );
           }
 
-          final banners = snapshot.data ?? const <ScrapedBannerImage>[];
+          final rawBanners = snapshot.data ?? const <ScrapedBannerImage>[];
+          // Limita a, no máximo, 3 banners no carrossel.
+          final banners = rawBanners.take(3).toList();
+
           if (banners.isEmpty) {
             return const _NoticiasErrorCard(
               message: 'Nenhum banner disponível para o período atual.',
             );
           }
 
-          // Por enquanto: usa só o primeiro banner.
-          final banner = banners.first;
+          // Se só existir 1 banner, mantém o comportamento anterior:
+          if (banners.length == 1) {
+            return _BannerCard(banner: banners.first);
+          }
 
-          return _BannerCard(banner: banner);
+          // Com 2 ou 3 banners, exibe carrossel automático.
+          return _BannerCarousel(
+            banners: banners,
+            interval: const Duration(seconds: 2),
+          );
         },
       ),
     );
@@ -101,6 +112,96 @@ class _NoticiasBannerStripState extends State<NoticiasBannerStrip> {
       );
     }
     return body;
+  }
+}
+
+class _BannerCarousel extends StatefulWidget {
+  final List<ScrapedBannerImage> banners;
+  final Duration interval;
+
+  const _BannerCarousel({
+    required this.banners,
+    this.interval = const Duration(seconds: 2),
+  });
+
+  @override
+  State<_BannerCarousel> createState() => _BannerCarouselState();
+}
+
+class _BannerCarouselState extends State<_BannerCarousel> {
+  late final PageController _pageController;
+  Timer? _timer;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+    _startAutoSlide();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BannerCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.banners.length != widget.banners.length) {
+      // Reinicia o carrossel se a quantidade de banners mudar.
+      _currentPage = 0;
+      _pageController.jumpToPage(0);
+      _restartAutoSlide();
+    }
+  }
+
+  void _startAutoSlide() {
+    if (widget.banners.length <= 1) return;
+
+    _timer?.cancel();
+    _timer = Timer.periodic(widget.interval, (timer) {
+      if (!mounted) return;
+      if (widget.banners.isEmpty) return;
+
+      final nextPage = (_currentPage + 1) % widget.banners.length;
+
+      if (kDebugMode) {
+        debugPrint(
+          '[NoticiasBannerStrip] auto-slide: $_currentPage -> $nextPage',
+        );
+      }
+
+      _pageController.animateToPage(
+        nextPage,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+      _currentPage = nextPage;
+    });
+  }
+
+  void _restartAutoSlide() {
+    _timer?.cancel();
+    _startAutoSlide();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PageView.builder(
+      controller: _pageController,
+      itemCount: widget.banners.length,
+      onPageChanged: (index) {
+        _currentPage = index;
+      },
+      itemBuilder: (context, index) {
+        final banner = widget.banners[index];
+        return _BannerCard(banner: banner);
+      },
+    );
   }
 }
 
@@ -132,7 +233,8 @@ class _BannerCard extends StatelessWidget {
       } catch (e) {
         if (kDebugMode) {
           debugPrint(
-              '[NoticiasBannerStrip] erro ao decodificar data URI: $e');
+            '[NoticiasBannerStrip] erro ao decodificar data URI: $e',
+          );
         }
         return null;
       }
@@ -153,7 +255,8 @@ class _BannerCard extends StatelessWidget {
     if (provider == null) {
       if (kDebugMode) {
         debugPrint(
-            '[NoticiasBannerStrip] provider nulo, exibindo placeholder de imagem.');
+          '[NoticiasBannerStrip] provider nulo, exibindo placeholder de imagem.',
+        );
       }
       return Card(
         elevation: 0,
@@ -185,7 +288,8 @@ class _BannerCard extends StatelessWidget {
             errorBuilder: (context, error, stackTrace) {
               if (kDebugMode) {
                 debugPrint(
-                    '[NoticiasBannerStrip] erro ao desenhar imagem: $error');
+                  '[NoticiasBannerStrip] erro ao desenhar imagem: $error',
+                );
               }
               return Container(
                 color: Colors.grey.shade200,
@@ -289,3 +393,5 @@ class _NoticiasErrorCard extends StatelessWidget {
     );
   }
 }
+
+

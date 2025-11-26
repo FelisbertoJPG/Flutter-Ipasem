@@ -1,9 +1,11 @@
 // lib/main_local.dart
+import 'dart:io';
 import 'dart:ui'; // PlatformDispatcher
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'certificado/ipasem_http_overrides.dart';
 import 'config/app_config.dart';
 import 'config/params.dart';
 import 'update_enforcer.dart';
@@ -40,6 +42,9 @@ const String kLocalBase = String.fromEnvironment(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  //ignora o https
+  HttpOverrides.global = IpasemHttpOverrides();
 
   // Handlers de erro para evitar "travamento silencioso"
   FlutterError.onError = (details) {

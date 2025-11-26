@@ -1,4 +1,5 @@
- import 'package:flutter/material.dart';
+//lib/ui/components/comunicados_panel.dart
+import 'package:flutter/material.dart';
 import '../../models/comunicado.dart';
 import '../../services/comunicados_app_service.dart';
 
