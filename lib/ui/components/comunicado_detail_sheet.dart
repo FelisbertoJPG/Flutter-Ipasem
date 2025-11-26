@@ -1,5 +1,8 @@
+// lib/ui/components/comunicado_detail_sheet.dart
 import 'package:flutter/material.dart';
+
 import '../../core/models.dart' show ComunicadoResumo;
+import '../../config/app_config.dart';
 import '../../api/cards_page_scraper.dart';
 
 /// Bottom-sheet de detalhe do Comunicado.
@@ -13,7 +16,8 @@ class ComunicadoDetailSheet extends StatefulWidget {
   });
 
   @override
-  State<ComunicadoDetailSheet> createState() => _ComunicadoDetailSheetState();
+  State<ComunicadoDetailSheet> createState() =>
+      _ComunicadoDetailSheetState();
 }
 
 class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
@@ -23,9 +27,27 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
   DateTime? _date;
   String? _bodyPlain; // corpo strippado
 
+  CardsPageScraper? _scraper;
+  bool _startedLoad = false;
+
   @override
   void initState() {
     super.initState();
+    // _load() será disparado em didChangeDependencies, após termos AppConfig.
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_startedLoad) return;
+    _startedLoad = true;
+
+    // baseApiUrl vem de main/main_local (98, assistweb, etc.)
+    final cfg = AppConfig.of(context);
+    final baseApiUrl = cfg.params.baseApiUrl;
+
+    _scraper = CardsPageScraper.forBaseApi(baseApiUrl);
+
     _load();
   }
 
@@ -35,8 +57,16 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
       _title = resumo.titulo;
       _date = resumo.data;
 
-      // Busca novamente a página de cards e tenta localizar o mesmo item pelo título
-      final scraper = const CardsPageScraper();
+      final scraper = _scraper;
+      if (scraper == null) {
+        setState(() {
+          _error = 'Configuração de comunicados indisponível.';
+          _loading = false;
+        });
+        return;
+      }
+
+      // Busca novamente a página de cards no HOST correto
       final rows = await scraper.fetch(limit: 20); // margem de segurança
 
       String? html;
@@ -53,7 +83,7 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
       }
 
       // Fallback: usa descrição do resumo caso não ache HTML
-      String plain = '';
+      String plain;
       if (html != null && html.trim().isNotEmpty) {
         plain = _stripHtml(html);
       } else {
@@ -61,12 +91,14 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
         plain = desc.isNotEmpty ? desc : '(sem conteúdo disponível)';
       }
 
+      if (!mounted) return;
       setState(() {
         _date = _date ?? foundDate;
         _bodyPlain = plain;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '$e';
         _loading = false;
@@ -84,10 +116,10 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
     return '$dd/$mm/$yyyy $hh:$mi';
   }
 
-  String _stripHtml(String html) =>
-      html.replaceAll(RegExp(r'<[^>]+>'), ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
+  String _stripHtml(String html) => html
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   @override
   Widget build(BuildContext context) {
@@ -107,13 +139,16 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
           builder: (_, controller) {
             return Material(
               color: Theme.of(context).scaffoldBackgroundColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : _error != null
-                    ? _ErrorBox(message: 'Falha ao abrir comunicado.')
+                    ? const _ErrorBox(
+                  message: 'Falha ao abrir comunicado.',
+                )
                     : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -133,14 +168,18 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
                           ),
                         ),
                         IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
+                          onPressed: () =>
+                              Navigator.of(context).pop(),
                           icon: const Icon(Icons.close),
                         ),
                       ],
                     ),
                     if (date.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 2, bottom: 12),
+                        padding: const EdgeInsets.only(
+                          top: 2,
+                          bottom: 12,
+                        ),
                         child: Text(
                           'Publicado em: $date',
                           style: const TextStyle(
@@ -154,10 +193,14 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
                     Expanded(
                       child: SingleChildScrollView(
                         controller: controller,
-                        padding: const EdgeInsets.only(bottom: 12),
+                        padding:
+                        const EdgeInsets.only(bottom: 12),
                         child: SelectableText(
                           _bodyPlain ?? '',
-                          style: const TextStyle(height: 1.25, fontSize: 14.5),
+                          style: const TextStyle(
+                            height: 1.25,
+                            fontSize: 14.5,
+                          ),
                         ),
                       ),
                     ),

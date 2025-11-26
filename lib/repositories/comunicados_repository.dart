@@ -1,3 +1,4 @@
+// lib/repositories/comunicados_repository.dart
 import 'dart:async';
 
 import '../core/models.dart' show ComunicadoResumo;
@@ -7,7 +8,11 @@ class ComunicadosRepository {
   final CardsPageScraper _scraper;
 
   ComunicadosRepository([CardsPageScraper? scraper])
-      : _scraper = scraper ?? const CardsPageScraper();
+      : _scraper = scraper ??
+      const CardsPageScraper(
+        pageUrl:
+        'https://www.ipasemnh.com.br/comunicacao-app/cards',
+      );
 
   /// Lê a página HTML dos cards e converte para ComunicadoResumo.
   Future<List<ComunicadoResumo>> listPublicados({
@@ -23,7 +28,8 @@ class ComunicadosRepository {
 
     // Mapeia para o view-model leve da UI.
     return rows.map((c) {
-      final descricao = (c.resumo != null && c.resumo!.trim().isNotEmpty)
+      final descricao =
+      (c.resumo != null && c.resumo!.trim().isNotEmpty)
           ? c.resumo!.trim()
           : _firstLines(_stripHtml(c.corpoHtml ?? ''), 160);
 
@@ -42,8 +48,10 @@ class ComunicadosRepository {
   }
 
   // Helpers
-  static String _stripHtml(String html) =>
-      html.replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  static String _stripHtml(String html) => html
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   static String _firstLines(String s, int max) {
     if (s.length <= max) return s;

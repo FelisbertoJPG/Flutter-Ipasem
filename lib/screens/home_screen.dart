@@ -9,6 +9,8 @@ import '../repositories/comunicados_repository.dart';
 import '../repositories/exames_repository.dart';   // ExamesRepository
 import '../services/dev_api.dart';
 import '../services/api_router.dart';
+import '../config/app_config.dart';      // <-- novo
+import '../api/cards_page_scraper.dart'; // <-- novo
 
 import '../ui/app_shell.dart';           // AppScaffold
 import '../ui/components/exames_inline_status.dart';
@@ -35,7 +37,7 @@ import '../root_nav_shell.dart';
 import '../controllers/home_controller.dart';
 import '../controllers/home_state_controller.dart'; // HomeState
 
-// Comunicados via VIEWS JSON (Yii)
+// Comunicados via HTML cards
 import '../services/comunicados_service.dart';
 import '../ui/components/comunicado_detail_sheet.dart';
 
@@ -89,10 +91,16 @@ class _HomeScreenState extends State<HomeScreen>
     _api = ApiRouter.client();
 
     final depsRepo = DependentsRepository(_api);
-    final comRepo  = ComunicadosRepository(); // mantém repo legado para cache/local
-    _exRepo        = ExamesRepository(_api);
 
-    // Serviço de comunicados que consome as "views JSON" do Yii
+    // Usa a base do AppConfig (main / main_local) para resolver a URL dos cards
+    final cfg = AppConfig.of(context);
+    final baseApiUrl = cfg.params.baseApiUrl;
+    final cardsScraper = CardsPageScraper.forBaseApi(baseApiUrl);
+    final comRepo = ComunicadosRepository(cardsScraper);
+
+    _exRepo = ExamesRepository(_api);
+
+    // Serviço de comunicados com cache em memória (por cima do scraper HTML)
     _comSvc = ComunicadosService(repository: comRepo);
 
     // Controller principal da Home
