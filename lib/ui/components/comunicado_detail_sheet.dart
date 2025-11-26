@@ -6,7 +6,8 @@ import '../../config/app_config.dart';
 import '../../api/cards_page_scraper.dart';
 
 /// Bottom-sheet de detalhe do Comunicado.
-/// Não depende de endpoint JSON: re-scrapeia /comunicacao-app/cards e acha o corpo pelo título.
+/// Não depende de endpoint JSON: re-scrapeia /comunicacao-app/cards
+/// e acha o corpo pelo título.
 class ComunicadoDetailSheet extends StatefulWidget {
   final ComunicadoResumo resumo;
 
@@ -27,26 +28,27 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
   DateTime? _date;
   String? _bodyPlain; // corpo strippado
 
-  CardsPageScraper? _scraper;
+  // URL final de /comunicacao-app/cards (já resolvida com base no ambiente)
+  String? _cardsUrl;
   bool _startedLoad = false;
 
   @override
   void initState() {
     super.initState();
-    // _load() será disparado em didChangeDependencies, após termos AppConfig.
+    // Não chama _load aqui; precisamos do AppConfig (context).
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
     if (_startedLoad) return;
     _startedLoad = true;
 
-    // baseApiUrl vem de main/main_local (98, assistweb, etc.)
     final cfg = AppConfig.of(context);
     final baseApiUrl = cfg.params.baseApiUrl;
 
-    _scraper = CardsPageScraper.forBaseApi(baseApiUrl);
+    _cardsUrl = buildComunicadosCardsUrlFromBase(baseApiUrl);
 
     _load();
   }
@@ -57,16 +59,16 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
       _title = resumo.titulo;
       _date = resumo.data;
 
-      final scraper = _scraper;
-      if (scraper == null) {
+      if (_cardsUrl == null) {
         setState(() {
-          _error = 'Configuração de comunicados indisponível.';
+          _error = 'URL de comunicados indisponível.';
           _loading = false;
         });
         return;
       }
 
       // Busca novamente a página de cards no HOST correto
+      final scraper = CardsPageScraper(pageUrl: _cardsUrl!);
       final rows = await scraper.fetch(limit: 20); // margem de segurança
 
       String? html;
@@ -88,7 +90,9 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
         plain = _stripHtml(html);
       } else {
         final desc = (resumo.descricao ?? '').trim();
-        plain = desc.isNotEmpty ? desc : '(sem conteúdo disponível)';
+        plain = desc.isNotEmpty
+            ? desc
+            : '(sem conteúdo disponível)';
       }
 
       if (!mounted) return;
@@ -144,10 +148,13 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(
+                  child: CircularProgressIndicator(),
+                )
                     : _error != null
                     ? const _ErrorBox(
-                  message: 'Falha ao abrir comunicado.',
+                  message:
+                  'Falha ao abrir comunicado.',
                 )
                     : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,9 +184,7 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
                     if (date.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(
-                          top: 2,
-                          bottom: 12,
-                        ),
+                            top: 2, bottom: 12),
                         child: Text(
                           'Publicado em: $date',
                           style: const TextStyle(
@@ -193,8 +198,8 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
                     Expanded(
                       child: SingleChildScrollView(
                         controller: controller,
-                        padding:
-                        const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.only(
+                            bottom: 12),
                         child: SelectableText(
                           _bodyPlain ?? '',
                           style: const TextStyle(

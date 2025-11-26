@@ -1,12 +1,15 @@
 // lib/repositories/comunicados_repository.dart
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../core/models.dart' show ComunicadoResumo;
 import '../api/cards_page_scraper.dart';
 
 class ComunicadosRepository {
   final CardsPageScraper _scraper;
 
+  /// Construtor legado: usa a URL de produção por padrão.
   ComunicadosRepository([CardsPageScraper? scraper])
       : _scraper = scraper ??
       const CardsPageScraper(
@@ -14,12 +17,32 @@ class ComunicadosRepository {
         'https://www.ipasemnh.com.br/comunicacao-app/cards',
       );
 
+  /// Novo: monta a URL de /comunicacao-app/cards a partir do baseApiUrl
+  /// (funciona tanto em 98 quanto em produção).
+  factory ComunicadosRepository.fromBaseApi(String baseApiUrl) {
+    final cardsUrl = buildComunicadosCardsUrlFromBase(baseApiUrl);
+    if (kDebugMode) {
+      debugPrint(
+        '[ComunicadosRepository] baseApi=$baseApiUrl → cardsUrl=$cardsUrl',
+      );
+    }
+    return ComunicadosRepository(
+      CardsPageScraper(pageUrl: cardsUrl),
+    );
+  }
+
   /// Lê a página HTML dos cards e converte para ComunicadoResumo.
   Future<List<ComunicadoResumo>> listPublicados({
     int limit = 6,
     String? categoria,
-    String? q, // usa-se como 'tag' opcional na URL (o HTML já filtra no servidor, se implementado)
+    String? q, // mapeado para 'tag' na URL
   }) async {
+    if (kDebugMode) {
+      debugPrint(
+        '[ComunicadosRepository] listPublicados(limit=$limit, categoria=$categoria, q=$q)',
+      );
+    }
+
     final rows = await _scraper.fetch(
       limit: limit,
       categoria: categoria,
@@ -31,7 +54,10 @@ class ComunicadosRepository {
       final descricao =
       (c.resumo != null && c.resumo!.trim().isNotEmpty)
           ? c.resumo!.trim()
-          : _firstLines(_stripHtml(c.corpoHtml ?? ''), 160);
+          : _firstLines(
+        _stripHtml(c.corpoHtml ?? ''),
+        160,
+      );
 
       return ComunicadoResumo(
         id: 0, // não há ID disponível no HTML dos cards

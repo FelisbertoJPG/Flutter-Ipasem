@@ -21,92 +21,42 @@ class ScrapedComunicado {
   });
 }
 
-/// Faz o scrape da página /comunicacao-app/cards (HTML).
-///
-/// [pageUrl] deve ser a URL **sem query string**, por exemplo:
-///   - https://www.ipasemnh.com.br/comunicacao-app/cards
-///   - http://192.9.200.98:81/comunicacao-app/cards
+/// Dado o baseApiUrl do gateway (98, assistweb etc),
+/// decide qual URL de /comunicacao-app/cards usar.
+String buildComunicadosCardsUrlFromBase(String baseApiUrl) {
+  final uri = Uri.parse(baseApiUrl);
+  final host = uri.host;
+  final scheme = uri.scheme.isEmpty ? 'http' : uri.scheme;
+  final port = uri.port;
+
+  // Ambiente 98: usa porta 81
+  if (host == '192.9.200.98') {
+    return 'http://192.9.200.98:81/comunicacao-app/cards';
+  }
+
+  // Produção assistweb -> força www.ipasemnh.com.br em https
+  if (host.contains('assistweb')) {
+    return 'https://www.ipasemnh.com.br/comunicacao-app/cards';
+  }
+
+  // Fallback: mesmo host/porta do baseApiUrl
+  final effectivePort =
+  port == 0 ? (scheme == 'https' ? 443 : 80) : port;
+
+  final bool hidePort =
+      (scheme == 'https' && effectivePort == 443) ||
+          (scheme == 'http' && effectivePort == 80);
+
+  final portSuffix = hidePort ? '' : ':$effectivePort';
+
+  return '$scheme://$host$portSuffix/comunicacao-app/cards';
+}
+
+/// Lê uma página /comunicacao-app/cards e extrai os comunicados exibidos no HTML.
 class CardsPageScraper {
   final String pageUrl;
 
   const CardsPageScraper({required this.pageUrl});
-
-  /// Resolve a base da API (main / main_local) para a URL dos cards.
-  ///
-  /// - baseApiUrl = http://192.9.200.98
-  ///     → http://192.9.200.98:81/comunicacao-app/cards
-  /// - baseApiUrl = https://assistweb.ipasemnh.com.br
-  ///     → https://www.ipasemnh.com.br/comunicacao-app/cards
-  /// - baseApiUrl já ipasemnh.com.br
-  ///     → https://www.ipasemnh.com.br/comunicacao-app/cards
-  /// - Fallback: mesmo host/porta da base, path /comunicacao-app/cards.
-  factory CardsPageScraper.forBaseApi(String baseApiUrl) {
-    final trimmed = baseApiUrl.trim();
-    if (trimmed.isEmpty) {
-      const fallback = 'https://www.ipasemnh.com.br/comunicacao-app/cards';
-      if (kDebugMode) {
-        debugPrint('[CardsPageScraper] baseApi vazia, usando $fallback');
-      }
-      return const CardsPageScraper(pageUrl: fallback);
-    }
-
-    Uri uri;
-    try {
-      uri = Uri.parse(trimmed);
-    } catch (_) {
-      const fallback = 'https://www.ipasemnh.com.br/comunicacao-app/cards';
-      if (kDebugMode) {
-        debugPrint('[CardsPageScraper] baseApi inválida "$trimmed", usando $fallback');
-      }
-      return const CardsPageScraper(pageUrl: fallback);
-    }
-
-    final host = uri.host.toLowerCase();
-    final scheme = uri.scheme.isNotEmpty ? uri.scheme : 'http';
-
-    // main_local → 192.9.200.98 (conteúdo vem do vhost da porta 81)
-    if (host == '192.9.200.98') {
-      final url = Uri(
-        scheme: scheme,
-        host: '192.9.200.98',
-        port: 81,
-        path: '/comunicacao-app/cards',
-      ).toString();
-      if (kDebugMode) {
-        debugPrint('[CardsPageScraper] baseApi=$trimmed → cardsUrl=$url (98:81)');
-      }
-      return CardsPageScraper(pageUrl: url);
-    }
-
-    // Produção: assistweb → site público www.ipasemnh.com.br
-    if (host == 'assistweb.ipasemnh.com.br') {
-      const url = 'https://www.ipasemnh.com.br/comunicacao-app/cards';
-      if (kDebugMode) {
-        debugPrint('[CardsPageScraper] baseApi=$trimmed → cardsUrl=$url (assistweb)');
-      }
-      return const CardsPageScraper(pageUrl: url);
-    }
-
-    // Quando a própria base já é ipasemnh.com.br
-    if (host == 'ipasemnh.com.br' || host == 'www.ipasemnh.com.br') {
-      const url = 'https://www.ipasemnh.com.br/comunicacao-app/cards';
-      if (kDebugMode) {
-        debugPrint('[CardsPageScraper] baseApi=$trimmed → cardsUrl=$url (site público)');
-      }
-      return const CardsPageScraper(pageUrl: url);
-    }
-
-    // Fallback genérico: mesmo host/porta da API, path fixo.
-    final fallback = uri.replace(
-      path: '/comunicacao-app/cards',
-      query: null,
-    ).toString();
-
-    if (kDebugMode) {
-      debugPrint('[CardsPageScraper] baseApi=$trimmed → cardsUrl=$fallback (fallback)');
-    }
-    return CardsPageScraper(pageUrl: fallback);
-  }
 
   Future<List<ScrapedComunicado>> fetch({
     int limit = 6,
@@ -124,57 +74,100 @@ class CardsPageScraper {
       debugPrint('[CardsPageScraper] GET $uri');
     }
 
-    final resp = await http.get(
-      uri,
-      headers: const {
-        // força HTML mesmo; não dependemos de JSON
-        'Accept':
-        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'User-Agent': 'IPASEM-App/1.0',
-      },
-    );
+    http.Response resp;
+    try {
+      resp = await http.get(
+        uri,
+        headers: const {
+          // força HTML; não dependemos de JSON
+          'Accept':
+          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'IPASEM-App/1.0',
+        },
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[CardsPageScraper] http.get error: $e\n$st');
+      }
+      return const <ScrapedComunicado>[];
+    }
+
+    if (kDebugMode) {
+      debugPrint(
+        '[CardsPageScraper] status=${resp.statusCode} bodyLen=${resp.body.length}',
+      );
+    }
 
     if (resp.statusCode != 200) {
-      throw StateError('HTTP ${resp.statusCode} ao carregar $uri');
+      return const <ScrapedComunicado>[];
     }
 
     final doc = html.parse(resp.body);
 
-    // Cada comunicado está como um "card border-0 shadow-sm" com "card-body"
-    final nodes =
-    doc.querySelectorAll('div.card.border-0.shadow-sm > div.card-body');
+    // Layout "cheio" (o primeiro que você colou):
+    // <div class="card border-0 shadow-sm"><div class="card-body">...</div></div>
+    List<dom.Element> nodes = doc
+        .querySelectorAll('div.card.border-0.shadow-sm > div.card-body');
+
+    // Fallback para layout simplificado (segundo snippet):
+    // <div class="card mb-3"><div class="card-body"><strong>Título</strong>...</div></div>
     if (nodes.isEmpty) {
-      // página retornou “Nenhum comunicado...”
+      nodes = doc.querySelectorAll('div.card > div.card-body');
+    }
+
+    if (kDebugMode) {
+      debugPrint('[CardsPageScraper] nós encontrados: ${nodes.length}');
+    }
+
+    if (nodes.isEmpty) {
       return const <ScrapedComunicado>[];
     }
 
     final out = <ScrapedComunicado>[];
+
     for (final n in nodes) {
-      // Título
-      final titulo =
-          _txt(n.querySelector('h2.h6')) ?? _txt(n.querySelector('h2')) ?? '';
+      try {
+        // Título:
+        final titulo = (_txt(n.querySelector('h2.h6')) ??
+            _txt(n.querySelector('h2')) ??
+            _txt(n.querySelector('strong')) ??
+            '')
+            .trim();
 
-      // Data — linha "Publicado em: dd/mm/yyyy hh:mm"
-      final meta = _txt(n.querySelector('.text-muted')) ?? '';
-      final publicadoEm = _parseBrDateFromMeta(meta);
+        if (titulo.isEmpty) {
+          continue;
+        }
 
-      // Resumo (p.mb-2; quando não existe, pode vir "(sem resumo)")
-      String? resumo = _txt(n.querySelector('p.mb-2'));
-      if (resumo != null &&
-          resumo.trim().toLowerCase() == '(sem resumo)') {
-        resumo = null;
+        // Data — linha "Publicado em: dd/mm/yyyy hh:mm" (quando existir)
+        final meta = _txt(n.querySelector('.text-muted')) ?? '';
+        final publicadoEm = _parseBrDateFromMeta(meta);
+
+        // Resumo (quando existir)
+        String? resumo = _txt(n.querySelector('p.mb-2'));
+        if (resumo != null &&
+            resumo.trim().toLowerCase() == '(sem resumo)') {
+          resumo = null;
+        }
+        resumo = resumo?.trim();
+        if (resumo != null && resumo.isEmpty) resumo = null;
+
+        // Corpo opcional dentro de <details><div>...</div></details>
+        final corpoHtml =
+        n.querySelector('details > div')?.innerHtml?.trim();
+
+        out.add(
+          ScrapedComunicado(
+            titulo: titulo,
+            publicadoEm: publicadoEm,
+            resumo: resumo,
+            corpoHtml: corpoHtml,
+          ),
+        );
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('[CardsPageScraper] erro ao parsear nó: $e\n$st');
+        }
       }
-      if (resumo != null) resumo = resumo.trim();
-
-      // Corpo opcional dentro de <details> <div>...</div>
-      final corpoHtml = n.querySelector('details > div')?.innerHtml?.trim();
-
-      out.add(ScrapedComunicado(
-        titulo: titulo.trim(),
-        publicadoEm: publicadoEm,
-        resumo: resumo,
-        corpoHtml: corpoHtml,
-      ));
     }
 
     return out;
@@ -196,7 +189,7 @@ class CardsPageScraper {
     if (d == null || mo == null || y == null || hh == null || mm == null) {
       return null;
     }
-    // considera America/Sao_Paulo na camada de apresentação; aqui usa-se local
+    // considera America/Sao_Paulo na camada de apresentação; aqui usa local
     return DateTime(y, mo, d, hh, mm);
   }
 }

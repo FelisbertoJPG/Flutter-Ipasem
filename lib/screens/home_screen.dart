@@ -9,10 +9,10 @@ import '../repositories/comunicados_repository.dart';
 import '../repositories/exames_repository.dart';   // ExamesRepository
 import '../services/dev_api.dart';
 import '../services/api_router.dart';
-import '../config/app_config.dart';      // <-- novo
-import '../api/cards_page_scraper.dart'; // <-- novo
+import '../config/app_config.dart';      // <-- NOVO
 
 import '../ui/app_shell.dart';           // AppScaffold
+import '../ui/components/comunicado_detail_sheet.dart';
 import '../ui/components/exames_inline_status.dart';
 import '../ui/components/quick_actions.dart';
 import '../ui/components/quick_action_items.dart';
@@ -37,10 +37,6 @@ import '../root_nav_shell.dart';
 import '../controllers/home_controller.dart';
 import '../controllers/home_state_controller.dart'; // HomeState
 
-// Comunicados via HTML cards
-import '../services/comunicados_service.dart';
-import '../ui/components/comunicado_detail_sheet.dart';
-
 // Fluxo da Carteirinha direto na Home
 import '../screens/carteirinha_flow.dart';
 
@@ -63,7 +59,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Controladores/Serviços
   late final HomeController _ctrl;
-  late final ComunicadosService _comSvc;
   late final ExamesRepository _exRepo;
   late final DevApi _api;
 
@@ -92,16 +87,13 @@ class _HomeScreenState extends State<HomeScreen>
 
     final depsRepo = DependentsRepository(_api);
 
-    // Usa a base do AppConfig (main / main_local) para resolver a URL dos cards
-    final cfg = AppConfig.of(context);
-    final baseApiUrl = cfg.params.baseApiUrl;
-    final cardsScraper = CardsPageScraper.forBaseApi(baseApiUrl);
-    final comRepo = ComunicadosRepository(cardsScraper);
+    // baseApiUrl vem do AppConfig (main / main_local)
+    final baseApiUrl = AppConfig.of(context).params.baseApiUrl;
 
-    _exRepo = ExamesRepository(_api);
+    // Repo de comunicados usando a URL correta de /comunicacao-app/cards
+    final comRepo  = ComunicadosRepository.fromBaseApi(baseApiUrl);
 
-    // Serviço de comunicados com cache em memória (por cima do scraper HTML)
-    _comSvc = ComunicadosService(repository: comRepo);
+    _exRepo        = ExamesRepository(_api);
 
     // Controller principal da Home
     _ctrl = HomeController(
@@ -307,19 +299,22 @@ class _HomeScreenState extends State<HomeScreen>
             },
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final horizontal = constraints.maxWidth >= 640 ? 24.0 : 16.0;
+                final horizontal =
+                constraints.maxWidth >= 640 ? 24.0 : 16.0;
                 return Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 680),
                     child: ListView(
-                      padding: EdgeInsets.fromLTRB(horizontal, 16, horizontal, 24),
+                      padding: EdgeInsets.fromLTRB(
+                          horizontal, 16, horizontal, 24),
                       children: [
                         // ===== Cabeçalho
                         WelcomeCard(
                           isLoggedIn: s.isLoggedIn,
                           name: s.isLoggedIn ? s.profile?.nome : null,
                           cpf: s.isLoggedIn
-                              ? (s.profile != null && (s.profile!.cpf).isNotEmpty
+                              ? (s.profile != null &&
+                              (s.profile!.cpf).isNotEmpty
                               ? fmtCpf(s.profile!.cpf)
                               : null)
                               : (s.cpf == null || s.cpf!.isEmpty
@@ -330,14 +325,15 @@ class _HomeScreenState extends State<HomeScreen>
                               ? () {}
                               : () => Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const LoginScreen(),
+                              builder: (_) =>
+                              const LoginScreen(),
                             ),
                           ),
                         ),
 
                         const SizedBox(height: 12),
 
-                        // ===== Comunicados (consumindo as views JSON do Yii)
+                        // ===== Comunicados (cards)
                         ComunicadosCard(
                           isLoading: s.loading,
                           items: s.comunicados,
@@ -362,7 +358,8 @@ class _HomeScreenState extends State<HomeScreen>
                           onTapItem: (req) {
                             // trate o toque do requerimento se necessário
                           },
-                          extraInner: const ExamesInlineStatusList(take: 3),
+                          extraInner:
+                          const ExamesInlineStatusList(take: 3),
                         ),
 
                         const SizedBox(height: 12),
