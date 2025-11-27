@@ -9,7 +9,7 @@ import '../ui/components/section_card.dart';
 import '../ui/components/loading_placeholder.dart';
 import '../ui/components/app_alert.dart';
 
-import '../config/app_config.dart';
+import '../services/api_router.dart';
 import '../services/dev_api.dart';
 import '../repositories/dependents_repository.dart';
 import '../repositories/especialidades_repository.dart';
@@ -78,10 +78,8 @@ class _AutorizacaoOdontologicaScreenState extends State<AutorizacaoOdontologicaS
     super.didChangeDependencies();
     if (_reposReady) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-
-    _api       = DevApi(baseUrl);
+    // Fonte única de verdade para a base/gateway
+    _api       = ApiRouter.client();
     _depsRepo  = DependentsRepository(_api);
     _espRepo   = EspecialidadesRepository(_api);
     _prestRepo = PrestadoresRepository(_api);
