@@ -3,18 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'services/api_router.dart';
-import 'services/dev_api.dart';
-import 'services/polling/exame_status_poller.dart';
-
-import 'state/notification_bridge.dart';
-
-import 'screens/home_screen.dart';
-import 'screens/home_servicos.dart';
-import 'screens/profile_screen.dart';
-import 'screens/autorizacao_medica_screen.dart';
-import 'screens/autorizacao_odontologica_screen.dart';
-import 'screens/autorizacao_exames_screen.dart';
+import 'common/services/api_router.dart';
+import 'common/services/dev_api.dart';
+import 'common/services/polling/exame_status_poller.dart';
+import 'common/state/notification_bridge.dart';
+import 'frontend/screens/autorizacao_exames_screen.dart';
+import 'frontend/screens/autorizacao_medica_screen.dart';
+import 'frontend/screens/autorizacao_odontologica_screen.dart';
+import 'frontend/screens/home_screen.dart';
+import 'frontend/screens/home_servicos.dart';
+import 'frontend/screens/profile_screen.dart';
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});

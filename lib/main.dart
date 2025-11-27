@@ -1,38 +1,29 @@
 // lib/main.dart
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:ipasemnhdigital/services/api_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'certificado/ipasem_http_overrides.dart';
-import 'config/app_config.dart';
-import 'config/params.dart';
+import 'common/certificado/ipasem_http_overrides.dart';
+import 'common/config/app_config.dart';
+import 'common/config/params.dart';
+import 'common/services/api_router.dart';
+import 'common/services/polling/exame_bg_worker.dart';
+import 'common/state/notification_bridge.dart';
+import 'frontend/screens/home_screen.dart';
+import 'frontend/screens/home_servicos.dart';
+import 'frontend/screens/login_screen.dart';
+import 'frontend/screens/privacidade_screen.dart';
+import 'frontend/screens/profile_screen.dart';
+import 'frontend/screens/sobre_screen.dart';
+import 'frontend/screens/termos_screen.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
-
-// TELAS
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/home_servicos.dart';
-import 'screens/sobre_screen.dart';
-import 'screens/privacidade_screen.dart';
-import 'screens/termos_screen.dart';
-
 // IMPORT CONDICIONAL (tem que ficar no TOPO, fora de funções!)
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
-
-// <<< NOTIFICAÇÕES
-import 'state/notification_bridge.dart';
-// >>>
-
 // ==== background polling (workmanager) ====
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:workmanager/workmanager.dart';
-import 'services/polling/exame_bg_worker.dart';
-// =========================================
+
 
 // Base prod: por padrão assistweb; pode sobrescrever com --dart-define=API_BASE=...
 const String kLocalBase = String.fromEnvironment(

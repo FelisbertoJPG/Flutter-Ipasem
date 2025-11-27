@@ -1,0 +1,139 @@
+// lib/screens/home_servicos.dart
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../common/services/session.dart';
+import '../ui/app_shell.dart';
+import '../ui/components/section_card.dart';
+import '../ui/components/quick_actions.dart';
+import '../ui/components/quick_action_items.dart';
+import '../ui/components/services_visitor.dart';
+import '../ui/utils/webview_warmup.dart';
+import '../ui/utils/service_launcher.dart';
+// telas (mantidas)
+import 'login_screen.dart';
+class HomeServicos extends StatefulWidget {
+  const HomeServicos({super.key});
+
+  static const String _loginUrl = 'https://assistweb.ipasemnh.com.br/site/login';
+  static const String _siteUrl  = 'https://www.ipasemnh.com.br/home';
+
+  @override
+  State<HomeServicos> createState() => _HomeServicosState();
+}
+
+class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
+  bool _loading = true;
+  bool _isLoggedIn = false;
+
+  int? _matricula; // usada para emissão da carteirinha e relatórios
+
+  late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
+
+  @override
+  void initState() {
+    super.initState();
+    warmupInit();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    setState(() => _loading = true);
+
+    final prefs = await SharedPreferences.getInstance();
+    _isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+
+    // Apenas carrega a matrícula para os fluxos que exigem idmatricula.
+    if (_isLoggedIn) {
+      try {
+        final prof = await Session.getProfile();
+        _matricula = prof?.id;
+      } catch (_) {
+        _matricula = null;
+      }
+    } else {
+      _matricula = null;
+    }
+
+    if (mounted) setState(() => _loading = false);
+  }
+
+  // ================== Ações de navegação ==================
+
+  List<QuickActionItem> _loggedActions() {
+    final m = _matricula;
+
+    return [
+      QuickActionItems.autorizacaoMedica(context: context),
+      QuickActionItems.autorizacaoOdontologica(context: context),
+      QuickActionItems.autorizacaoExames(context: context),
+      QuickActionItems.carteirinha(
+        context: context,
+        idMatricula: m,
+      ),
+      QuickActionItems.historicoAutorizacoes(
+        context: context,
+      ),
+      QuickActionItems.retornoExames(
+        context: context,
+      ),
+      QuickActionItems.extratoCoparticipacao(
+        context: context,
+        idMatricula: m,
+      ),
+      QuickActionItems.site(
+        onTap: () => launcher.openUrl(HomeServicos._siteUrl, 'Site'),
+      ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final body = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : (_isLoggedIn ? _buildMemberView() : _buildVisitorView());
+
+    return AppScaffold(
+      title: 'Serviços',
+      body: RefreshIndicator(
+        onRefresh: _bootstrap,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [body],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVisitorView() {
+    return Column(
+      children: [
+        ServicesVisitors(
+          onLoginTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMemberView() {
+    return Column(
+      children: [
+        SectionCard(
+          title: 'Serviços em destaque',
+          child: QuickActions(
+            title: null,
+            items: _loggedActions(),
+            isLoggedIn: true,
+            onRequireLogin: null,
+          ),
+        ),
+        // Removidos: ExamesPendentes/ExamesLiberados/ExamesNegadas e Histórico na home.
+        // Agora esses conteúdos são carregados SOMENTE quando o usuário toca nos
+        // atalhos “Histórico de Autorizações” e “Retorno de Exames”.
+      ],
+    );
+  }
+}
