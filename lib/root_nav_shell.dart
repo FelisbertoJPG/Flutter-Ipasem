@@ -3,70 +3,241 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'services/api_router.dart';
+import 'services/dev_api.dart';
+import 'services/polling/exame_status_poller.dart';
+
+import 'state/notification_bridge.dart';
+
 import 'screens/home_screen.dart';
-import 'screens/home_servicos.dart';   // HomeServicos
-import 'screens/profile_screen.dart';  // ProfileScreen (Visitante)
+import 'screens/home_servicos.dart';
+import 'screens/profile_screen.dart';
+import 'screens/autorizacao_medica_screen.dart';
+import 'screens/autorizacao_odontologica_screen.dart';
+import 'screens/autorizacao_exames_screen.dart';
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});
+
+  static RootNavScope? maybeOf(BuildContext context) =>
+      RootNavScope.maybeOf(context);
 
   @override
   State<RootNavShell> createState() => _RootNavShellState();
 }
 
-class _RootNavShellState extends State<RootNavShell> {
-  final PageController _pageController = PageController(initialPage: 0);
+class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver {
+  final _tabKeys = <int, GlobalKey<NavigatorState>>{
+    0: GlobalKey<NavigatorState>(), // Início
+    1: GlobalKey<NavigatorState>(), // Serviços
+    2: GlobalKey<NavigatorState>(), // Perfil
+  };
 
-  // Índice usado pelo PageView/NavigationBar
+  ExameStatusPoller? _poller;
+
   int _currentIndex = 0;
+  bool _handledArgs = false;
 
-  // Contatos
+  // Swipe entre abas
+  late final PageController _pageController =
+  PageController(initialPage: _currentIndex);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // idempotente e no-op no Web
+    NotificationBridge.I.attach();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_poller == null) {
+      // Usa a configuração central (definida no main/main_local)
+      final DevApi api = ApiRouter.client();
+
+      _poller = ExameStatusPoller(
+        api: api,
+        contextProvider: () => context, // sempre não-nulo aqui
+      );
+      _poller!.start(); // async, não bloqueia o frame
+    }
+
+    if (_handledArgs) return;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['tab'] is int) {
+      final idx = args['tab'] as int;
+      if (idx >= 0 && idx <= 2) {
+        _currentIndex = idx;
+        _pageController.jumpToPage(_currentIndex);
+      }
+    }
+    _handledArgs = true;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // ao voltar pro app → force um poll imediato
+      _poller?.pollNow();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _poller?.stop();
+    _pageController.dispose();
+    super.dispose();
+  }
+
   static const String _tel = 'tel:5135949162';
   static const String _email = 'contato@ipasemnh.com.br';
   static const String _emailSubject = 'Atendimento IPASEM';
   static const String _emailBody = 'Olá, preciso de ajuda no app.';
 
-  // Páginas
-  late final List<Widget> _pages = const [
-    _KeepAlive(child: HomeScreen()),
-    _KeepAlive(child: HomeServicos()),
-    _KeepAlive(child: ProfileScreen()),
-  ];
-
-  // Índices
-  static const int _tabHome = 0;
-  static const int _tabServicos = 1;
-  static const int _tabPerfil = 2;
-  static const int _tabContatos = 3; // abre sheet (não navega)
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _goTo(int index) async {
-    if (index == _tabContatos) {
-      await _showContactsSheet(context);
+  void _setTab(int i) {
+    if (_currentIndex == i) {
+      _tabKeys[i]?.currentState?.popUntil((r) => r.isFirst);
       return;
     }
-    if (_currentIndex == index) return;
+    setState(() => _currentIndex = i);
+    _pageController.animateToPage(
+      i,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
 
-    setState(() => _currentIndex = index);
+  Future<T?> _pushInServicos<T>(
+      String name, {
+        Object? arguments,
+        bool switchTab = true,
+      }) {
+    // Normaliza: remove barra inicial e espaços acidentais
+    final routeName = name.trim().startsWith('/')
+        ? name.trim().substring(1)
+        : name.trim();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _pageController.animateToPage(
-        index,
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeOutCubic,
-      );
+    if (switchTab && _currentIndex != 1) {
+      setState(() => _currentIndex = 1);
+      _pageController.jumpToPage(1);
+    }
+
+    // Agenda o push no próximo micro-tick, garantindo que o Navigator da aba
+    // já esteja “pronto” após o jumpToPage.
+    return Future.microtask(() {
+      final nav = _tabKeys[1]!.currentState!;
+      return nav.pushNamed<T>(routeName, arguments: arguments);
     });
+  }
+
+  /// Empurra uma rota no Navigator **raiz** (fora do Navigator das abas).
+  Future<T?> _pushRootNamed<T>(
+      String routeName, {
+        Object? arguments,
+      }) {
+    return Future.microtask(() {
+      return Navigator.of(context, rootNavigator: true)
+          .pushNamed<T>(routeName, arguments: arguments);
+    });
+  }
+
+  Future<bool> _handleSystemBack() async {
+    final currentNav = _tabKeys[_currentIndex]!.currentState!;
+    if (currentNav.canPop()) {
+      currentNav.pop();
+      return false; // impede o pop global
+    }
+
+    if (_currentIndex != 1) {
+      _setTab(1); // prioriza Serviços
+      return false;
+    }
+    if (_currentIndex != 0) {
+      _setTab(0); // depois Início
+      return false;
+    }
+    return false; // nunca fecha o app
+  }
+
+  Future<void> _safeBack() async {
+    await _handleSystemBack();
+  }
+
+  Route<dynamic> _routeHome(RouteSettings settings) {
+    return MaterialPageRoute(
+      builder: (_) => const HomeScreen(),
+      settings: const RouteSettings(name: 'home-root'),
+    );
+  }
+
+  Route<dynamic> _routeServicos(RouteSettings settings) {
+    // Log leve para ver o nome recebido
+    // (deixe ligado em debug se quiser investigar)
+    // debugPrint('SERVICOS onGenerateRoute: ${settings.name}');
+
+    switch (settings.name) {
+      case '/':
+      case 'servicos-root':
+        return MaterialPageRoute(
+          builder: (_) => const HomeServicos(),
+          settings: const RouteSettings(name: 'servicos-root'),
+        );
+
+    // Aceita com e sem barra:
+      case 'autorizacao-medica':
+      case '/autorizacao-medica':
+        return MaterialPageRoute(
+          builder: (_) => const AutorizacaoMedicaScreen(),
+          settings: const RouteSettings(name: 'autorizacao-medica'),
+        );
+
+      case 'autorizacao-odontologica':
+      case '/autorizacao-odontologica':
+        return MaterialPageRoute(
+          builder: (_) => const AutorizacaoOdontologicaScreen(),
+          settings: const RouteSettings(name: 'autorizacao-odontologica'),
+        );
+
+      case 'autorizacao-exames':
+      case '/autorizacao-exames':
+        return MaterialPageRoute(
+          builder: (_) => const AutorizacaoExamesScreen(),
+          settings: const RouteSettings(name: 'autorizacao-exames'),
+        );
+
+      default:
+      // Fallback controlado
+        return MaterialPageRoute(
+          builder: (_) => const HomeServicos(),
+          settings: const RouteSettings(name: 'servicos-root'),
+        );
+    }
+  }
+
+  Route<dynamic> _routePerfil(RouteSettings settings) {
+    return MaterialPageRoute(
+      builder: (_) => const ProfileScreen(),
+      settings: const RouteSettings(name: 'perfil-root'),
+    );
+  }
+
+  Widget _tabNavigator({
+    required int index,
+    required RouteFactory onGenerateRoute,
+  }) {
+    return Navigator(
+      key: _tabKeys[index],
+      onGenerateRoute: onGenerateRoute,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Barra inferior compacta
     const double _iconSize = 22;
     final iconTheme = const IconThemeData(size: _iconSize);
 
@@ -81,7 +252,13 @@ class _RootNavShellState extends State<RootNavShell> {
         surfaceTintColor: Colors.white,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         selectedIndex: _currentIndex,
-        onDestinationSelected: _goTo,
+        onDestinationSelected: (i) {
+          if (i == 3) {
+            _showContactsSheet(context);
+            return;
+          }
+          _setTab(i);
+        },
         destinations: [
           NavigationDestination(
             tooltip: 'Início',
@@ -111,23 +288,31 @@ class _RootNavShellState extends State<RootNavShell> {
       ),
     );
 
-    return Scaffold(
-      // Sem AppBar
-      body: PageView(
-        controller: _pageController,
-        // Remova para permitir swipe entre páginas
-        physics: const NeverScrollableScrollPhysics(),
-        onPageChanged: (i) {
-          // Mantém a NavigationBar sincronizada (também cobre swipe se habilitar)
-          setState(() => _currentIndex = i);
-        },
-        children: _pages,
+    return WillPopScope(
+      onWillPop: _handleSystemBack,
+      child: RootNavScope(
+        setTab: _setTab,
+        currentIndex: _currentIndex,
+        pushInServicos: _pushInServicos,
+        safeBack: _safeBack,
+        pushRootNamed: _pushRootNamed,
+        child: Scaffold(
+          body: PageView(
+            controller: _pageController,
+            physics: const PageScrollPhysics(),
+            onPageChanged: (i) => setState(() => _currentIndex = i),
+            children: [
+              _tabNavigator(index: 0, onGenerateRoute: _routeHome),
+              _tabNavigator(index: 1, onGenerateRoute: _routeServicos),
+              _tabNavigator(index: 2, onGenerateRoute: _routePerfil),
+            ],
+          ),
+          bottomNavigationBar: bottomBar,
+        ),
       ),
-      bottomNavigationBar: bottomBar,
     );
   }
 
-  // ===== Bottom sheet de contatos =====
   Future<void> _showContactsSheet(BuildContext context) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -144,7 +329,6 @@ class _RootNavShellState extends State<RootNavShell> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // drag handle
                 Container(
                   width: 40,
                   height: 4,
@@ -154,10 +338,7 @@ class _RootNavShellState extends State<RootNavShell> {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const Text(
-                  'Contatos',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
+                const Text('Contatos', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 12),
                 ListTile(
                   leading: const Icon(Icons.call_outlined),
@@ -186,7 +367,6 @@ class _RootNavShellState extends State<RootNavShell> {
     );
   }
 
-  // ===== Helpers =====
   Future<void> _launchTel(String raw, BuildContext context) async {
     final uri = Uri.parse(raw);
     try {
@@ -211,11 +391,7 @@ class _RootNavShellState extends State<RootNavShell> {
       if (ok) return;
     } catch (_) {}
     final gmailWeb = Uri.https('mail.google.com', '/mail/', {
-      'view': 'cm',
-      'fs': '1',
-      'to': _email,
-      'su': _emailSubject,
-      'body': _emailBody,
+      'view': 'cm', 'fs': '1', 'to': _email, 'su': _emailSubject, 'body': _emailBody,
     });
     try {
       final ok = await launchUrl(gmailWeb, mode: LaunchMode.externalApplication);
@@ -229,21 +405,40 @@ class _RootNavShellState extends State<RootNavShell> {
   }
 }
 
-/// Mantém cada aba viva
-class _KeepAlive extends StatefulWidget {
-  final Widget child;
-  const _KeepAlive({required this.child, super.key});
-  @override
-  State<_KeepAlive> createState() => _KeepAliveState();
-}
+class RootNavScope extends InheritedWidget {
+  const RootNavScope({
+    super.key,
+    required this.setTab,
+    required this.currentIndex,
+    required this.pushInServicos,
+    required this.safeBack,
+    required this.pushRootNamed,
+    required super.child,
+  });
 
-class _KeepAliveState extends State<_KeepAlive>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return widget.child;
+  final void Function(int index) setTab;
+  final int currentIndex;
+
+  final Future<T?> Function<T>(
+      String routeName, {
+      Object? arguments,
+      bool switchTab,
+      }) pushInServicos;
+
+  /// Exposto para um “voltar com fallback” consistente (opcional).
+  final Future<void> Function() safeBack;
+
+  /// Empurra uma rota no Navigator raiz (fora da shell/abas).
+  final Future<T?> Function<T>(
+      String routeName, {
+      Object? arguments,
+      }) pushRootNamed;
+
+  static RootNavScope? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<RootNavScope>();
   }
+
+  @override
+  bool updateShouldNotify(RootNavScope oldWidget) =>
+      oldWidget.currentIndex != currentIndex;
 }

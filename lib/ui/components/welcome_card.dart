@@ -5,14 +5,16 @@ class WelcomeCard extends StatelessWidget {
   const WelcomeCard({
     super.key,
     required this.isLoggedIn,
-    this.name,            // ← nome opcional para saudar
+    this.name,            // nome opcional para saudar
     this.cpf,             // envie já formatado se quiser (ex.: 123.456.789-00)
+    this.sexoTxt,         // "M", "F", "MASCULINO", "FEMININO" etc. (titular)
     required this.onLogin, // usado somente no modo visitante
   });
 
   final bool isLoggedIn;
   final String? name;
   final String? cpf;
+  final String? sexoTxt;
   final VoidCallback onLogin;
 
   String _firstName(String full) {
@@ -20,12 +22,53 @@ class WelcomeCard extends StatelessWidget {
     return parts.isEmpty ? full : parts.first;
   }
 
+  String _onlyDigits(String? input) {
+    if (input == null) return '';
+    return input.replaceAll(RegExp(r'\D'), '');
+  }
+
+  /// Decide a saudação com base no login + sexo do titular.
+  /// Regras:
+  /// - Se CPF for o 78945612300 → "Bem-vindo, João"
+  /// - Se o nome vier como "USUARIO"/"USUÁRIO" → "Bem-vindo, João"
+  /// - Visitante: mantém "Bem-vindo"
+  /// - Logado:
+  ///    • sexoTxt começando com "F" → "Bem-vinda"
+  ///    • caso contrário → "Bem-vindo"
+  String _buildTitle() {
+    final rawName = (name ?? '').trim();
+    final upperName = rawName.toUpperCase();
+    final digitsCpf = _onlyDigits(cpf);
+
+    // 1) Regra especial pelo CPF (tratando formatado ou não)
+    if (digitsCpf == '78945612300') {
+      return 'Bem-vindo, João';
+    }
+
+    // 2) Regra especial pelo nome placeholder
+    if (upperName == 'USUARIO' || upperName == 'USUÁRIO') {
+      return 'Bem-vindo, João';
+    }
+
+    final hasName = rawName.isNotEmpty;
+    final sexo = (sexoTxt ?? '').trim().toUpperCase();
+    final prefixo = sexo.startsWith('F') ? 'Bem-vinda' : 'Bem-vindo';
+
+    if (!hasName) {
+      return prefixo;
+    }
+
+    if (!isLoggedIn) {
+      // Visitante não tem sexo conhecido, mantém neutro
+      return 'Bem-vindo';
+    }
+
+    return '$prefixo, ${_firstName(rawName)}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasName = (name != null && name!.trim().isNotEmpty);
-    final title = isLoggedIn && hasName
-        ? 'Bem-vindo, ${_firstName(name!)}'
-        : 'Bem-vindo';
+    final title = _buildTitle();
 
     return Container(
       decoration: BoxDecoration(
@@ -47,7 +90,10 @@ class WelcomeCard extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -61,12 +107,18 @@ class WelcomeCard extends StatelessWidget {
             children: [
               _StatusChip(
                 label: isLoggedIn ? 'Acesso autenticado' : 'Acesso limitado',
-                color: isLoggedIn ? const Color(0xFF027A48) : const Color(0xFF6941C6),
-                bg:    isLoggedIn ? const Color(0xFFD1FADF) : const Color(0xFFF4EBFF),
+                color: isLoggedIn
+                    ? const Color(0xFF027A48)
+                    : const Color(0xFF6941C6),
+                bg: isLoggedIn
+                    ? const Color(0xFFD1FADF)
+                    : const Color(0xFFF4EBFF),
               ),
               if (cpf != null && cpf!.isNotEmpty)
                 const _StatusChip(
-                  label: '', color: Color(0xFF475467), bg: Color(0xFFEFF6F9),
+                  label: '',
+                  color: Color(0xFF475467),
+                  bg: Color(0xFFEFF6F9),
                 ).copyWith(label: 'CPF: $cpf'),
             ],
           ),
@@ -121,7 +173,11 @@ class _StatusChip extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

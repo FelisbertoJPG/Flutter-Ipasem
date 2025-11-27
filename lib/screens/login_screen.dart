@@ -1,16 +1,19 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
 import '../core/validators.dart';
 import '../repositories/auth_repository.dart';
-import '../services/dev_api.dart';
+import '../services/api_router.dart';        // roteador HTTP central
 import '../theme/colors.dart';
 import '../route_transitions.dart';
 import '../root_nav_shell.dart';
+
 import '../ui/components/consent_dialog.dart';
+import '../data/consent_store.dart';
+
 import 'privacidade_screen.dart';
 import 'termos_screen.dart';
 
@@ -24,6 +27,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const bool _visitorTemporarilyDisabled = true;
+
   final _formKey = GlobalKey<FormState>();
   final _cpfCtrl = TextEditingController();
   final _pwdCtrl = TextEditingController();
@@ -33,19 +38,23 @@ class _LoginScreenState extends State<LoginScreen> {
   late LoginController _c;
   bool _controllerReady = false;
 
+  // Evita navegação duplicada (toques repetidos).
+  bool _navigatingToApp = false;
+
+  // Controle de visibilidade da senha
+  bool _obscurePwd = true;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_controllerReady) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-
-    final repo = AuthRepository(DevApi(baseUrl));
+    // Cliente HTTP via ApiRouter
+    final repo = AuthRepository(ApiRouter.client());
     _c = LoginController(repo: repo, appConfig: AppConfig.maybeOf(context));
     _controllerReady = true;
 
-    // restaura prefs (NÃO navega)
+    // Restaura prefs (NÃO navega)
     _restoreFromController();
   }
 
@@ -53,10 +62,9 @@ class _LoginScreenState extends State<LoginScreen> {
     await _c.init();
     if (!mounted) return;
     if (_c.savedCpf.isNotEmpty) _cpfCtrl.text = _c.savedCpf;
-    if (_c.savedPassword.isNotEmpty) _pwdCtrl.text = _c.savedPassword; // aqui!
+    if (_c.savedPassword.isNotEmpty) _pwdCtrl.text = _c.savedPassword;
     setState(() {});
   }
-
 
   @override
   void dispose() {
@@ -69,12 +77,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _goToApp() async {
+    if (_navigatingToApp) return;
+    _navigatingToApp = true;
     FocusScope.of(context).unfocus();
+
+    // Remove TODAS as rotas e abre a RootNavShell "única".
     await pushAndRemoveAllSharedAxis(
       context,
       const RootNavShell(),
       type: SharedAxisTransitionType.vertical,
     );
+
+    _navigatingToApp = false;
   }
 
   InputDecoration _deco(String label, {String? hint, Widget? suffix}) => InputDecoration(
@@ -93,16 +107,42 @@ class _LoginScreenState extends State<LoginScreen> {
     suffixIcon: suffix,
   );
 
-  void _snack(String m) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  /// Garante aceite dos Termos/Privacidade ANTES do login.
+  Future<bool> _ensureTermsForLogin() async {
+    if (await ConsentStore.isAccepted()) return true;
+
+    final accepted = await ConsentDialog.show(
+      context,
+      onOpenPrivacy: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const PrivacidadeScreen(minimal: true)),
+      ),
+      onOpenTerms: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const TermosScreen(minimal: true)),
+      ),
+    );
+
+    if (accepted == true) {
+      await ConsentStore.setAccepted(true);
+      return true;
+    }
+    _snack('É necessário aceitar os termos para continuar.');
+    return false;
+  }
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    // Termos no ato do login
+    if (!await _ensureTermsForLogin()) return;
+
     final (outcome, message) = await _c.submit(
       rawCpfDigits: _cpfCtrl.text.replaceAll(RegExp(r'\D'), ''),
       password: _pwdCtrl.text,
     );
     if (!mounted) return;
+
     switch (outcome) {
       case LoginOutcome.success:
         await _goToApp();
@@ -116,19 +156,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _continueAsGuest() async {
-    final ok = await ConsentDialog.show(
-      context,
-      onOpenPrivacy: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const PrivacidadeScreen(minimal: true)),
-      ),
-      onOpenTerms: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TermosScreen(minimal: true)),
-      ),
-    );
-    if (ok != true) return;
-
-    final (outcome, _) = await _c.continueAsGuest();
-    if (outcome == LoginOutcome.guest && mounted) await _goToApp();
+    // Temporariamente desabilitado para evitar empilhamento de shells/sessões.
+    _snack('Acesso como visitante temporariamente desabilitado.');
   }
 
   Future<void> _openFirstAccess() async {
@@ -193,8 +222,16 @@ class _LoginScreenState extends State<LoginScreen> {
                               focusNode: _pwdF,
                               textInputAction: TextInputAction.done,
                               autofillHints: const [AutofillHints.password],
-                              obscureText: true,
-                              decoration: _deco('Senha'),
+                              obscureText: _obscurePwd,
+                              decoration: _deco(
+                                'Senha',
+                                suffix: _PasswordRevealSuffix(
+                                  obscured: _obscurePwd,
+                                  onToggle: () => setState(() => _obscurePwd = !_obscurePwd),
+                                  onPressAndHoldStart: () => setState(() => _obscurePwd = false),
+                                  onPressAndHoldEnd: () => setState(() => _obscurePwd = true),
+                                ),
+                              ),
                               validator: (v) => validatePassword(
                                 v,
                                 minLen: AppConfig.maybeOf(context)?.params.passwordMinLength ?? 4,
@@ -206,52 +243,60 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 8),
 
-                        // ===== Opções  (substitua o Row antigo por este)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.max,
                             children: [
-                              // área dos checkboxes que pode quebrar de linha
+                              // Esquerda: checkbox + rótulo com flex
                               Expanded(
-                                child: Wrap(
-                                  spacing: 12,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.max,
                                   children: [
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        ValueListenableBuilder<bool>(
-                                          valueListenable: _c.rememberCpf,
-                                          builder: (_, val, __) => Checkbox(
-                                            value: val,
-                                            onChanged: (v) => _c.rememberCpf.value = v ?? true,
-                                          ),
-                                        ),
-                                        const Text('Lembrar CPF'),
-                                      ],
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable: _c.staySignedIn,
+                                      builder: (_, val, __) => Checkbox(
+                                        value: val,
+                                        onChanged: (v) async {
+                                          final b = v ?? false;
+                                          await _c.setStaySignedIn(b); // salva staySignedIn e limpa senha se desmarcar
+                                          await _c.setRememberCpf(b);  // sincroniza CPF
+                                          if (mounted) setState(() {});
+                                        },
+                                      ),
                                     ),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        ValueListenableBuilder<bool>(
-                                          valueListenable: _c.staySignedIn,
-                                          builder: (_, val, __) => Checkbox(
-                                            value: val,
-                                            onChanged: (v) => _c.staySignedIn.value = v ?? true,
-                                          ),
-                                        ),
-                                        const Text('Manter Login'),
-                                      ],
+                                    const SizedBox(width: 4),
+                                    const Flexible(
+                                      child: Text(
+                                        'Manter login',
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                              // link fica “fixo” à direita, sem forçar overflow
-                              TextButton(
-                                onPressed: _openFirstAccess,
-                                child: const Text('Primeiro Acesso?'),
+
+                              // Direita: link compacto
+                              Flexible(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: _openFirstAccess,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      minimumSize: const Size(0, 36),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    child: const Text(
+                                      'Primeiro Acesso?',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -259,13 +304,53 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         const SizedBox(height: 8),
 
+                        // ===== AVISO: Wi-Fi do IPASEM desconectado (acima do botão Logar)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Color(0xFFFFF7E6), // tom âmbar suave
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Color(0xFFFFE2A1)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Icon(Icons.wifi_off, color: Color(0xFF8A6100)),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Wi-Fi do IPASEM deve estar DESCONECTADO',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF8A6100),
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'Use 4G/5G ou outra rede Wi-Fi. A rede interna do IPASEM impede o acesso às rotinas do app.',
+                                      style: TextStyle(color: Color(0xFF8A6100)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
                         // ===== Botões
                         ValueListenableBuilder<bool>(
                           valueListenable: _c.loading,
                           builder: (_, busy, __) => Column(
                             children: [
                               SizedBox(
-                                width: double.infinity, height: 48,
+                                width: double.infinity,
+                                height: 48,
                                 child: FilledButton(
                                   style: FilledButton.styleFrom(
                                     backgroundColor: kBrand,
@@ -276,20 +361,25 @@ class _LoginScreenState extends State<LoginScreen> {
                                   onPressed: busy ? null : _submit,
                                   child: busy
                                       ? const SizedBox(
-                                    width: 22, height: 22,
+                                    width: 22,
+                                    height: 22,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor:
-                                      AlwaysStoppedAnimation(Colors.white),
+                                      valueColor: AlwaysStoppedAnimation(Colors.white),
                                     ),
                                   )
-                                      : const Text('Logar',
-                                      style: TextStyle(fontWeight: FontWeight.w700)),
+                                      : const Text(
+                                    'Logar',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 10),
+
+                              // Visitante temporariamente desabilitado
                               SizedBox(
-                                width: double.infinity, height: 48,
+                                width: double.infinity,
+                                height: 48,
                                 child: OutlinedButton(
                                   style: OutlinedButton.styleFrom(
                                     side: const BorderSide(color: kBrand, width: 1.5),
@@ -298,13 +388,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  onPressed: busy ? null : _continueAsGuest,
+                                  onPressed: (busy || _visitorTemporarilyDisabled) ? null : _continueAsGuest,
                                   child: const Text(
                                     'Entrar como Visitante',
                                     style: TextStyle(fontWeight: FontWeight.w700),
                                   ),
                                 ),
                               ),
+                              if (_visitorTemporarilyDisabled) ...[
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Acesso como visitante desabilitado temporariamente para correção de estabilidade.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 12, color: Color(0xFF475467)),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -323,7 +421,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   child: const Text(
                     'Use seu CPF e senha cadastrados. Caso seja seu primeiro acesso, '
-                        'clique em “Primeiro Acesso?” para criar/recuperar sua senha.',
+                        'clique em “Primeiro Acesso?” para criar/recuperar sua senha. '
+                        'Ao prosseguir com o login, você deverá aceitar os Termos de Uso e a Política de Privacidade.',
                     style: TextStyle(color: Color(0xFF475467)),
                   ),
                 ),
@@ -331,6 +430,34 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PasswordRevealSuffix extends StatelessWidget {
+  const _PasswordRevealSuffix({
+    required this.obscured,
+    required this.onToggle,
+    required this.onPressAndHoldStart,
+    required this.onPressAndHoldEnd,
+  });
+
+  final bool obscured;
+  final VoidCallback onToggle;
+  final VoidCallback onPressAndHoldStart;
+  final VoidCallback onPressAndHoldEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    // Ícone + suporte a press-and-hold para visualizar temporariamente
+    return GestureDetector(
+      onLongPress: onPressAndHoldStart,
+      onLongPressUp: onPressAndHoldEnd,
+      child: IconButton(
+        onPressed: onToggle,
+        tooltip: obscured ? 'Mostrar senha' : 'Ocultar senha',
+        icon: Icon(obscured ? Icons.visibility_off : Icons.visibility),
       ),
     );
   }
