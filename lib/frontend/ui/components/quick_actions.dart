@@ -1,7 +1,6 @@
 // lib/ui/components/quick_actions.dart
 import 'package:flutter/material.dart';
 import './section_card.dart';
-import '../sheets/card_sheet.dart';
 
 enum QaAudience { all, loggedIn, visitor }
 

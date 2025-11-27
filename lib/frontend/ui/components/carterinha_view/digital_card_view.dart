@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 
-import '../../../common/services/carteirinha_service.dart';
+import '../../../../common/services/carteirinha_service.dart';
 
 /// Cartão digital do IPASEM com layout responsivo.
 /// Conteúdo DENTRO do card: Nome, CPF, Sexo, Matrícula, Nascimento, Token

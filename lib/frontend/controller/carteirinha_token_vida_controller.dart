@@ -1,51 +1,68 @@
-// lib/services/card_token_service.dart
+// lib/ui/controllers/vida_token_controller.dart
 import 'dart:async';
 
-import '../models/card_token_models.dart';
-import 'carteirinha_service.dart';
+import '../../common/models/card_token_models.dart';
+import '../../common/services/carteirinha_service.dart';
 
-/// Controla vida útil do token: agenda expurgo e publica segundos restantes.
-/// Convenções:
-/// - Quando não houver expiração, o stream emite -1 e o ticker não roda.
-/// - Quando expira, o stream emite 0 e o ticker é parado.
-class CardTokenController {
+/// Controla a "vida útil" de um token de carteirinha para a UI:
+/// - Agenda expurgo no backend (best-effort).
+/// - Publica no stream os segundos restantes até expirar.
+///   - -1  => sem expiração conhecida.
+///   - >0  => segundos restantes.
+///   - 0   => expirado (ticker para).
+///
+/// Uso típico na UI:
+/// final controller = VidaTokenController(service: svc, data: tokenData);
+/// controller.start();
+/// controller.secondsLeftStream.listen(...);
+/// ...
+/// controller.dispose();
+class VidaTokenController {
   final CarteirinhaService service;
   final CardTokenData data;
 
   Timer? _ticker;
-  Stopwatch? _sw;             // cronômetro para compensar o tempo
-  int? _baseNowEpoch;         // epoch (s) usado como "agora" inicial (preferindo serverNowEpoch)
+  Stopwatch? _sw; // cronômetro para compensar o tempo
+  int? _baseNowEpoch; // epoch (s) usado como "agora" inicial
   bool _expurgoAgendado = false;
   bool _disposed = false;
 
   final _secondsLeft = StreamController<int>.broadcast();
   Stream<int> get secondsLeftStream => _secondsLeft.stream;
 
-  CardTokenController({required this.service, required this.data});
+  VidaTokenController({
+    required this.service,
+    required this.data,
+  });
 
+  /// Inicia o controle:
+  /// - agenda o expurgo (se houver dbToken);
+  /// - começa a emitir segundos restantes enquanto houver expiração.
   void start() {
     if (_disposed) return;
 
-    // Agenda expurgo (best-effort) uma única vez, somente se houver dbToken
+    // Agenda expurgo (best-effort) uma única vez, somente se houver dbToken.
     if (!_expurgoAgendado && data.dbToken != null) {
       _expurgoAgendado = true;
       // fire-and-forget
       service.agendarExpurgo(data.dbToken!).catchError((_) {});
     }
 
-    // Sem expiração -> emite -1 e não inicia ticker
     final exp = data.expiresAtEpoch;
+    // Sem expiração -> emite -1 e não inicia ticker.
     if (exp == null || exp <= 0) {
       _safeAdd(-1);
       return;
     }
 
-    // Define "agora" de referência: usa serverNowEpoch se existir
-    _baseNowEpoch = data.serverNowEpoch ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    // Define "agora" de referência: usa serverNowEpoch se existir.
+    _baseNowEpoch =
+        data.serverNowEpoch ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+
     _sw?.stop();
     _sw = Stopwatch()..start();
 
-    // Emite valor inicial já compensado
+    // Emite valor inicial já compensado.
     _safeAdd(_computeLeft());
 
     _ticker?.cancel();
@@ -61,13 +78,15 @@ class CardTokenController {
   /// Recalcula segundos restantes a cada tick com base no relógio do servidor.
   int _computeLeft() {
     final exp = data.expiresAtEpoch!;
-    final base = _baseNowEpoch ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    final base = _baseNowEpoch ??
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000);
     final elapsed = _sw?.elapsed.inSeconds ?? 0;
     final nowEst = base + elapsed; // "agora" avançado
     final left = exp - nowEst;
     return left <= 0 ? 0 : left;
   }
 
+  /// Para o ticker (não fecha o stream).
   void stop() {
     _ticker?.cancel();
     _ticker = null;
@@ -75,6 +94,7 @@ class CardTokenController {
     _sw = null;
   }
 
+  /// Libera recursos: para o ticker e fecha o stream.
   void dispose() {
     if (_disposed) return;
     stop();

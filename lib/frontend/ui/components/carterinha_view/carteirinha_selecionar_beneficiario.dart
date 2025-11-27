@@ -1,10 +1,10 @@
-// lib/screens/carteirinha_beneficiary_sheet.dart
+// lib/screens/carteirinha_selecionar_beneficiario.dart
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import '../../common/models/dependent.dart';
-import '../../common/services/api_router.dart';
-import '../../common/services/dev_api.dart';
+import '../../../../common/models/dependent.dart';
+import '../../../../common/services/api_router.dart';
+import '../../../../common/services/dev_api.dart';
 
 
 

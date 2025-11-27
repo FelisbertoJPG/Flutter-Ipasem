@@ -6,7 +6,7 @@ import '../../../root_nav_shell.dart';
 import 'quick_actions.dart';
 import '../../screens/login_screen.dart';
 import '../../screens/profile_screen.dart';
-import '../../screens/carteirinha_flow.dart';
+import '../../controller/carteirinha_flow_controller.dart';
 import '../../screens/authorizations_picker_sheet.dart'
     show showAuthorizationsPickerSheet;
 import '../../screens/historico_autorizacoes_screen.dart';

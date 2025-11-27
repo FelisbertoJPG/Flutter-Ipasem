@@ -1,101 +1,17 @@
-// lib/screens/carteirinha_flow.dart
-import 'dart:async';
+// lib/frontend/ui/components/carteirinha_overlay.dart
 import 'package:flutter/material.dart';
 
-import '../../common/models/card_token_models.dart';
-import '../../common/services/carteirinha_service.dart';
-import '../ui/widgets/digital_card_view.dart';
+import '../../../../common/models/card_token_models.dart';
+import '../../../../common/services/carteirinha_service.dart';
+import 'digital_card_view.dart';
 
-// Se existir a folha de escolha de beneficiário, mantenha o import.
-// Caso não exista, remova o import e deixe depId = 0 no fluxo.
-import 'carteirinha_beneficiary_sheet.dart';
-
-/// Ponto único de entrada a partir do Home/Serviços.
-/// - (Opcional) pergunta o beneficiário
-/// - busca token ativo OU emite via CarteirinhaService
-/// - abre o cartão em overlay full-screen (sem bottom-sheet)
-Future<void> startCarteirinhaFlow(
+/// Exibe a carteirinha em overlay full-screen usando o rootNavigator.
+/// Reaproveita o mesmo componente em todos os fluxos.
+Future<void> showDigitalCardOverlay(
     BuildContext context, {
-      required int idMatricula,
-    }) async {
-  // 1) Escolha do beneficiário (se houver sheet no projeto)
-  int depId = 0;
-  try {
-    final chosen = await showBeneficiaryPickerSheet(
-      context,
-      idMatricula: idMatricula,
-    );
-    if (chosen == null) return; // cancelou
-    depId = chosen;
-  } catch (_) {
-    // sem sheet -> segue como titular (depId = 0)
-  }
-
-  // 2) Obtém token (reaproveita ativo; senão emite)
-  final svc = CarteirinhaService.fromContext(context);
-  CardTokenData? data;
-  String? errMsg;
-
-  final closeLoader = await _showBlockingLoader(context); // abre sem travar
-  try {
-    data = await svc.obterAtivoOuEmitir(
-      matricula: idMatricula,
-      iddependente: depId.toString(),
-    );
-  } on CarteirinhaException catch (e) {
-    errMsg = e.message.isNotEmpty ? e.message : 'Falha ao emitir a carteirinha.';
-  } catch (_) {
-    errMsg = 'Falha ao emitir a carteirinha.';
-  } finally {
-    closeLoader(); // garante fechamento do loader mesmo com erro
-  }
-
-  if (data == null) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errMsg ?? 'Erro inesperado ao emitir.')),
-      );
-    }
-    return;
-  }
-
-  // 3) Abre overlay full-screen (sem limitações de bottom-sheet)
-  await _openDigitalCardOverlay(context, data);
-}
-
-typedef _Close = void Function();
-
-/// Abre um loader bloqueante no ROOT sem travar o fluxo chamador.
-/// Retorna uma função para fechá-lo com segurança.
-Future<_Close> _showBlockingLoader(BuildContext context) async {
-  final rootNav = Navigator.of(context, rootNavigator: true);
-  bool closed = false;
-
-  // Abre o diálogo em microtask para não bloquear a sequência.
-  Future.microtask(() {
-    showDialog<void>(
-      context: context,
-      useRootNavigator: true, // <- garante o mesmo stack do overlay
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-  });
-
-  return () {
-    if (!closed) {
-      closed = true;
-      if (rootNav.canPop()) rootNav.pop();
-    }
-  };
-}
-
-/// Abre a Carteirinha em rota transparente full-screen.
-/// Evita restrições de altura do bottom-sheet no Android.
-Future<void> _openDigitalCardOverlay(
-    BuildContext context,
-    CardTokenData data,
-    ) {
-  final info = _ParsedCardInfo.fromBackendString(data.string);
+      required CardTokenData data,
+    }) {
+  final info = ParsedCardInfo.fromBackendString(data.string);
   final rootNav = Navigator.of(context, rootNavigator: true);
 
   return rootNav.push(
@@ -106,16 +22,16 @@ Future<void> _openDigitalCardOverlay(
       transitionDuration: const Duration(milliseconds: 180),
       reverseTransitionDuration: const Duration(milliseconds: 140),
       pageBuilder: (_, __, ___) {
-        return _CarteirinhaOverlay(
-          nome: (info.nome ?? '—'),
-          cpf: (info.cpf ?? ''),
-          matricula: (info.matricula ?? ''),
-          sexoTxt: (info.sexoTxt ?? '—'),
+        return _DigitalCardOverlay(
+          nome: info.nome ?? '—',
+          cpf: info.cpf ?? '',
+          matricula: info.matricula ?? '',
+          sexoTxt: info.sexoTxt ?? '—',
           nascimento: info.nascimento,
           token: data.token,
-          dbToken: data.dbToken,                 // <— ESSENCIAL para revogar/expurgar
+          dbToken: data.dbToken,
           expiresAtEpoch: data.expiresAtEpoch,
-          serverNowEpoch: data.serverNowEpoch,   // <— usa relógio do servidor
+          serverNowEpoch: data.serverNowEpoch,
         );
       },
       transitionsBuilder: (_, anim, __, child) =>
@@ -124,7 +40,7 @@ Future<void> _openDigitalCardOverlay(
   );
 }
 
-class _CarteirinhaOverlay extends StatefulWidget {
+class _DigitalCardOverlay extends StatefulWidget {
   final String nome;
   final String cpf;
   final String matricula;
@@ -135,7 +51,7 @@ class _CarteirinhaOverlay extends StatefulWidget {
   final int? expiresAtEpoch;
   final int? serverNowEpoch;
 
-  const _CarteirinhaOverlay({
+  const _DigitalCardOverlay({
     super.key,
     required this.nome,
     required this.cpf,
@@ -149,14 +65,14 @@ class _CarteirinhaOverlay extends StatefulWidget {
   });
 
   @override
-  State<_CarteirinhaOverlay> createState() => _CarteirinhaOverlayState();
+  State<_DigitalCardOverlay> createState() => _DigitalCardOverlayState();
 }
 
-class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
+class _DigitalCardOverlayState extends State<_DigitalCardOverlay> {
   bool _closing = false;
   bool _revoked = false;
 
-  // Revoga apenas quando o usuário fecha.
+  /// Revoga o token ao fechar (se tiver dbToken).
   Future<void> _revokeNow() async {
     if (_revoked) return;
     _revoked = true;
@@ -176,7 +92,6 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
     if (_closing) return;
     _closing = true;
 
-    // Dispara revogação (aguardando rapidamente para reduzir “tokens órfãos”).
     _revokeNow().whenComplete(() {
       final nav = Navigator.of(context, rootNavigator: true);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -194,8 +109,8 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
     final size = mq.size;
     final isPortrait = size.height >= size.width;
 
-    // Canvas de design fixo: base estável para o FittedBox escalar.
-    const double baseW = 1280; // landscape
+    // Canvas “fixo” para o FittedBox.
+    const double baseW = 1280;
     const double baseH = 800;
 
     Widget card = SizedBox(
@@ -208,17 +123,17 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
         sexoTxt: widget.sexoTxt,
         nascimento: widget.nascimento,
         token: widget.token,
-        dbToken: widget.dbToken,                   // <— DigitalCardView agenda expurgo
+        dbToken: widget.dbToken,
         expiresAtEpoch: widget.expiresAtEpoch,
         serverNowEpoch: widget.serverNowEpoch,
-        // Mantemos o card em layout horizontal; quem gira é o PAI (modal).
+        // Mantemos o card horizontal; quem gira é o pai.
         forceLandscape: true,
         forceLandscapeOnWide: false,
         onClose: _close,
       ),
     );
 
-    // Em retrato, rotaciona o MODAL (conteúdo) em +90°.
+    // Em retrato, rotaciona o conteúdo em +90°.
     if (isPortrait) {
       card = RotatedBox(quarterTurns: 1, child: card);
     }
@@ -226,7 +141,7 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
     return WillPopScope(
       onWillPop: () async {
         _close();
-        return false; // nós mesmos controlamos o pop
+        return false; // quem faz o pop somos nós
       },
       child: Material(
         type: MaterialType.transparency,
@@ -234,9 +149,7 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
           data: mq,
           child: Stack(
             children: [
-              // Fundo não-interativo
               const Positioned.fill(child: IgnorePointer()),
-              // Conteúdo centralizado ocupando a viewport com escala correta
               Positioned.fill(
                 child: FittedBox(
                   fit: BoxFit.contain,
@@ -252,14 +165,15 @@ class _CarteirinhaOverlayState extends State<_CarteirinhaOverlay> {
 }
 
 /// Parser do campo `string` vindo do backend.
-class _ParsedCardInfo {
+/// ÚNICO ponto de parse para evitar duplicação.
+class ParsedCardInfo {
   final String? nome;
   final String? cpf;
   final String? matricula;
   final String? sexoTxt;
   final String? nascimento;
 
-  const _ParsedCardInfo({
+  const ParsedCardInfo({
     this.nome,
     this.cpf,
     this.matricula,
@@ -267,8 +181,8 @@ class _ParsedCardInfo {
     this.nascimento,
   });
 
-  factory _ParsedCardInfo.fromBackendString(String? s) {
-    if (s == null || s.isEmpty) return const _ParsedCardInfo();
+  factory ParsedCardInfo.fromBackendString(String? s) {
+    if (s == null || s.isEmpty) return const ParsedCardInfo();
 
     String? nome, cpf, matricula, sexoTxt, nascimento;
     for (final raw in s.split('\n')) {
@@ -289,7 +203,8 @@ class _ParsedCardInfo {
         nascimento = line.replaceFirst('Nascimento:', '').trim();
       }
     }
-    return _ParsedCardInfo(
+
+    return ParsedCardInfo(
       nome: nome,
       cpf: cpf,
       matricula: matricula,

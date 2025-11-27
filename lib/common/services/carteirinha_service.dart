@@ -18,17 +18,29 @@ class CarteirinhaService {
   CarteirinhaService({DevApi? api}) : api = api ?? ApiRouter.client();
 
   /// Busca titular + dependentes.
-  Future<Map<String, dynamic>> carregarDados({required int idMatricula}) async {
+  ///
+  /// Retorna um mapa no formato:
+  /// {
+  ///   "titular": { ... },
+  ///   "dependentes": [ ... ]
+  /// }
+  Future<Map<String, dynamic>> carregarDados({
+    required int idMatricula,
+  }) async {
     final data = await api.carteirinhaDados(idMatricula: idMatricula);
-    return data; // {titular:{...}, dependentes:[...]}
+    return data;
   }
 
   // ---------------------------------------------------------------------------
-  // Consulta/Emissão
+  // Consulta / Emissão
   // ---------------------------------------------------------------------------
 
   /// Consulta token ativo (se houver) para (matrícula, dependente).
-  /// Retorna null se não existir ativo ou se estiver expirado/inválido.
+  ///
+  /// Retorna null se:
+  /// - não existir token ativo;
+  /// - dbToken inválido;
+  /// - token já expirado.
   Future<CardTokenData?> consultarAtivo({
     required int matricula,
     String iddependente = '0',
@@ -42,17 +54,19 @@ class CarteirinhaService {
 
       final data = CardTokenData.fromMap(map);
 
-      // dbToken pode variar (int ou int? dependendo do teu model). Normalize:
-      final int dbTok = (data as dynamic).dbToken as int? ?? 0;
+      // dbToken normalizado.
+      final int dbTok = data.dbToken ?? 0;
       if (data.token.isEmpty || dbTok <= 0) return null;
 
+      // Se tiver expiração, descarta tokens já vencidos.
       if (data.expiresAtEpoch != null) {
         final left = data.secondsLeft();
         if (left <= 0) return null;
       }
+
       return data;
     } on DioException catch (e) {
-      // Trate 404/rota ausente/sem ativo como “não há”.
+      // Trate 404/rota ausente/sem ativo como “não há” (null).
       if (e.response?.statusCode == 404) return null;
       return null;
     } catch (_) {
@@ -74,6 +88,9 @@ class CarteirinhaService {
   }
 
   /// Emite o token (rota mapeada no gateway).
+  ///
+  /// Lança [CarteirinhaException] em caso de erro tratado
+  /// e deixa qualquer erro inesperado encapsulado também em [CarteirinhaException].
   Future<CardTokenData> emitir({
     required int matricula,
     String iddependente = '0',
@@ -128,9 +145,8 @@ class CarteirinhaService {
           break;
         case DioExceptionType.badResponse:
           fallbackCode = 'CARD_ISSUE_ERROR';
-          fallbackMsg = status == 404
-              ? 'Endpoint de emissão indisponível (404).'
-              : 'Falha ao emitir.';
+          fallbackMsg =
+          status == 404 ? 'Endpoint de emissão indisponível (404).' : 'Falha ao emitir.';
           break;
         default:
           fallbackCode = 'CARD_ISSUE_ERROR';
@@ -159,13 +175,13 @@ class CarteirinhaService {
 
   /// Agenda o expurgo (202 Accepted quando ok). No-op se dbToken inválido.
   Future<void> agendarExpurgo(int? dbToken) async {
-    // <<< FIX do warning de nullability
     final v = dbToken ?? 0;
     if (v <= 0) return;
     await api.carteirinhaAgendarExpurgo(dbToken: v);
   }
 
   /// Exclui imediatamente o token (fallback da view ao expirar).
+  ///
   /// Aceita db_token OU token simples, conforme o gateway.
   Future<void> excluirToken({int? dbToken, int? token}) async {
     final d = dbToken ?? 0;
@@ -173,6 +189,7 @@ class CarteirinhaService {
       await api.carteirinhaExcluir(dbToken: d);
       return;
     }
+
     final t = token ?? 0;
     if (t > 0) {
       // Se o gateway aceitar "token" puro, troque por api.carteirinhaExcluirToken(token: t)

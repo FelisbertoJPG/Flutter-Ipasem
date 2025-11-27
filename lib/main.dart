@@ -17,7 +17,6 @@ import 'frontend/screens/sobre_screen.dart';
 import 'frontend/screens/termos_screen.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
-// IMPORT CONDICIONAL (tem que ficar no TOPO, fora de funções!)
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
 // ==== background polling (workmanager) ====

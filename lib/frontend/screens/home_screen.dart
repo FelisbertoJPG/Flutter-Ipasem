@@ -32,7 +32,7 @@ import 'profile_screen.dart';
 import '../ui/components/requerimentos_card.dart';
 import '../ui/components/comunicados_card.dart';
 // Fluxo da Carteirinha direto na Home
-import '../screens/carteirinha_flow.dart';
+import '../controller/carteirinha_flow_controller.dart';
 // Sheet com as três autorizações (navega internamente)
 import 'authorizations_picker_sheet.dart' show showAuthorizationsPickerSheet;
 

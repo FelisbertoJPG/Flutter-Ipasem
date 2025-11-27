@@ -124,3 +124,59 @@ class CardScheduleStatus {
     expTsDb: _asEpochSec(m['exp_ts_db']),
   );
 }
+
+/// Dados "humanos" que o cartão precisa exibir.
+/// Esses campos são derivados do [CardTokenData.string].
+class CardHolderInfo {
+  final String? nome;
+  final String? cpf;
+  final String? matricula;
+  final String? sexoTxt;
+  final String? nascimento;
+
+  const CardHolderInfo({
+    this.nome,
+    this.cpf,
+    this.matricula,
+    this.sexoTxt,
+    this.nascimento,
+  });
+
+  /// Constrói a partir do próprio [CardTokenData].
+  factory CardHolderInfo.fromToken(CardTokenData data) =>
+      CardHolderInfo.fromBackendString(data.string);
+
+  /// Parser do campo `string` vindo do backend.
+  factory CardHolderInfo.fromBackendString(String? s) {
+    if (s == null || s.isEmpty) return const CardHolderInfo();
+
+    String? nome, cpf, matricula, sexoTxt, nascimento;
+
+    for (final raw in s.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+
+      if (line.startsWith('Titular:')) {
+        nome = line.replaceFirst('Titular:', '').trim();
+      } else if (line.startsWith('Beneficiário:')) {
+        nome = line.replaceFirst('Beneficiário:', '').trim();
+      } else if (line.startsWith('CPF:')) {
+        cpf = line.replaceFirst('CPF:', '').trim();
+      } else if (line.startsWith('Matrícula:')) {
+        matricula = line.replaceFirst('Matrícula:', '').trim();
+      } else if (line.startsWith('Sexo:')) {
+        sexoTxt = line.replaceFirst('Sexo:', '').trim();
+      } else if (line.startsWith('Nascimento:')) {
+        nascimento = line.replaceFirst('Nascimento:', '').trim();
+      }
+    }
+
+    return CardHolderInfo(
+      nome: nome,
+      cpf: cpf,
+      matricula: matricula,
+      sexoTxt: sexoTxt,
+      nascimento: nascimento,
+    );
+  }
+}
