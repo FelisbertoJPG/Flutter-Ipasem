@@ -1,8 +1,8 @@
 // lib/ui/components/comunicado_detail_sheet.dart
 import 'package:flutter/material.dart';
-import '../../../common/api/cards_page_scraper.dart';
-import '../../../common/config/app_config.dart';
-import '../../../common/core/models.dart' show ComunicadoResumo;
+import '../../../../common/api/cards_page_scraper.dart';
+import '../../../../common/config/app_config.dart';
+import '../../../../common/core/models.dart' show ComunicadoResumo;
 
 
 /// Bottom-sheet de detalhe do Comunicado.

@@ -1,10 +1,10 @@
 // lib/ui/components/comunicados_card.dart
 import 'package:flutter/material.dart';
 
-import '../../../common/core/formatters.dart';
-import '../../../common/core/models.dart';
-import 'section_card.dart';
-import 'loading_placeholder.dart';
+import '../../../../common/core/formatters.dart';
+import '../../../../common/core/models.dart';
+import '../section_card.dart';
+import '../loading_placeholder.dart';
 
 class ComunicadosCard extends StatelessWidget {
   const ComunicadosCard({

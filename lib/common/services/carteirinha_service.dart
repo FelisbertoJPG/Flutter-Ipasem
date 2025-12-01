@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 
-import '../models/card_token_models.dart';
+import '../models/card_token.dart';
 import 'api_router.dart';
 import 'dev_api.dart';
 

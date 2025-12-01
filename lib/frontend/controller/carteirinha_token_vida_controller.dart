@@ -1,7 +1,7 @@
 // lib/ui/controllers/vida_token_controller.dart
 import 'dart:async';
 
-import '../../common/models/card_token_models.dart';
+import '../../common/models/card_token.dart';
 import '../../common/services/carteirinha_service.dart';
 
 /// Controla a "vida útil" de um token de carteirinha para a UI:

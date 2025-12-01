@@ -11,7 +11,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart'
     show AndroidWebViewController, FileSelectorMode;
 
-import 'common/services/file_upload_manager.dart';
+import 'backend/controller/file_upload_manager.dart';
 import 'common/services/ipasem_js.dart';
 import 'common/services/session_manager.dart';
 import 'frontend/ui/widgets/ipasem_alert.dart';

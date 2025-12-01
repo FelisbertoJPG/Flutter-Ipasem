@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../common/models/relatorio_coparticipacao_models.dart';
+import '../../common/models/relatorio_coparticipacao.dart';
 import '../../common/services/api_router.dart';
 import '../theme/colors.dart';
 import '../ui/app_shell.dart';

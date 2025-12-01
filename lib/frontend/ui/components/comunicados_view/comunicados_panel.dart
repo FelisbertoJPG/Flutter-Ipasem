@@ -1,8 +1,8 @@
 //lib/ui/components/comunicados_panel.dart
 import 'package:flutter/material.dart';
 
-import '../../../common/models/comunicado.dart';
-import '../../../common/services/comunicados_app_service.dart';
+import '../../../../common/models/comunicado.dart';
+import '../../../../common/services/comunicados_app_service.dart';
 
 /// Painel simples para listar comunicados ativos a partir das views JSON do Yii.
 /// Uso típico:

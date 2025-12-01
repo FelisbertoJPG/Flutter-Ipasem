@@ -2,7 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-import '../../common/models/card_token_models.dart';
+import '../../common/models/card_token.dart';
 import '../../common/services/carteirinha_service.dart';
 import '../ui/components/carterinha_view/carteirinha_overlay.dart';
 import '../ui/components/carterinha_view/carteirinha_selecionar_beneficiario.dart';

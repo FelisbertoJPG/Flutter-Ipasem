@@ -15,7 +15,7 @@ import '../../common/services/dev_api.dart';
 import '../flows/visitor_consent.dart';
 import '../../root_nav_shell.dart';
 import '../ui/app_shell.dart';           // AppScaffold
-import '../ui/components/comunicado_detail_sheet.dart';
+import '../ui/components/comunicados_view/comunicado_detail_sheet.dart';
 import '../ui/components/exames_inline_status.dart';
 import '../ui/components/quick_actions.dart';
 import '../ui/components/quick_action_items.dart';
@@ -30,7 +30,7 @@ import 'login_screen.dart';
 import 'home_servicos.dart';
 import 'profile_screen.dart';
 import '../ui/components/requerimentos_card.dart';
-import '../ui/components/comunicados_card.dart';
+import '../ui/components/comunicados_view/comunicados_card.dart';
 // Fluxo da Carteirinha direto na Home
 import '../controller/carteirinha_flow_controller.dart';
 // Sheet com as três autorizações (navega internamente)

@@ -1,4 +1,4 @@
-// lib/models/relatorio_coparticipacao_models.dart
+// lib/models/relatorio_coparticipacao.dart
 //
 // Modelos para o endpoint: action=relatorio_coparticipacao
 // JSON esperado (exemplo):

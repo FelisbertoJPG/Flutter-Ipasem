@@ -1,7 +1,7 @@
 // lib/frontend/ui/components/carteirinha_overlay.dart
 import 'package:flutter/material.dart';
 
-import '../../../../common/models/card_token_models.dart';
+import '../../../../common/models/card_token.dart';
 import '../../../../common/services/carteirinha_service.dart';
 import 'digital_card_view.dart';
 
