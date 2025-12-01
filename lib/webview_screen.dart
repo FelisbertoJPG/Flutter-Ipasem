@@ -14,7 +14,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart'
 import 'backend/controller/file_upload_manager.dart';
 import 'common/services/ipasem_js.dart';
 import 'common/services/session_manager.dart';
-import 'frontend/ui/widgets/ipasem_alert.dart';
+import 'frontend/views/ui/widgets/ipasem_alert.dart';
 
 class WebViewScreen extends StatefulWidget {
   final String url;

@@ -1,6 +1,6 @@
 
 // lib/repositories/dependents_repository.dart
-import '../services/dev_api.dart';
+import '../config/dev_api.dart';
 import '../models/dependent.dart';
 
 class DependentsRepository {

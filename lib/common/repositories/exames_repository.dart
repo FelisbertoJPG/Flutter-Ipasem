@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart'; // BuildContext para fromContext
 
 import '../models/exame.dart';
-import '../services/dev_api.dart';
-import '../services/api_router.dart'; // resolve base via AppConfig/env
+import '../config/dev_api.dart';
+import '../config/api_router.dart'; // resolve base via AppConfig/env
 import '../state/auth_events.dart';
 
 class ExamesRepository {

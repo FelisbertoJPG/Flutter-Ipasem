@@ -3,7 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../core/models.dart' show ComunicadoResumo;
+import '../../backend/models/models.dart' show ComunicadoResumo;
 import '../api/cards_page_scraper.dart';
 
 class ComunicadosRepository {

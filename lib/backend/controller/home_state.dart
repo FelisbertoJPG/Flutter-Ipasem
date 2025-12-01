@@ -1,7 +1,7 @@
 // lib/controllers/home_state.dart
 
 
-import '../../common/core/models.dart';
+import '../models/models.dart';
 import '../../common/models/dependent.dart';
 import '../../common/models/profile.dart';
 

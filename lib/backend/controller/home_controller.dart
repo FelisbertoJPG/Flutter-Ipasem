@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 
 // IMPORTANTE: use SEMPRE este shim para referenciar o HomeState/Controller.
 // Não importe também 'home_state.dart' direto em outros arquivos.
-import '../../common/core/models.dart';
+import '../models/models.dart';
 import '../../common/data/session_store.dart';
 import '../../common/models/dependent.dart';
 import '../../common/repositories/comunicados_repository.dart';

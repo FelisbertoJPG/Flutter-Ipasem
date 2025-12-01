@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../dev_api.dart';      // estava ../services/dev_api.dart
+import '../../config/dev_api.dart';      // estava ../services/dev_api.dart
 import '../session.dart';     // estava ../services/session.dart
 import '../notifier.dart';    // estava ../services/notifier.dart
 

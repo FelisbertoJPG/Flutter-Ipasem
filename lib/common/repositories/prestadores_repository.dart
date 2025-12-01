@@ -1,6 +1,6 @@
 // lib/repositories/prestadores_repository.dart
 import 'package:dio/dio.dart';
-import '../services/dev_api.dart';
+import '../config/dev_api.dart';
 import '../models/prestador.dart';
 
 class PrestadoresRepository {

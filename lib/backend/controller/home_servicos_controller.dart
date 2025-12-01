@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../common/config/app_config.dart';
 import '../../common/models/reimpressao.dart';
 import '../../common/repositories/reimpressao_repository.dart';
-import '../../common/services/dev_api.dart';
+import '../../common/config/dev_api.dart';
 import '../../common/services/session.dart';
 
 class HomeServicosController {

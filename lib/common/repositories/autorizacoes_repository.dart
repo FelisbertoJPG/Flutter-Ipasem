@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode, debugPrint;
 import 'package:image_picker/image_picker.dart';
 
-import '../services/dev_api.dart';
+import '../config/dev_api.dart';
 
 class AutorizacoesRepository {
   final DevApi api;

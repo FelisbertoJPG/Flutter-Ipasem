@@ -2,7 +2,7 @@
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
-import '../services/dev_api.dart';
+import '../config/dev_api.dart';
 import '../models/reimpressao.dart';
 
 class ReimpressaoRepository {

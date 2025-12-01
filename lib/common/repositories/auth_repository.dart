@@ -1,9 +1,9 @@
 // lib/repositories/auth_repository.dart (trecho relevante)
 import 'package:dio/dio.dart';
-import '../core/app_exception.dart';
-import '../services/dio_error_mapper.dart';
+import '../../backend/exception/app_exception.dart';
+import '../../backend/exception/dio_error_mapper.dart';
 import '../models/profile.dart';
-import '../services/dev_api.dart';
+import '../config/dev_api.dart';
 
 class AuthRepository {
   final DevApi api;

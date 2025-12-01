@@ -4,8 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'; // necessário para ValueNotifier
 
 import '../../common/config/app_config.dart';
-import '../../common/core/app_exception.dart';
-import '../../common/core/validators.dart';
+import '../exception/app_exception.dart';
+import '../config/validators.dart';
 import '../../common/models/profile.dart';
 import '../../common/repositories/auth_repository.dart';
 import '../../common/services/secure_store.dart';

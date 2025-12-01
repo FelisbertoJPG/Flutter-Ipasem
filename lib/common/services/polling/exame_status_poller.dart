@@ -3,8 +3,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../../frontend/ui/components/app_alert.dart';
-import '../../services/dev_api.dart';
+import '../../../frontend/views/components/app_alert.dart';
+import '../../config/dev_api.dart';
 import '../../services/session.dart';
 import '../../state/auth_events.dart';
 import 'package:flutter/widgets.dart';

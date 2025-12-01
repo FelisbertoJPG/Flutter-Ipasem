@@ -1,4 +1,4 @@
-import '../services/dev_api.dart';
+import '../config/dev_api.dart';
 import '../models/especialidade.dart';
 
 class EspecialidadesRepository {
