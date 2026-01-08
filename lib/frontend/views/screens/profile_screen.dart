@@ -1,4 +1,4 @@
-// lib/screens/profile_screen.dart
+// lib/frontend/views/screens/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
@@ -15,9 +15,9 @@ import '../components/visitor_profile_view.dart';
 import '../layouts/menu_shell.dart';
 import '../../theme/colors.dart';
 import '../components/cards/dependents_card.dart';
-import 'login_screen.dart'; // Clipboard
+import 'login_screen.dart';
 
-
+// Link de criação/recuperação de conta (prestador – placeholder)
 const _createAccountUrl =
     'https://assistweb.ipasemnh.com.br/requerimentos/recuperar-senha-prestador';
 
@@ -141,7 +141,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // === Bottom sheet "Dados divergentes?" (acionado ao tocar em qualquer campo) ===
   Future<void> _showDataHelpSheet(Profile p) async {
-    // Corpo padrão do e-mail, já com dados úteis
     final String emailBody =
         'Olá, meus dados estão incorretos/desatualizados no app IPASEM.'
         '\n\nNome: ${p.nome}'
@@ -233,7 +232,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     required String subject,
     required String body,
   }) async {
-    // Tenta mailto:
     final mail = Uri(
       scheme: 'mailto',
       path: to,
@@ -242,11 +240,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     try {
       final ok = await launchUrl(mail, mode: LaunchMode.externalApplication);
       if (ok) return;
-    } catch (_) {
-      // continua nos fallbacks
-    }
+    } catch (_) {}
 
-    // Fallback: Gmail Web compose
     final gmailWeb = Uri.https('mail.google.com', '/mail/', {
       'view': 'cm',
       'fs': '1',
@@ -255,11 +250,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       'body': body,
     });
     try {
-      final ok = await launchUrl(gmailWeb, mode: LaunchMode.externalApplication);
+      final ok = await launchUrl(mail, mode: LaunchMode.externalApplication);
       if (ok) return;
     } catch (_) {}
 
-    // Último recurso: copia o e-mail e avisa
     await Clipboard.setData(ClipboardData(text: to));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -283,7 +277,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         padding: const EdgeInsets.all(16),
         children: [
           if (_profile == null) ...[
-            // <<< visão de visitante centralizada
+            // visão de visitante
             VisitorProfileView(
               onLogin: _goToLogin,
               onSignUp: _openCreateAccount,
@@ -291,12 +285,49 @@ class _ProfileScreenState extends State<ProfileScreen>
           ] else ...[
             _HeaderCardUser(profile: _profile!, onLogout: _logout),
             const SizedBox(height: 16),
-            _UserDataBlocks(
-              profile: _profile!,
-              dependentes: _deps,
-              depsLoading: _depsLoading,
-              depsError: _depsError,
-              onAnyFieldTap: () => _showDataHelpSheet(_profile!),
+
+            // Regra: se houver um dependente com o MESMO CPF do perfil,
+            // tratamos como login de dependente e exibimos só ele.
+            Builder(
+              builder: (ctx) {
+                final p = _profile!;
+                List<Dependent> depsToShow = const [];
+
+                if (_deps.isNotEmpty) {
+                  final cpfDigitsPerfil =
+                  p.cpf.replaceAll(RegExp(r'\D'), '');
+
+                  final bool hasSameCpfInDeps = _deps.any((d) {
+                    final dc = d.cpf;
+                    if (dc == null || dc.isEmpty) return false;
+                    final dcDigits =
+                    dc.replaceAll(RegExp(r'\D'), '');
+                    return dcDigits == cpfDigitsPerfil;
+                  });
+
+                  if (hasSameCpfInDeps) {
+                    // Login de DEPENDENTE: mostra só o dependente logado
+                    depsToShow = _deps.where((d) {
+                      final dc = d.cpf;
+                      if (dc == null || dc.isEmpty) return false;
+                      final dcDigits =
+                      dc.replaceAll(RegExp(r'\D'), '');
+                      return dcDigits == cpfDigitsPerfil;
+                    }).toList();
+                  } else {
+                    // Login de TITULAR: mostra todos os dependentes
+                    depsToShow = _deps;
+                  }
+                }
+
+                return _UserDataBlocks(
+                  profile: p,
+                  dependentes: depsToShow,
+                  depsLoading: _depsLoading,
+                  depsError: _depsError,
+                  onAnyFieldTap: () => _showDataHelpSheet(p),
+                );
+              },
             ),
           ],
         ],
@@ -339,14 +370,16 @@ class _HeaderCardUser extends StatelessWidget {
                   profile.nome,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 4),
-                Wrap(
+                const Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children: const [
+                  children: [
                     _StatusChip(
                       label: 'Acesso autenticado',
                       color: Color(0xFF027A48),
@@ -390,7 +423,6 @@ class _UserDataBlocks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // mesmo respiro que usamos nos demais cards
     final w = MediaQuery.of(context).size.width;
     final double inPad = w < 360 ? 12 : 16;
 
@@ -399,14 +431,14 @@ class _UserDataBlocks extends StatelessWidget {
         SectionCard(
           title: 'Dados do usuário',
           child: Padding(
-            padding: EdgeInsets.all(inPad), // respiro do SectionCard
+            padding: EdgeInsets.all(inPad),
             child: Container(
               decoration: BoxDecoration(
                 color: const Color(0xFFF7FAFC),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: const Color(0xFFE6EDF3), width: 1.5),
               ),
-              padding: EdgeInsets.all(inPad), // respiro dentro da borda interna
+              padding: EdgeInsets.all(inPad),
               child: Column(
                 children: [
                   _InfoRow(
@@ -453,7 +485,6 @@ class _UserDataBlocks extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        // Card de dependentes (reutilizável)
         DependentsCard(
           items: dependentes ?? const [],
           isLoading: depsLoading,
@@ -467,7 +498,7 @@ class _UserDataBlocks extends StatelessWidget {
   }
 }
 
-/// Divider fininho com espaçamento vertical, igual aos outros cards
+/// Divider fininho com espaçamento vertical
 class _InsetDivider extends StatelessWidget {
   const _InsetDivider();
   @override
@@ -494,7 +525,6 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // InkWell para permitir toque em qualquer campo
     final content = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -530,7 +560,6 @@ class _InfoRow extends StatelessWidget {
       ],
     );
 
-    // Para ripple funcionar, precisamos de um Material ancestor (o Scaffold já provê).
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -542,7 +571,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// Badge simples do cabeçalho
 class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;

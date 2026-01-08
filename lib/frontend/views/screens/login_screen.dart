@@ -1,8 +1,9 @@
-// lib/screens/login_screen.dart
+// lib/frontend/views/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ipasemnhdigital/frontend/views/screens/privacidade_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../../backend/controller/login_controller.dart';
 import '../../../common/config/app_config.dart';
 import '../../../backend/config/validators.dart';
@@ -13,8 +14,8 @@ import '../components/consent_dialog.dart';
 import '../layouts/root_nav_shell.dart';
 import '../../../route_transitions.dart';
 import '../../theme/colors.dart';
+import 'dependente_login_screen.dart';
 import 'termos_screen.dart';
-
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -24,8 +25,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const bool _visitorTemporarilyDisabled = true;
-
   final _formKey = GlobalKey<FormState>();
   final _cpfCtrl = TextEditingController();
   final _pwdCtrl = TextEditingController();
@@ -88,23 +87,25 @@ class _LoginScreenState extends State<LoginScreen> {
     _navigatingToApp = false;
   }
 
-  InputDecoration _deco(String label, {String? hint, Widget? suffix}) => InputDecoration(
-    labelText: label,
-    hintText: hint,
-    filled: true,
-    fillColor: Colors.white,
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: kCardBorder),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: kBrand, width: 1.6),
-    ),
-    suffixIcon: suffix,
-  );
+  InputDecoration _deco(String label, {String? hint, Widget? suffix}) =>
+      InputDecoration(
+        labelText: label,
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.white,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: kCardBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: kBrand, width: 1.6),
+        ),
+        suffixIcon: suffix,
+      );
 
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   /// Garante aceite dos Termos/Privacidade ANTES do login.
   Future<bool> _ensureTermsForLogin() async {
@@ -113,10 +114,14 @@ class _LoginScreenState extends State<LoginScreen> {
     final accepted = await ConsentDialog.show(
       context,
       onOpenPrivacy: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const PrivacidadeScreen(minimal: true)),
+        MaterialPageRoute(
+          builder: (_) => const PrivacidadeScreen(minimal: true),
+        ),
       ),
       onOpenTerms: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TermosScreen(minimal: true)),
+        MaterialPageRoute(
+          builder: (_) => const TermosScreen(minimal: true),
+        ),
       ),
     );
 
@@ -152,9 +157,14 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _continueAsGuest() async {
-    // Temporariamente desabilitado para evitar empilhamento de shells/sessões.
-    _snack('Acesso como visitante temporariamente desabilitado.');
+  Future<void> _openDependentLogin() async {
+    // Apenas abre a tela de login do dependente; o fluxo de navegação
+    // para a RootNavShell será feito lá, após o login bem-sucedido.
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const DependenteLoginScreen(),
+      ),
+    );
   }
 
   Future<void> _openFirstAccess() async {
@@ -171,7 +181,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final maxW = MediaQuery.of(context).size.width > 560 ? 560.0 : double.infinity;
+    final maxW =
+    MediaQuery.of(context).size.width > 560 ? 560.0 : double.infinity;
 
     return Scaffold(
       body: SafeArea(
@@ -224,14 +235,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                 'Senha',
                                 suffix: _PasswordRevealSuffix(
                                   obscured: _obscurePwd,
-                                  onToggle: () => setState(() => _obscurePwd = !_obscurePwd),
-                                  onPressAndHoldStart: () => setState(() => _obscurePwd = false),
-                                  onPressAndHoldEnd: () => setState(() => _obscurePwd = true),
+                                  onToggle: () => setState(
+                                          () => _obscurePwd = !_obscurePwd),
+                                  onPressAndHoldStart: () =>
+                                      setState(() => _obscurePwd = false),
+                                  onPressAndHoldEnd: () =>
+                                      setState(() => _obscurePwd = true),
                                 ),
                               ),
                               validator: (v) => validatePassword(
                                 v,
-                                minLen: AppConfig.maybeOf(context)?.params.passwordMinLength ?? 4,
+                                minLen: AppConfig.maybeOf(context)
+                                    ?.params
+                                    .passwordMinLength ??
+                                    4,
                               ),
                               onFieldSubmitted: (_) => _submit(),
                               enabled: !_c.loading.value,
@@ -256,8 +273,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                         value: val,
                                         onChanged: (v) async {
                                           final b = v ?? false;
-                                          await _c.setStaySignedIn(b); // salva staySignedIn e limpa senha se desmarcar
-                                          await _c.setRememberCpf(b);  // sincroniza CPF
+                                          await _c.setStaySignedIn(
+                                              b); // salva staySignedIn e limpa senha se desmarcar
+                                          await _c.setRememberCpf(
+                                              b); // sincroniza CPF
                                           if (mounted) setState(() {});
                                         },
                                       ),
@@ -282,9 +301,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                   child: TextButton(
                                     onPressed: _openFirstAccess,
                                     style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8),
                                       minimumSize: const Size(0, 36),
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                       visualDensity: VisualDensity.compact,
                                     ),
                                     child: const Text(
@@ -306,14 +327,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Color(0xFFFFF7E6), // tom âmbar suave
+                            color: const Color(0xFFFFF7E6), // tom âmbar suave
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Color(0xFFFFE2A1)),
+                            border:
+                            Border.all(color: const Color(0xFFFFE2A1)),
                           ),
-                          child: Row(
+                          child: const Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Icon(Icons.wifi_off, color: Color(0xFF8A6100)),
+                            children: [
+                              Icon(Icons.wifi_off,
+                                  color: Color(0xFF8A6100)),
                               SizedBox(width: 8),
                               Expanded(
                                 child: Column(
@@ -329,7 +352,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     SizedBox(height: 4),
                                     Text(
                                       'Use 4G/5G ou outra rede Wi-Fi. A rede interna do IPASEM impede o acesso às rotinas do app.',
-                                      style: TextStyle(color: Color(0xFF8A6100)),
+                                      style: TextStyle(
+                                          color: Color(0xFF8A6100)),
                                     ),
                                   ],
                                 ),
@@ -362,44 +386,41 @@ class _LoginScreenState extends State<LoginScreen> {
                                     height: 22,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                                      valueColor:
+                                      AlwaysStoppedAnimation(
+                                          Colors.white),
                                     ),
                                   )
                                       : const Text(
                                     'Logar',
-                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ),
                               ),
                               const SizedBox(height: 10),
 
-                              // Visitante temporariamente desabilitado
+                              // Botão para login de DEPENDENTE
                               SizedBox(
                                 width: double.infinity,
                                 height: 48,
                                 child: OutlinedButton(
                                   style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: kBrand, width: 1.5),
+                                    side: const BorderSide(
+                                        color: kBrand, width: 1.5),
                                     foregroundColor: kBrand,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  onPressed: (busy || _visitorTemporarilyDisabled) ? null : _continueAsGuest,
+                                  onPressed: busy ? null : _openDependentLogin,
                                   child: const Text(
-                                    'Entrar como Visitante',
-                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                    'Entrar como Dependente',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ),
                               ),
-                              if (_visitorTemporarilyDisabled) ...[
-                                const SizedBox(height: 8),
-                                const Text(
-                                  'Acesso como visitante desabilitado temporariamente para correção de estabilidade.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 12, color: Color(0xFF475467)),
-                                ),
-                              ],
                             ],
                           ),
                         ),
