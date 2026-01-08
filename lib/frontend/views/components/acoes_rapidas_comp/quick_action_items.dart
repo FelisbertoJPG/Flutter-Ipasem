@@ -8,7 +8,7 @@ import '../../screens/autorizacao_medica_screen.dart';
 import '../../screens/autorizacao_odontologica_screen.dart';
 import '../../screens/login_screen.dart';
 import '../../screens/profile_screen.dart';
-import '../../../controller/carteirinha_flow_controller.dart';
+import '../../../controller/carteirinha_controller/carteirinha_flow_controller.dart';
 import '../../screens/historico_autorizacoes_screen.dart';
 import '../../screens/relatorio_coparticipacao_screen.dart';
 import '../../screens/autorizacao_exames_screen.dart';

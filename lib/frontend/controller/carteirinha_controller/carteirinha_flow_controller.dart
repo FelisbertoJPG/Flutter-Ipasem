@@ -2,10 +2,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-import '../../common/models/card_token.dart';
-import '../../common/services/carterinha_service/carteirinha_service.dart';
-import '../views/components/carterinha_comp/carteirinha_overlay.dart';
-import '../views/components/carterinha_comp/carteirinha_selecionar_beneficiario.dart';
+import '../../../common/models/card_token.dart';
+import '../../../common/services/carterinha_service/carteirinha_service.dart';
+import '../../views/components/carterinha_comp/carteirinha_overlay.dart';
+import '../../views/components/carterinha_comp/carteirinha_selecionar_beneficiario.dart';
 
 
 /// Ponto único de entrada a partir do Home/Serviços.

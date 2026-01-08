@@ -1,30 +1,37 @@
-// lib/screens/home_screen.dart
+// lib/frontend/screens/home_screen.dart
 import 'package:flutter/material.dart';
+
 import '../../../backend/controller/home_controller.dart';
 import '../../../backend/controller/home_state.dart';
-import '../../../common/config/app_config.dart';
 import '../../../backend/config/formatters.dart';
-import '../../../backend/models/models.dart';
+import '../../../backend/models/models.dart'; // ComunicadoResumo, etc.
+
+import '../../../common/config/app_config.dart';
+import '../../../common/config/api_router.dart';
+import '../../../common/config/dev_api.dart';
+
 import '../../../common/data/session_store.dart';
 import '../../../common/models/exame.dart';
 import '../../../common/repositories/comunicados_repository.dart';
 import '../../../common/repositories/dependents_repository.dart';
 import '../../../common/repositories/exames_repository.dart';
-import '../../../common/config/api_router.dart';
-import '../../../common/config/dev_api.dart';
+
+import '../../../common/services/comunicados_service/comunicados_service.dart';
+
 import '../components/comunicados_comp/comunicado_detail_sheet.dart';
 import '../components/comunicados_comp/comunicados_card.dart';
 import '../components/exames_comp/exames_inline_status.dart';
 import '../components/quick_actions.dart';
 import '../components/cards/requerimentos_card.dart';
 import '../components/cards/welcome_card.dart';
-import '../layouts/root_nav_shell.dart';
-import '../layouts/menu_shell.dart';
 import '../components/acoes_rapidas_comp/quick_action_items.dart';
+
+import '../layouts/root_nav_shell.dart';
+import '../layouts/menu_shell.dart'; // se o AppScaffold estiver aqui
+
 import '../../visitante/visitor_consent.dart';
 import 'authorizations_picker_sheet.dart' show showAuthorizationsPickerSheet;
 import 'login_screen.dart';
-
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -35,12 +42,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with AutomaticKeepAliveClientMixin {
-  // Tabs da RootNavShell
-  static const int _TAB_HOME     = 0;
+  // Tabs da RootNavShell (se precisar navegar mantendo o bottom bar)
+  static const int _TAB_HOME = 0;
   static const int _TAB_SERVICOS = 1;
-  static const int _TAB_PERFIL   = 2;
+  static const int _TAB_PERFIL = 2;
 
-  // Controladores/Serviços
+  // Controladores/Serviços principais
   late final HomeController _ctrl;
   late final ExamesRepository _exRepo;
   late final DevApi _api;
@@ -48,15 +55,20 @@ class _HomeScreenState extends State<HomeScreen>
   bool _ctrlReady = false;
   bool _didPromptConsent = false;
 
-  // Exames (estado local da Home)
+  // ===== Exames (estado local da Home) ======================================
   List<ExameResumo> _examesHome = const [];
   bool _exLoading = false;
   int? _exLoadedForMatricula; // evita recarregar sem necessidade
 
-  // Sexo do titular (puxado via carteirinha)
+  // ===== Sexo do titular (via carteirinha) ==================================
   String? _sexoTxtHome;
   bool _sexoLoading = false;
-  int? _sexoLoadedForMatricula; // para não ficar batendo sempre
+  int? _sexoLoadedForMatricula;
+
+  // ===== Comunicados (Home) – via ComunicadosService ========================
+  late final ComunicadosService _comSvc;
+  bool _comLoading = false;
+  List<ComunicadoResumo> _comHome = const [];
 
   @override
   bool get wantKeepAlive => true;
@@ -69,16 +81,18 @@ class _HomeScreenState extends State<HomeScreen>
     _api = ApiRouter.client();
 
     final depsRepo = DependentsRepository(_api);
+    _exRepo = ExamesRepository(_api);
 
     // baseApiUrl vem do AppConfig (main / main_local)
     final baseApiUrl = AppConfig.of(context).params.baseApiUrl;
 
     // Repo de comunicados usando a URL correta de /comunicacao-app/cards
-    final comRepo  = ComunicadosRepository.fromBaseApi(baseApiUrl);
+    final comRepo = ComunicadosRepository.fromBaseApi(baseApiUrl);
 
-    _exRepo        = ExamesRepository(_api);
+    // Serviço de alto nível (cache em memória, filtros, etc.)
+    _comSvc = ComunicadosService(repository: comRepo);
 
-    // Controller principal da Home
+    // Controller principal da Home (continua cuidando de sessão, reqs, etc.)
     _ctrl = HomeController(
       session: SessionStore(),
       depsRepo: depsRepo,
@@ -86,9 +100,14 @@ class _HomeScreenState extends State<HomeScreen>
     )..load();
 
     _ctrlReady = true;
+
+    // Carrega comunicados para o card da Home
+    _loadComunicadosHome();
   }
 
-  // ===== Exames (Home) =======================================================
+  // ==========================================================================
+  // Exames (Home)
+  // ==========================================================================
 
   Future<void> _loadExamesHome(int idMatricula) async {
     if (_exLoading) return;
@@ -134,7 +153,9 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ===== Sexo (via carteirinha) =============================================
+  // ==========================================================================
+  // Sexo (via carteirinha)
+  // ==========================================================================
 
   Future<void> _loadSexoForMatricula(int idMatricula) async {
     if (_sexoLoading) return;
@@ -167,7 +188,8 @@ class _HomeScreenState extends State<HomeScreen>
       if (!mounted) return;
       setState(() {
         _sexoTxtHome = null;
-        _sexoLoadedForMatricula = idMatricula; // evita bater sem parar em caso de erro
+        _sexoLoadedForMatricula =
+            idMatricula; // evita bater sem parar em caso de erro
       });
     } finally {
       _sexoLoading = false;
@@ -193,7 +215,33 @@ class _HomeScreenState extends State<HomeScreen>
     _loadSexoForMatricula(id);
   }
 
-  // ===== Comunicados (detalhe) ==============================================
+  // ==========================================================================
+  // Comunicados (Home) – lista + detalhe
+  // ==========================================================================
+
+  Future<void> _loadComunicadosHome({bool forceRefresh = false}) async {
+    setState(() => _comLoading = true);
+
+    try {
+      final list = await _comSvc.listar(
+        limit: 3,          // quantidade exibida no card
+        categoria: 'home', // ou null / outra categoria se quiser
+        q: null,
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted) return;
+      setState(() {
+        _comHome = list;
+        _comLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _comHome = const [];
+        _comLoading = false;
+      });
+    }
+  }
 
   void _openComunicado(ComunicadoResumo it) {
     showModalBottomSheet(
@@ -204,7 +252,9 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ===== Navegação mantendo hotbar ===========================================
+  // ==========================================================================
+  // Navegação mantendo hotbar
+  // ==========================================================================
 
   bool _switchTab(int index) {
     final scope = RootNavShell.maybeOf(context);
@@ -215,7 +265,9 @@ class _HomeScreenState extends State<HomeScreen>
     return false;
   }
 
-  // ===== Quick Actions (via presets) ========================================
+  // ==========================================================================
+  // Quick Actions (via presets)
+  // ==========================================================================
 
   Widget _quickActionsFor(HomeState s) {
     final items = QuickActionItems.homeDefault(
@@ -237,7 +289,9 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ===== Build ===============================================================
+  // ==========================================================================
+  // Build
+  // ==========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +333,7 @@ class _HomeScreenState extends State<HomeScreen>
                 await _loadExamesHome(id);
                 await _loadSexoForMatricula(id);
               }
+              await _loadComunicadosHome(forceRefresh: true);
             },
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -289,7 +344,11 @@ class _HomeScreenState extends State<HomeScreen>
                     constraints: const BoxConstraints(maxWidth: 680),
                     child: ListView(
                       padding: EdgeInsets.fromLTRB(
-                          horizontal, 16, horizontal, 24),
+                        horizontal,
+                        16,
+                        horizontal,
+                        24,
+                      ),
                       children: [
                         // ===== Cabeçalho
                         WelcomeCard(
@@ -316,13 +375,13 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 12),
 
-                        // ===== Comunicados (cards)
+                        // ===== Comunicados (card da Home)
                         ComunicadosCard(
-                          isLoading: s.loading,
-                          items: s.comunicados,
+                          isLoading: _comLoading,
+                          items: _comHome,
                           take: 3,
                           skeletonHeight: 100,
-                          onTapItem: (c) => _openComunicado(c),
+                          onTapItem: _openComunicado,
                         ),
 
                         const SizedBox(height: 16),

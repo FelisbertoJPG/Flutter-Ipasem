@@ -1,9 +1,10 @@
-// lib/services/comunicados_service.dart
+// lib/common/services/comunicados_service.dart
 import 'dart:async';
 import 'dart:collection';
 
-import '../../repositories/comunicados_repository.dart';
 import '../../../backend/models/models.dart' show ComunicadoResumo;
+import '../../repositories/comunicados_repository.dart';
+
 
 /// Serviço de alto nível para listar comunicados com cache em memória.
 class ComunicadosService {

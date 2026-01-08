@@ -10,23 +10,23 @@ import '../models/prestador.dart';
 typedef TokenProvider = String? Function();
 
 class DevApi {
-  final String _base;            // ex.: http://192.9.200.98
-  final String _apiPath;         // ex.: /api-dev.php
-  String? _sessionToken;         // token em memória
+  final String _base; // ex.: http://192.9.200.98
+  final String _apiPath; // ex.: /api-dev.php
+  String? _sessionToken; // token em memória
   final TokenProvider? _tokenProvider;
-  final bool _formUrlEncoded;    // se false, envia JSON
+  final bool _formUrlEncoded; // se false, envia JSON
 
   String get endpoint => '$_base$_apiPath';
 
   static String _normalizeBase(String raw) =>
       raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
 
-  DevApi(
-      String baseUrl, {
-        String apiPath = '/api-dev.php',
-        TokenProvider? tokenProvider,
-        bool formUrlEncoded = true,
-      })  : _base = _normalizeBase(baseUrl),
+  DevApi(String baseUrl, {
+    String apiPath = '/api-dev.php',
+    TokenProvider? tokenProvider,
+    bool formUrlEncoded = true,
+  })
+      : _base = _normalizeBase(baseUrl),
         _apiPath = apiPath,
         _tokenProvider = tokenProvider,
         _formUrlEncoded = formUrlEncoded;
@@ -41,8 +41,9 @@ class DevApi {
         receiveTimeout: const Duration(seconds: 20),
         responseType: ResponseType.json,
         headers: {
-          Headers.contentTypeHeader:
-          _formUrlEncoded ? Headers.formUrlEncodedContentType : Headers.jsonContentType,
+          Headers.contentTypeHeader: _formUrlEncoded
+              ? Headers.formUrlEncodedContentType
+              : Headers.jsonContentType,
         },
       ),
     );
@@ -81,20 +82,20 @@ class DevApi {
   }
 
   // ====== helpers ======
-  Future<Response<T>> post<T>(
-      String path, {
-        Object? data,
-        Map<String, dynamic>? queryParameters,
-        Options? options,
-      }) {
-    return _dio().post<T>(path, data: data, queryParameters: queryParameters, options: options);
+  Future<Response<T>> post<T>(String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) {
+    return _dio()
+        .post<T>(
+        path, data: data, queryParameters: queryParameters, options: options);
   }
 
-  Future<Response<T>> postAction<T>(
-      String action, {
-        Object? data,
-        Options? options,
-      }) {
+  Future<Response<T>> postAction<T>(String action, {
+    Object? data,
+    Options? options,
+  }) {
     return _dio().post<T>(
       _apiPath,
       queryParameters: {'action': action},
@@ -103,12 +104,11 @@ class DevApi {
     );
   }
 
-  Future<Response<dynamic>> uploadAction(
-      String action, {
-        required Map<String, String> fields,
-        required List<MultipartFile> files,
-        String fileFieldName = 'images',
-      }) async {
+  Future<Response<dynamic>> uploadAction(String action, {
+    required Map<String, String> fields,
+    required List<MultipartFile> files,
+    String fileFieldName = 'images',
+  }) async {
     final d = _dio();
     final form = FormData();
 
@@ -152,12 +152,13 @@ class DevApi {
     final body = res.data as Map<String, dynamic>;
     if (body['ok'] == true) {
       final data = (body['data'] as Map?) ?? const {};
-      // FIX: nada de cascade aqui; só faça trim no valor retornado.
+      // token de sessão opcional
       final rawToken = (data['session_token'] as String?)?.trim();
       if (rawToken != null && rawToken.isNotEmpty) {
         setSessionToken(rawToken);
       }
-      final profile = (data['profile'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final profile =
+          (data['profile'] as Map?)?.cast<String, dynamic>() ?? const {};
       return profile;
     }
     throw DioException(
@@ -193,13 +194,17 @@ class DevApi {
   }
 
   Future<Map<String, dynamic>> ping() async {
-    final r = await _dio().post(_apiPath, queryParameters: {'action': 'ping'}, data: const {});
+    final r =
+    await _dio().post(
+        _apiPath, queryParameters: {'action': 'ping'}, data: const {});
     return (r.data as Map).cast<String, dynamic>();
   }
 
   Future<bool> checkSession() async {
     try {
-      final r = await _dio().post(_apiPath, queryParameters: {'action': 'me'}, data: const {});
+      final r =
+      await _dio().post(
+          _apiPath, queryParameters: {'action': 'me'}, data: const {});
       final m = (r.data as Map).cast<String, dynamic>();
       return m['ok'] == true;
     } catch (_) {
@@ -222,7 +227,11 @@ class DevApi {
     final m = (r.data as Map).cast<String, dynamic>();
     if (m['ok'] == true) {
       final rows = (m['data']['rows'] as List?) ?? const [];
-      return rows.map((e) => Especialidade.fromMap((e as Map).cast<String, dynamic>())).toList();
+      return rows
+          .map(
+            (e) => Especialidade.fromMap((e as Map).cast<String, dynamic>()),
+      )
+          .toList();
     }
     throw DioException(
       requestOptions: r.requestOptions,
@@ -266,7 +275,11 @@ class DevApi {
     final m = (r.data as Map).cast<String, dynamic>();
     if (m['ok'] == true) {
       final rows = (m['data']['rows'] as List?) ?? const [];
-      return rows.map((e) => PrestadorRow.fromMap((e as Map).cast<String, dynamic>())).toList();
+      return rows
+          .map(
+            (e) => PrestadorRow.fromMap((e as Map).cast<String, dynamic>()),
+      )
+          .toList();
     }
     throw DioException(
       requestOptions: r.requestOptions,
@@ -286,7 +299,11 @@ class DevApi {
     final m = (r.data as Map).cast<String, dynamic>();
     if (m['ok'] == true) {
       final rows = (m['data']['rows'] as List?) ?? const [];
-      return rows.map((e) => Especialidade.fromMap((e as Map).cast<String, dynamic>())).toList();
+      return rows
+          .map(
+            (e) => Especialidade.fromMap((e as Map).cast<String, dynamic>()),
+      )
+          .toList();
     }
     throw DioException(
       requestOptions: r.requestOptions,
@@ -296,7 +313,8 @@ class DevApi {
     );
   }
 
-  Future<List<String>> fetchCidadesPorEspecialidadeExames(int especialidade) async {
+  Future<List<String>> fetchCidadesPorEspecialidadeExames(
+      int especialidade,) async {
     final r = await _dio().post(
       _apiPath,
       queryParameters: {'action': 'cidades_por_especialidade'},
@@ -330,7 +348,11 @@ class DevApi {
     final m = (r.data as Map).cast<String, dynamic>();
     if (m['ok'] == true) {
       final rows = (m['data']['rows'] as List?) ?? const [];
-      return rows.map((e) => PrestadorRow.fromMap((e as Map).cast<String, dynamic>())).toList();
+      return rows
+          .map(
+            (e) => PrestadorRow.fromMap((e as Map).cast<String, dynamic>()),
+      )
+          .toList();
     }
     throw DioException(
       requestOptions: r.requestOptions,
@@ -414,7 +436,8 @@ class DevApi {
     );
   }
 
-  Future<Map<String, dynamic>> carteirinhaValidar({int? dbToken, int? token}) async {
+  Future<Map<String, dynamic>> carteirinhaValidar(
+      {int? dbToken, int? token}) async {
     final payload = <String, dynamic>{};
     if (dbToken != null && dbToken > 0) {
       payload['db_token'] = dbToken;
@@ -443,7 +466,8 @@ class DevApi {
     );
   }
 
-  Future<Map<String, dynamic>> carteirinhaAgendarStatus({required int dbToken}) async {
+  Future<Map<String, dynamic>> carteirinhaAgendarStatus(
+      {required int dbToken}) async {
     final r = await _dio().post(
       _apiPath,
       queryParameters: {'action': 'carteirinha_agendar_status'},
@@ -463,7 +487,8 @@ class DevApi {
     );
   }
 
-  Future<Map<String, dynamic>> carteirinhaDados({required int idMatricula}) async {
+  Future<Map<String, dynamic>> carteirinhaDados(
+      {required int idMatricula}) async {
     final r = await _dio().post(
       _apiPath,
       queryParameters: {'action': 'carteirinha'},
@@ -501,4 +526,53 @@ class DevApi {
     );
   }
 
+  // ========= LOGIN DO DEPENDENTE (DEV) =========
+  // dentro de lib/services/dev_api.dart
+
+  Future<Map<String, dynamic>> loginDependente({
+    required String cpf,
+    required String senha,
+  }) async {
+    final res = await _dio().post(
+      _apiPath,
+      queryParameters: {'action': 'dependente_login'},
+      data: {
+        'cpf': cpf,
+        'senha': senha,
+      },
+    );
+
+    final body = res.data as Map<String, dynamic>;
+    if (body['ok'] == true) {
+      // BODY:
+      // {
+      //   "ok": true,
+      //   "data": {
+      //     "profile": {...},
+      //     "vinculos": [...]
+      //   },
+      //   "meta": null,
+      //   "error": null
+      // }
+      final data =
+          (body['data'] as Map?)?.cast<String, dynamic>() ??
+              const <String, dynamic>{};
+
+      // Se um dia você quiser session_token para dependente, já fica preparado.
+      final rawToken = (data['session_token'] as String?)?.trim();
+      if (rawToken != null && rawToken.isNotEmpty) {
+        setSessionToken(rawToken);
+      }
+
+      // Agora devolvemos o data inteiro (profile + vinculos)
+      return data;
+    }
+
+    throw DioException(
+      requestOptions: res.requestOptions,
+      response: res,
+      type: DioExceptionType.badResponse,
+      error: body['error'],
+    );
+  }
 }
