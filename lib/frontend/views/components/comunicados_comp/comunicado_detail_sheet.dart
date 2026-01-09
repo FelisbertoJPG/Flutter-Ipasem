@@ -1,9 +1,9 @@
 // lib/frontend/ui/components/comunicados_comp/comunicado_detail_sheet.dart
 import 'package:flutter/material.dart';
+
 import '../../../../common/api/cards_page_scraper.dart';
 import '../../../../common/config/app_config.dart';
 import '../../../../backend/models/models.dart' show ComunicadoResumo;
-
 
 /// Bottom-sheet de detalhe do Comunicado.
 /// Não depende de endpoint JSON: re-scrapeia /comunicacao-app/cards
@@ -59,7 +59,7 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
       _title = resumo.titulo;
       _date = resumo.data;
 
-      if (_cardsUrl == null) {
+      if (_cardsUrl == null || _cardsUrl!.trim().isEmpty) {
         setState(() {
           _error = 'URL de comunicados indisponível.';
           _loading = false;
@@ -67,9 +67,19 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
         return;
       }
 
-      // Busca novamente a página de cards no HOST correto
-      final scraper = CardsPageScraper(pageUrl: _cardsUrl!);
-      final rows = await scraper.fetch(limit: 20); // margem de segurança
+      // Busca novamente a página de cards no HOST correto,
+      // com fallback para a URL oficial em caso de erro.
+      var rows = <dynamic>[];
+
+      try {
+        final scraper = CardsPageScraper(pageUrl: _cardsUrl!);
+        rows = await scraper.fetch(limit: 20); // margem de segurança
+      } catch (_) {
+        // Fallback: URL fixa de produção
+        const fallbackUrl = 'https://www.ipasemnh.com.br/comunicacao-app/cards';
+        final scraper = const CardsPageScraper(pageUrl: fallbackUrl);
+        rows = await scraper.fetch(limit: 20);
+      }
 
       String? html;
       DateTime? foundDate;
@@ -90,9 +100,7 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
         plain = _stripHtml(html);
       } else {
         final desc = (resumo.descricao ?? '').trim();
-        plain = desc.isNotEmpty
-            ? desc
-            : '(sem conteúdo disponível)';
+        plain = desc.isNotEmpty ? desc : '(sem conteúdo disponível)';
       }
 
       if (!mounted) return;
@@ -153,8 +161,7 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
                 )
                     : _error != null
                     ? const _ErrorBox(
-                  message:
-                  'Falha ao abrir comunicado.',
+                  message: 'Falha ao abrir comunicado.',
                 )
                     : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,8 +205,8 @@ class _ComunicadoDetailSheetState extends State<ComunicadoDetailSheet> {
                     Expanded(
                       child: SingleChildScrollView(
                         controller: controller,
-                        padding: const EdgeInsets.only(
-                            bottom: 12),
+                        padding:
+                        const EdgeInsets.only(bottom: 12),
                         child: SelectableText(
                           _bodyPlain ?? '',
                           style: const TextStyle(
