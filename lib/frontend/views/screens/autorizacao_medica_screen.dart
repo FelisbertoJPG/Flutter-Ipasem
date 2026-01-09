@@ -1,4 +1,4 @@
-// lib/screens/autorizacao_medica_screen.dart
+// lib/frontend/views/screens/autorizacao_medica_screen.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,16 +21,16 @@ import '../layouts/menu_shell.dart';
 import '../../theme/colors.dart';
 import '../ui/utils/print_helpers.dart';
 
-
 class AutorizacaoMedicaScreen extends StatefulWidget {
   const AutorizacaoMedicaScreen({super.key});
 
   @override
-  State<AutorizacaoMedicaScreen> createState() => _AutorizacaoMedicaScreenState();
+  State<AutorizacaoMedicaScreen> createState() =>
+      _AutorizacaoMedicaScreenState();
 }
 
 class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
-  static const String _version = 'AutorizacaoMedicaScreen v1.3.6';
+  static const String _version = 'AutorizacaoMedicaScreen v1.3.8';
 
   bool _loading = true;
   String? _error;
@@ -69,14 +69,17 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     super.didChangeDependencies();
     if (_reposReady) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
+    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl ??
+        const String.fromEnvironment(
+          'API_BASE',
+          defaultValue: 'http://192.9.200.98',
+        );
 
-    _api       = DevApi(baseUrl);
-    _depsRepo  = DependentsRepository(_api);
-    _espRepo   = EspecialidadesRepository(_api);
+    _api = DevApi(baseUrl);
+    _depsRepo = DependentsRepository(_api);
+    _espRepo = EspecialidadesRepository(_api);
     _prestRepo = PrestadoresRepository(_api);
-    _autRepo   = AutorizacoesRepository(_api);
+    _autRepo = AutorizacoesRepository(_api);
 
     _reposReady = true;
     if (kDebugMode) debugPrint(_version);
@@ -84,38 +87,88 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   }
 
   Future<void> _bootstrap() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final profile = await Session.getProfile();
       if (profile == null) {
         _error = 'Faça login para solicitar autorização.';
       } else {
+        // Carrega todos os beneficiários da matrícula escolhida
         List<Dependent> rows = const [];
-        try { rows = await _depsRepo.listByMatricula(profile.id); } catch (_) {}
+        try {
+          rows = await _depsRepo.listByMatricula(profile.id);
+        } catch (_) {}
 
-        final hasTitular = rows.any((d) => d.iddependente == 0);
-        if (!hasTitular) {
-          rows = [
-            Dependent(nome: profile.nome, idmatricula: profile.id, iddependente: 0, cpf: profile.cpf),
-            ...rows,
-          ];
+        // === REGRA DE CONTEXTO (nova) ======================================
+        //
+        // Se dentro dessa matrícula existir um dependente (iddependente != 0)
+        // com CPF igual ao CPF do profile, tratamos como LOGIN DE DEPENDENTE
+        // e mostramos apenas esse beneficiário.
+        //
+        // Caso contrário, é login de titular → mostramos titular + todos
+        // os dependentes (completando o titular caso o backend não mande).
+        final cpfPerfilDigits =
+        profile.cpf.replaceAll(RegExp(r'\D'), '');
+
+        Dependent? selfDep;
+        for (final d in rows) {
+          final dc = d.cpf;
+          if (dc == null || dc.isEmpty) continue;
+          final dcDigits = dc.replaceAll(RegExp(r'\D'), '');
+          // titular tem iddependente == 0; dependente é != 0 (positivo ou negativo)
+          if (d.iddependente != 0 && dcDigits == cpfPerfilDigits) {
+            selfDep = d;
+            break;
+          }
         }
+
+        if (selfDep != null) {
+          // Login de dependente: apenas ele no combo "Paciente".
+          rows = [selfDep];
+        } else {
+          // Login de titular: mantém comportamento anterior.
+          final hasTitular = rows.any((d) => d.iddependente == 0);
+          if (!hasTitular) {
+            rows = [
+              Dependent(
+                nome: profile.nome,
+                idmatricula: profile.id,
+                iddependente: 0,
+                cpf: profile.cpf,
+                sexo: profile.sexoTxt ?? profile.sexo,
+              ),
+              ...rows,
+            ];
+          }
+        }
+        // ===================================================================
+
         _beneficiarios = rows
-            .map((d) => _Beneficiario(idMat: d.idmatricula, idDep: d.iddependente, nome: d.nome))
+            .map(
+              (d) => _Beneficiario(
+            idMat: d.idmatricula,
+            idDep: d.iddependente,
+            nome: d.nome,
+          ),
+        )
             .toList()
           ..sort((a, b) {
             if (a.idDep == 0 && b.idDep != 0) return -1;
             if (a.idDep != 0 && b.idDep == 0) return 1;
             return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
           });
+
         _selBenef = _beneficiarios.firstOrNull;
       }
 
       try {
         _especialidades = await _espRepo.listar();
       } catch (e) {
-        if (kDebugMode) print('especialidades erro: $e');
+        if (kDebugMode) debugPrint('especialidades erro: $e');
         _especialidades = const [];
       }
 
@@ -125,7 +178,9 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       _prestadores = const [];
       _selPrest = null;
     } catch (e) {
-      _error = kDebugMode ? 'Falha ao carregar dados. ($e)' : 'Falha ao carregar dados.';
+      _error = kDebugMode
+          ? 'Falha ao carregar dados. ($e)'
+          : 'Falha ao carregar dados.';
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -147,9 +202,17 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
         _loadingCidades = false;
       });
     } catch (e) {
-      setState(() { _loadingCidades = false; _cidades = const []; });
+      setState(() {
+        _loadingCidades = false;
+        _cidades = const [];
+      });
       if (!mounted) return;
-      AppAlert.toast(context, kDebugMode ? 'Falha ao carregar cidades. ($e)' : 'Falha ao carregar cidades.');
+      AppAlert.toast(
+        context,
+        kDebugMode
+            ? 'Falha ao carregar cidades. ($e)'
+            : 'Falha ao carregar cidades.',
+      );
     }
   }
 
@@ -161,23 +224,36 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       _selPrest = null;
     });
     try {
-      final cidade = (_selCidade == null || _selCidade == 'TODAS AS CIDADES') ? null : _selCidade;
-      final rows = await _prestRepo.porEspecialidade(_selEsp!.id, cidade: cidade);
+      final cidade = (_selCidade == null || _selCidade == 'TODAS AS CIDADES')
+          ? null
+          : _selCidade;
+      final rows = await _prestRepo.porEspecialidade(
+        _selEsp!.id,
+        cidade: cidade,
+      );
       setState(() {
         _prestadores = rows;
         _loadingPrestadores = false;
       });
     } catch (e) {
-      setState(() { _loadingPrestadores = false; _prestadores = const []; });
+      setState(() {
+        _loadingPrestadores = false;
+        _prestadores = const [];
+      });
       AppAlert.toast(
         context,
-        kDebugMode ? 'Falha ao carregar prestadores. ($e)' : 'Falha ao carregar prestadores.',
+        kDebugMode
+            ? 'Falha ao carregar prestadores. ($e)'
+            : 'Falha ao carregar prestadores.',
       );
     }
   }
 
   bool get _formOk =>
-      _selBenef != null && _selEsp != null && _selCidade != null && _selPrest != null;
+      _selBenef != null &&
+          _selEsp != null &&
+          _selCidade != null &&
+          _selPrest != null;
 
   Future<void> _onSubmit() async {
     if (!_formOk || _saving) return;
@@ -185,11 +261,11 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     setState(() => _saving = true);
     try {
       final numero = await _autRepo.gravar(
-        idMatricula:     _selBenef!.idMat,
-        idDependente:    _selBenef!.idDep,
+        idMatricula: _selBenef!.idMat,
+        idDependente: _selBenef!.idDep,
         idEspecialidade: _toInt(_selEsp!.id),
-        idPrestador:     _toInt(_selPrest!.registro),
-        tipoPrestador:   _selPrest!.tipoPrestador,
+        idPrestador: _toInt(_selPrest!.registro),
+        tipoPrestador: _selPrest!.tipoPrestador,
       );
 
       // evento para HomeServicos
@@ -223,7 +299,8 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
         useRootNavigator: false,
       );
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map && (e.response!.data['error']?['message'] is String))
+      final msg = (e.response?.data is Map &&
+          (e.response!.data['error']?['message'] is String))
           ? e.response!.data['error']['message'] as String
           : 'Falha ao gravar autorização';
 
@@ -260,7 +337,8 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   }
 
   // === Helpers para itens com divisor (menu) e exibição limpa (campo) ===
-  static const _kMenuDivider = BorderSide(color: Color(0xFFE6E9EF), width: 0.8);
+  static const _kMenuDivider =
+  BorderSide(color: Color(0xFFE6E9EF), width: 0.8);
 
   List<DropdownMenuItem<T>> _buildMenuItems<T>({
     required List<T> data,
@@ -278,7 +356,11 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
             decoration: BoxDecoration(
               border: isLast ? null : const Border(bottom: _kMenuDivider),
             ),
-            child: Text(labelOf(e), maxLines: 2, overflow: TextOverflow.ellipsis),
+            child: Text(
+              labelOf(e),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       );
@@ -292,10 +374,16 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
   }) {
     // usado no campo fechado (sem “linha”)
     return data
-        .map((e) => Align(
-      alignment: Alignment.centerLeft,
-      child: Text(labelOf(e), maxLines: 1, overflow: TextOverflow.ellipsis),
-    ))
+        .map(
+          (e) => Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          labelOf(e),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    )
         .toList();
   }
 
@@ -305,10 +393,17 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     if (p == null) return const SizedBox.shrink();
 
     String up(String? s) => (s ?? '').trim().toUpperCase();
-    final vinc = up((p.vinculoNome != null && p.vinculoNome!.trim().isNotEmpty) ? p.vinculoNome : p.vinculo);
+    final vinc = up(
+      (p.vinculoNome != null && p.vinculoNome!.trim().isNotEmpty)
+          ? p.vinculoNome
+          : p.vinculo,
+    );
     final l1 = up(p.endereco);
-    final cidadeUf = [up(p.cidade), up(p.uf)].where((e) => e.isNotEmpty).join('/');
-    final l2 = [up(p.bairro), cidadeUf].where((e) => e.isNotEmpty).join(' - ');
+    final cidadeUf =
+    [up(p.cidade), up(p.uf)].where((e) => e.isNotEmpty).join('/');
+    final l2 = [up(p.bairro), cidadeUf]
+        .where((e) => e.isNotEmpty)
+        .join(' - ');
 
     return Column(
       children: [
@@ -324,18 +419,32 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             child: Column(
               children: [
-                Text(up(p.nome), textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                Text(
+                  up(p.nome),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
                 if (vinc.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text(vinc, textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54)),
+                  Text(
+                    vinc,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
                 ],
                 if (l1.isNotEmpty || l2.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Divider(height: 1),
                   const SizedBox(height: 12),
-                  if (l1.isNotEmpty) Text(l1, textAlign: TextAlign.center),
+                  if (l1.isNotEmpty)
+                    Text(l1, textAlign: TextAlign.center),
                   if (l2.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(l2, textAlign: TextAlign.center),
@@ -356,18 +465,24 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
       body: RefreshIndicator(
         onRefresh: _bootstrap,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16,16,16,24),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            if (_loading) const SectionCard(title: ' ', child: LoadingPlaceholder(height: 120)),
+            if (_loading)
+              const SectionCard(
+                title: ' ',
+                child: LoadingPlaceholder(height: 120),
+              ),
             if (!_loading && _error != null)
               SectionCard(
                 title: ' ',
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
                 ),
               ),
-
             if (!_loading && _error == null) ...[
               // ===== Paciente
               SectionCard(
@@ -377,13 +492,16 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                   value: _selBenef,
                   items: _buildMenuItems<_Beneficiario>(
                     data: _beneficiarios,
-                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                    labelOf: (b) =>
+                    b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
                   ),
-                  selectedItemBuilder: (_) => _buildSelecteds<_Beneficiario>(
-                    data: _beneficiarios,
-                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
-                  ),
-                  onChanged: (v)=>setState(()=>_selBenef=v),
+                  selectedItemBuilder: (_) =>
+                      _buildSelecteds<_Beneficiario>(
+                        data: _beneficiarios,
+                        labelOf: (b) =>
+                        b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                      ),
+                  onChanged: (v) => setState(() => _selBenef = v),
                   decoration: _inputDeco('Selecione o Paciente'),
                 ),
               ),
@@ -399,11 +517,12 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                     data: _especialidades,
                     labelOf: (e) => e.nome,
                   ),
-                  selectedItemBuilder: (_) => _buildSelecteds<Especialidade>(
-                    data: _especialidades,
-                    labelOf: (e) => e.nome,
-                  ),
-                  onChanged: (v){
+                  selectedItemBuilder: (_) =>
+                      _buildSelecteds<Especialidade>(
+                        data: _especialidades,
+                        labelOf: (e) => e.nome,
+                      ),
+                  onChanged: (v) {
                     setState(() {
                       _selEsp = v;
                       _cidades = const [];
@@ -411,7 +530,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                       _prestadores = const [];
                       _selPrest = null;
                     });
-                    if (v!=null) _loadCidades();
+                    if (v != null) _loadCidades();
                   },
                   decoration: _inputDeco('Escolha a especialidade'),
                 ),
@@ -423,7 +542,8 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                 title: 'Cidade',
                 child: Column(
                   children: [
-                    if (_loadingCidades) const LoadingPlaceholder(height: 60),
+                    if (_loadingCidades)
+                      const LoadingPlaceholder(height: 60),
                     if (!_loadingCidades)
                       DropdownButtonFormField<String>(
                         isExpanded: true,
@@ -432,18 +552,27 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                           data: _cidades,
                           labelOf: (c) => c,
                         ),
-                        selectedItemBuilder: (_) => _buildSelecteds<String>(
-                          data: _cidades,
-                          labelOf: (c) => c,
-                        ),
-                        onChanged: (_selEsp==null)?null:(v){
-                          setState(() { _selCidade = v; _prestadores = const []; _selPrest = null; });
-                          if (v!=null) _loadPrestadores();
+                        selectedItemBuilder: (_) =>
+                            _buildSelecteds<String>(
+                              data: _cidades,
+                              labelOf: (c) => c,
+                            ),
+                        onChanged: (_selEsp == null)
+                            ? null
+                            : (v) {
+                          setState(() {
+                            _selCidade = v;
+                            _prestadores = const [];
+                            _selPrest = null;
+                          });
+                          if (v != null) _loadPrestadores();
                         },
                         decoration: _inputDeco(
-                          _selEsp==null
+                          _selEsp == null
                               ? 'Escolha a especialidade primeiro'
-                              : (_cidades.isEmpty ? 'Sem cidades disponíveis' : 'Selecione a cidade'),
+                              : (_cidades.isEmpty
+                              ? 'Sem cidades disponíveis'
+                              : 'Selecione a cidade'),
                         ),
                       ),
                   ],
@@ -456,7 +585,8 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                 title: 'Prestador',
                 child: Column(
                   children: [
-                    if (_loadingPrestadores) const LoadingPlaceholder(height: 60),
+                    if (_loadingPrestadores)
+                      const LoadingPlaceholder(height: 60),
                     if (!_loadingPrestadores)
                       DropdownButtonFormField<PrestadorRow>(
                         isExpanded: true,
@@ -465,15 +595,21 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                           data: _prestadores,
                           labelOf: (p) => p.nome,
                         ),
-                        selectedItemBuilder: (_) => _buildSelecteds<PrestadorRow>(
-                          data: _prestadores,
-                          labelOf: (p) => p.nome,
-                        ),
-                        onChanged: (_selCidade==null)?null:(v)=>setState(()=>_selPrest=v),
+                        selectedItemBuilder: (_) =>
+                            _buildSelecteds<PrestadorRow>(
+                              data: _prestadores,
+                              labelOf: (p) => p.nome,
+                            ),
+                        onChanged: (_selCidade == null)
+                            ? null
+                            : (v) =>
+                            setState(() => _selPrest = v),
                         decoration: _inputDeco(
-                          _selCidade==null
+                          _selCidade == null
                               ? 'Selecione a cidade primeiro'
-                              : (_prestadores.isEmpty ? 'Sem prestadores para o filtro' : 'Escolha o prestador'),
+                              : (_prestadores.isEmpty
+                              ? 'Sem prestadores para o filtro'
+                              : 'Escolha o prestador'),
                         ),
                       ),
                     _prestadorCardOrEmpty(),
@@ -487,15 +623,25 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: kBrand,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onPressed: _formOk && !_saving ? _onSubmit : null,
                   child: _saving
                       ? const SizedBox(
-                    height: 22, width: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                      AlwaysStoppedAnimation(Colors.white),
+                    ),
                   )
-                      : const Text('Continuar', style: TextStyle(fontWeight: FontWeight.w700)),
+                      : const Text(
+                    'Continuar',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
               ),
             ],
@@ -509,15 +655,35 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
     hintText: hint,
     filled: true,
     fillColor: Colors.white,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBrand, width: 1.6)),
+    contentPadding:
+    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide:
+      const BorderSide(color: kBrand, width: 1.6),
+    ),
   );
 }
 
 class _Beneficiario {
-  final int idMat; final int idDep; final String nome;
-  const _Beneficiario({required this.idMat, required this.idDep, required this.nome});
+  final int idMat;
+  final int idDep;
+  final String nome;
+  const _Beneficiario({
+    required this.idMat,
+    required this.idDep,
+    required this.nome,
+  });
 }
-extension<T> on List<T> { T? get firstOrNull => isEmpty ? null : first; }
+
+extension<T> on List<T> {
+  T? get firstOrNull => isEmpty ? null : first;
+}

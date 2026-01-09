@@ -5,8 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../../../common/models/dependent.dart';
 import '../../../../common/config/api_router.dart';
 import '../../../../common/config/dev_api.dart';
-
-
+import '../../../../common/services/session.dart';
 
 /// Abre um bottom-sheet para escolher o beneficiário (Titular ou dependentes).
 /// Retorna o idDependente escolhido (0 = titular) ou null se cancelado.
@@ -42,7 +41,7 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
   bool _apiReady = false;
 
   bool _loading = true;
-  String? _warning; // mensagem leve quando cair em fallback “Titular apenas”
+  String? _warning; // mensagem leve quando cair em fallback
   List<Dependent> _deps = [];
   int _selectedIdDep = 0; // 0 = Titular
 
@@ -65,30 +64,125 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
     });
 
     try {
-      final list = await _api!.fetchDependentes(widget.idMatricula);
+      final profile = await Session.getProfile();
+      // Se não tiver profile, tratamos como titular (comportamento padrão)
+      final cpfProfileDigits =
+      (profile?.cpf ?? '').replaceAll(RegExp(r'\D'), '');
 
-      // Garante o titular no topo (iddependente == 0). Se backend não mandar, cria.
-      Dependent titular;
+      List<Dependent> list = const [];
+
       try {
-        titular = list.firstWhere((d) => d.iddependente == 0);
+        list = await _api!.fetchDependentes(widget.idMatricula);
       } catch (_) {
-        titular = Dependent(
-          nome: 'Titular',
-          idmatricula: widget.idMatricula,
-          iddependente: 0,
-          sexo: 'M', // desconhecido => default M; apenas ícone
-          cpf: '',
-          dtNasc: null,
-          idade: null,
-        );
+        // Se falhar a chamada, seguimos com lista vazia e usamos fallback abaixo
+        list = const [];
       }
+
+      // Tenta localizar o titular vindo do backend (iddependente == 0)
+      Dependent? titular;
+      for (final d in list) {
+        if (d.iddependente == 0) {
+          titular = d;
+          break;
+        }
+      }
+
+      // Se backend não mandar titular, cria um sintético usando profile (quando existir)
+      titular ??= Dependent(
+        nome: profile?.nome ?? 'Titular',
+        idmatricula: widget.idMatricula,
+        iddependente: 0,
+        sexo: profile?.sexoTxt ?? profile?.sexo ?? 'M',
+        cpf: profile?.cpf ?? '',
+        dtNasc: null,
+        idade: null,
+      );
 
       final outros = list.where((d) => d.iddependente != 0).toList();
 
+      // ===== Detecta se o login atual é de DEPENDENTE =====
+      bool isDependentLogin = false;
+      Dependent? selfDep;
+
+      if (profile != null) {
+        // 1) Tentativa via idDependente (quando preenchido)
+        final rawIdDep = profile.idDependente;
+        if (rawIdDep != null && rawIdDep > 0) {
+          final depId = rawIdDep.abs();
+          for (final d in outros) {
+            if (d.iddependente == depId || d.iddependente == -depId) {
+              selfDep = d;
+              break;
+            }
+          }
+          if (selfDep != null) {
+            isDependentLogin = true;
+          } else {
+            // 2) Se não achou por id, tenta por CPF
+            if (cpfProfileDigits.isNotEmpty) {
+              for (final d in outros) {
+                final depCpfDigits =
+                (d.cpf ?? '').replaceAll(RegExp(r'\D'), '');
+                if (depCpfDigits.isNotEmpty &&
+                    depCpfDigits == cpfProfileDigits) {
+                  selfDep = d;
+                  isDependentLogin = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Se ainda não encontrou, mas sabemos que é login de dependente,
+          // criamos um registro sintético com base no profile.
+          if (selfDep == null) {
+            isDependentLogin = true;
+            selfDep = Dependent(
+              nome: profile.nome,
+              idmatricula: widget.idMatricula,
+              iddependente: depId,
+              sexo: profile.sexoTxt ?? profile.sexo,
+              cpf: profile.cpf,
+              dtNasc: null,
+              idade: null,
+            );
+            _warning =
+            'Não foi possível consultar todos os beneficiários. Exibindo apenas o dependente logado.';
+          }
+        } else {
+          // 3) Fallback: se idDependente não veio, tenta detectar por CPF
+          if (cpfProfileDigits.isNotEmpty) {
+            for (final d in outros) {
+              final depCpfDigits =
+              (d.cpf ?? '').replaceAll(RegExp(r'\D'), '');
+              if (depCpfDigits.isNotEmpty &&
+                  depCpfDigits == cpfProfileDigits &&
+                  d.iddependente != 0) {
+                selfDep = d;
+                isDependentLogin = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      List<Dependent> finais;
+
+      if (isDependentLogin && selfDep != null) {
+        // Login de dependente: exibe APENAS o dependente logado
+        finais = [selfDep];
+        _selectedIdDep = selfDep.iddependente;
+      } else {
+        // Login de titular (ou falha em detectar dependente):
+        // mantém comportamento padrão: Titular + demais dependentes
+        finais = [titular, ...outros];
+        _selectedIdDep = 0;
+      }
+
       if (!mounted) return;
       setState(() {
-        _deps = [titular, ...outros];
-        _selectedIdDep = 0;
+        _deps = finais;
         _loading = false;
       });
     } catch (_) {
@@ -107,7 +201,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
           )
         ];
         _selectedIdDep = 0;
-        _warning = 'Não foi possível consultar dependentes. Exibindo apenas o Titular.';
+        _warning ??=
+        'Não foi possível consultar beneficiários. Exibindo apenas o Titular.';
         _loading = false;
       });
     }
@@ -153,7 +248,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
 
     final dd = dt.day.toString().padLeft(2, '0');
     final mm = dt.month.toString().padLeft(2, '0');
-    final year = short ? (dt.year % 100).toString().padLeft(2, '0') : dt.year.toString().padLeft(4, '0');
+    final year =
+    short ? (dt.year % 100).toString().padLeft(2, '0') : dt.year.toString().padLeft(4, '0');
     return '$dd-$mm-$year';
   }
 
@@ -171,7 +267,9 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
           decoration: BoxDecoration(
             color: surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-            boxShadow: const [BoxShadow(blurRadius: 16, offset: Offset(0, -4), color: Colors.black26)],
+            boxShadow: const [
+              BoxShadow(blurRadius: 16, offset: Offset(0, -4), color: Colors.black26)
+            ],
           ),
           child: SafeArea(
             top: false,
@@ -193,7 +291,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       'Escolha o beneficiário',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -210,12 +309,14 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, size: 18, color: theme.colorScheme.secondary),
+                          Icon(Icons.info_outline,
+                              size: 18, color: theme.colorScheme.secondary),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _warning!,
-                              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.secondary),
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: theme.colorScheme.secondary),
                             ),
                           ),
                         ],
@@ -244,7 +345,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                           margin: const EdgeInsets.symmetric(vertical: 6),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(16),
-                            onTap: () => setState(() => _selectedIdDep = d.iddependente),
+                            onTap: () =>
+                                setState(() => _selectedIdDep = d.iddependente),
                             child: Padding(
                               padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                               child: Row(
@@ -253,7 +355,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                   Radio<int>(
                                     value: d.iddependente,
                                     groupValue: _selectedIdDep,
-                                    onChanged: (v) => setState(() => _selectedIdDep = v ?? 0),
+                                    onChanged: (v) =>
+                                        setState(() => _selectedIdDep = v ?? 0),
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
@@ -264,7 +367,9 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                           children: [
                                             Expanded(
                                               child: Text(
-                                                isTitular ? '${d.nome} (Titular)' : d.nome,
+                                                isTitular
+                                                    ? '${d.nome} (Titular)'
+                                                    : d.nome,
                                                 style: const TextStyle(
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: 16,
@@ -273,12 +378,18 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                             ),
                                             if (!isTitular)
                                               Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4),
                                                 decoration: BoxDecoration(
-                                                  borderRadius: BorderRadius.circular(999),
-                                                  color: theme.colorScheme.primary.withOpacity(0.10),
+                                                  borderRadius:
+                                                  BorderRadius.circular(999),
+                                                  color: theme.colorScheme.primary
+                                                      .withOpacity(0.10),
                                                   border: Border.all(
-                                                    color: theme.colorScheme.primary.withOpacity(0.35),
+                                                    color: theme.colorScheme.primary
+                                                        .withOpacity(0.35),
                                                   ),
                                                 ),
                                                 child: Text(
@@ -286,7 +397,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                                   style: TextStyle(
                                                     fontSize: 11,
                                                     fontWeight: FontWeight.w600,
-                                                    color: theme.colorScheme.primary,
+                                                    color:
+                                                    theme.colorScheme.primary,
                                                   ),
                                                 ),
                                               ),
@@ -298,16 +410,25 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                           runSpacing: 2,
                                           children: [
                                             if ((d.cpf ?? '').isNotEmpty)
-                                              Text('CPF: ${d.cpf}', style: theme.textTheme.bodySmall),
-                                            if (d.dtNasc != null && d.dtNasc!.isNotEmpty)
+                                              Text('CPF: ${d.cpf}',
+                                                  style: theme
+                                                      .textTheme.bodySmall),
+                                            if (d.dtNasc != null &&
+                                                d.dtNasc!.isNotEmpty)
                                               Text(
                                                 'Nasc.: ${_fmtDate(d.dtNasc, short: false)}',
-                                                style: theme.textTheme.bodySmall,
+                                                style: theme
+                                                    .textTheme.bodySmall,
                                               ),
                                             if (d.idade != null)
-                                              Text('Idade: ${d.idade}', style: theme.textTheme.bodySmall),
-                                            Text('Matr.: ${d.idmatricula}-${d.iddependente}',
-                                                style: theme.textTheme.bodySmall),
+                                              Text('Idade: ${d.idade}',
+                                                  style: theme
+                                                      .textTheme.bodySmall),
+                                            Text(
+                                              'Matr.: ${d.idmatricula}-${d.iddependente}',
+                                              style:
+                                              theme.textTheme.bodySmall,
+                                            ),
                                           ],
                                         ),
                                         const SizedBox(height: 6),
@@ -317,8 +438,13 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                   const SizedBox(width: 8),
                                   CircleAvatar(
                                     radius: 18,
-                                    backgroundColor: theme.colorScheme.primary.withOpacity(0.10),
-                                    child: Icon(_genderIcon(d.sexo), size: 16, color: theme.colorScheme.primary),
+                                    backgroundColor: theme.colorScheme.primary
+                                        .withOpacity(0.10),
+                                    child: Icon(
+                                      _genderIcon(d.sexo),
+                                      size: 16,
+                                      color: theme.colorScheme.primary,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -344,7 +470,9 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: _loading ? null : () => Navigator.pop(context, _selectedIdDep),
+                          onPressed: _loading
+                              ? null
+                              : () => Navigator.pop(context, _selectedIdDep),
                           child: const Text('Confirmar'),
                         ),
                       ),

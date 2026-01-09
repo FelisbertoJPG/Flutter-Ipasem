@@ -25,7 +25,6 @@ import 'exames/widgets/orientacoes_body.dart';
 import 'exames/widgets/prestador_detail_card.dart';
 import 'exames/widgets/thumb_grid.dart'; // buildMenuItems/buildSelecteds
 
-
 class AutorizacaoExamesScreen extends StatefulWidget {
   const AutorizacaoExamesScreen({super.key});
 
@@ -35,7 +34,7 @@ class AutorizacaoExamesScreen extends StatefulWidget {
 }
 
 class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
-  static const String _version = 'AutorizacaoExamesScreen v1.4.0';
+  static const String _version = 'AutorizacaoExamesScreen v1.5.0';
 
   final ImagePicker _picker = ImagePicker();
   List<XFile> _imagens = [];
@@ -78,8 +77,10 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     if (_reposReady) return;
 
     final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl ??
-        const String.fromEnvironment('API_BASE',
-            defaultValue: 'http://192.9.200.98');
+        const String.fromEnvironment(
+          'API_BASE',
+          defaultValue: 'http://192.9.200.98',
+        );
 
     _api = DevApi(baseUrl);
     _depsRepo = DependentsRepository(_api);
@@ -108,20 +109,57 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
           rows = await _depsRepo.listByMatricula(profile.id);
         } catch (_) {}
 
-        final hasTitular = rows.any((d) => d.iddependente == 0);
-        if (!hasTitular) {
-          rows = [
-            Dependent(
+        // === REGRA DE CONTEXTO (igual Médica/Odonto) =====================
+        //
+        // Se dentro dessa matrícula existir um dependente (iddependente != 0)
+        // com CPF igual ao CPF do profile → login de DEPENDENTE.
+        // Nesse caso mostramos apenas esse beneficiário.
+        //
+        // Caso contrário, login de TITULAR → inclui titular (se não vier)
+        // e mantém todos os dependentes.
+        final cpfPerfilDigits =
+        profile.cpf.replaceAll(RegExp(r'\D'), '');
+
+        Dependent? selfDep;
+        for (final d in rows) {
+          final dc = d.cpf;
+          if (dc == null || dc.isEmpty) continue;
+          final dcDigits = dc.replaceAll(RegExp(r'\D'), '');
+          if (d.iddependente != 0 && dcDigits == cpfPerfilDigits) {
+            selfDep = d;
+            break;
+          }
+        }
+
+        if (selfDep != null) {
+          // Login de dependente: somente ele
+          rows = [selfDep];
+        } else {
+          // Login de titular: garante linha do titular e mantém dependentes
+          final hasTitular = rows.any((d) => d.iddependente == 0);
+          if (!hasTitular) {
+            rows = [
+              Dependent(
                 nome: profile.nome,
                 idmatricula: profile.id,
                 iddependente: 0,
-                cpf: profile.cpf),
-            ...rows,
-          ];
+                cpf: profile.cpf,
+                sexo: profile.sexoTxt ?? profile.sexo,
+              ),
+              ...rows,
+            ];
+          }
         }
+        // =================================================================
+
         _beneficiarios = rows
-            .map((d) => _Beneficiario(
-            idMat: d.idmatricula, idDep: d.iddependente, nome: d.nome))
+            .map(
+              (d) => _Beneficiario(
+            idMat: d.idmatricula,
+            idDep: d.iddependente,
+            nome: d.nome,
+          ),
+        )
             .toList()
           ..sort((a, b) {
             if (a.idDep == 0 && b.idDep != 0) return -1;
@@ -152,6 +190,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
   Future<void> _addImages() async {
     try {
       final picked = await _picker.pickMultiImage(
@@ -165,7 +204,7 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
 
       // valida 10 MB por imagem
       for (final x in merged) {
-        final bytes = await x.length(); // XFile.length() funciona em todas as plataformas
+        final bytes = await x.length();
         if (bytes > 10 * 1024 * 1024) {
           AppAlert.toast(context, 'Cada imagem deve ter até 10 MB.');
           return;
@@ -178,7 +217,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       AppAlert.toast(context, 'Falha ao adicionar imagens.');
     }
   }
-
 
   Future<void> _loadCidades() async {
     if (_selEsp == null) return;
@@ -201,8 +239,12 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
         _cidades = const [];
       });
       if (!mounted) return;
-      AppAlert.toast(context,
-          kDebugMode ? 'Falha ao carregar cidades. ($e)' : 'Falha ao carregar cidades.');
+      AppAlert.toast(
+        context,
+        kDebugMode
+            ? 'Falha ao carregar cidades. ($e)'
+            : 'Falha ao carregar cidades.',
+      );
     }
   }
 
@@ -214,8 +256,9 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       _selPrest = null;
     });
     try {
-      final cidade =
-      (_selCidade == null || _selCidade == 'TODAS AS CIDADES') ? null : _selCidade;
+      final cidade = (_selCidade == null || _selCidade == 'TODAS AS CIDADES')
+          ? null
+          : _selCidade;
       final rows =
       await _prestRepo.porEspecialidade(_selEsp!.id, cidade: cidade);
       setState(() {
@@ -227,8 +270,12 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
         _loadingPrestadores = false;
         _prestadores = const [];
       });
-      AppAlert.toast(context,
-          kDebugMode ? 'Falha ao carregar prestadores. ($e)' : 'Falha ao carregar prestadores.');
+      AppAlert.toast(
+        context,
+        kDebugMode
+            ? 'Falha ao carregar prestadores. ($e)'
+            : 'Falha ao carregar prestadores.',
+      );
     }
   }
 
@@ -287,10 +334,10 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
         numero: numero,
         useRootNavigator: false,
         pendente: true,
-        pendenteMsg: 'Autorização enviada para análise.\nPrevisão de até 48h.',
+        pendenteMsg:
+        'Autorização enviada para análise.\nPrevisão de até 48h.',
         onOk: () => _goBackToServicos(numero: numero),
       );
-
     } on FormatException {
       if (!mounted) return;
       await AppAlert.show(
@@ -350,26 +397,28 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
             if (_loading)
-              const SectionCard(title: ' ', child: LoadingPlaceholder(height: 120)),
-
+              const SectionCard(
+                title: ' ',
+                child: LoadingPlaceholder(height: 120),
+              ),
             if (!_loading && _error != null)
               SectionCard(
                 title: ' ',
                 child: const Padding(
                   padding: EdgeInsets.all(12),
-                  child: Text('Falha ao carregar.', style: TextStyle(color: Colors.red)),
+                  child: Text(
+                    'Falha ao carregar.',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
               ),
-
             if (!_loading && _error == null) ...[
-              // Orientações (com inset padronizado)
               const SectionCard(
                 title: 'Orientações',
                 child: SectionInset(child: OrientacoesBody()),
               ),
               const SizedBox(height: 12),
 
-              // Requisição (fotos)
               SectionCard(
                 title: 'Requisição (fotos) — obrigatório',
                 child: SectionInset(
@@ -382,24 +431,30 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           FilledButton.tonal(
-                            onPressed: _imagens.length >= 2 ? null : _addImages,
-                            child: const Text('Adicionar imagens (até 2)'),
+                            onPressed:
+                            _imagens.length >= 2 ? null : _addImages,
+                            child:
+                            const Text('Adicionar imagens (até 2)'),
                           ),
                           FilledButton.tonal(
-                            onPressed: _imagens.length >= 2 ? null : _capturePhoto,
+                            onPressed:
+                            _imagens.length >= 2 ? null : _capturePhoto,
                             child: const Text('Câmera'),
                           ),
                           Text(
                             '${_imagens.length}/2 selecionadas',
-                            style: const TextStyle(color: Colors.black54),
+                            style:
+                            const TextStyle(color: Colors.black54),
                           ),
                         ],
                       ),
                       const SizedBox(height: 12),
                       ThumbGrid(
                         images: _imagens,
-                        onRemove: (i) =>
-                            setState(() => _imagens = [..._imagens]..removeAt(i)),
+                        onRemove: (i) => setState(
+                              () =>
+                          _imagens = [..._imagens]..removeAt(i),
+                        ),
                       ),
                     ],
                   ),
@@ -407,7 +462,6 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Paciente
               SectionCard(
                 title: 'Paciente',
                 child: DropdownButtonFormField<_Beneficiario>(
@@ -415,19 +469,21 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                   value: _selBenef,
                   items: buildMenuItems<_Beneficiario>(
                     data: _beneficiarios,
-                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                    labelOf: (b) =>
+                    b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
                   ),
-                  selectedItemBuilder: (_) => buildSelecteds<_Beneficiario>(
-                    data: _beneficiarios,
-                    labelOf: (b) => b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
-                  ),
+                  selectedItemBuilder: (_) =>
+                      buildSelecteds<_Beneficiario>(
+                        data: _beneficiarios,
+                        labelOf: (b) =>
+                        b.idDep == 0 ? '${b.nome} (Titular)' : b.nome,
+                      ),
                   onChanged: (v) => setState(() => _selBenef = v),
                   decoration: _inputDeco('Selecione o Paciente'),
                 ),
               ),
               const SizedBox(height: 12),
 
-              // Especialidade
               SectionCard(
                 title: 'Especialidade',
                 child: DropdownButtonFormField<Especialidade>(
@@ -437,10 +493,11 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                     data: _especialidades,
                     labelOf: (e) => e.nome,
                   ),
-                  selectedItemBuilder: (_) => buildSelecteds<Especialidade>(
-                    data: _especialidades,
-                    labelOf: (e) => e.nome,
-                  ),
+                  selectedItemBuilder: (_) =>
+                      buildSelecteds<Especialidade>(
+                        data: _especialidades,
+                        labelOf: (e) => e.nome,
+                      ),
                   onChanged: (v) {
                     setState(() {
                       _selEsp = v;
@@ -451,17 +508,18 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                     });
                     if (v != null) _loadCidades();
                   },
-                  decoration: _inputDeco('Escolha a especialidade (Exames)'),
+                  decoration:
+                  _inputDeco('Escolha a especialidade (Exames)'),
                 ),
               ),
               const SizedBox(height: 12),
 
-              // Cidade
               SectionCard(
                 title: 'Cidade',
                 child: Column(
                   children: [
-                    if (_loadingCidades) const LoadingPlaceholder(height: 60),
+                    if (_loadingCidades)
+                      const LoadingPlaceholder(height: 60),
                     if (!_loadingCidades)
                       DropdownButtonFormField<String>(
                         isExpanded: true,
@@ -470,10 +528,11 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                           data: _cidades,
                           labelOf: (c) => c,
                         ),
-                        selectedItemBuilder: (_) => buildSelecteds<String>(
-                          data: _cidades,
-                          labelOf: (c) => c,
-                        ),
+                        selectedItemBuilder: (_) =>
+                            buildSelecteds<String>(
+                              data: _cidades,
+                              labelOf: (c) => c,
+                            ),
                         onChanged: (_selEsp == null)
                             ? null
                             : (v) {
@@ -484,23 +543,25 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                           });
                           if (v != null) _loadPrestadores();
                         },
-                        decoration: _inputDeco(_selEsp == null
-                            ? 'Escolha a especialidade primeiro'
-                            : (_cidades.isEmpty
-                            ? 'Sem cidades disponíveis'
-                            : 'Selecione a cidade')),
+                        decoration: _inputDeco(
+                          _selEsp == null
+                              ? 'Escolha a especialidade primeiro'
+                              : (_cidades.isEmpty
+                              ? 'Sem cidades disponíveis'
+                              : 'Selecione a cidade'),
+                        ),
                       ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
 
-              // Prestador
               SectionCard(
                 title: 'Prestador',
                 child: Column(
                   children: [
-                    if (_loadingPrestadores) const LoadingPlaceholder(height: 60),
+                    if (_loadingPrestadores)
+                      const LoadingPlaceholder(height: 60),
                     if (!_loadingPrestadores)
                       DropdownButtonFormField<PrestadorRow>(
                         isExpanded: true,
@@ -509,18 +570,22 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                           data: _prestadores,
                           labelOf: (p) => p.nome,
                         ),
-                        selectedItemBuilder: (_) => buildSelecteds<PrestadorRow>(
-                          data: _prestadores,
-                          labelOf: (p) => p.nome,
-                        ),
+                        selectedItemBuilder: (_) =>
+                            buildSelecteds<PrestadorRow>(
+                              data: _prestadores,
+                              labelOf: (p) => p.nome,
+                            ),
                         onChanged: (_selCidade == null)
                             ? null
-                            : (v) => setState(() => _selPrest = v),
-                        decoration: _inputDeco(_selCidade == null
-                            ? 'Selecione a cidade primeiro'
-                            : (_prestadores.isEmpty
-                            ? 'Sem prestadores para o filtro'
-                            : 'Escolha o prestador')),
+                            : (v) =>
+                            setState(() => _selPrest = v),
+                        decoration: _inputDeco(
+                          _selCidade == null
+                              ? 'Selecione a cidade primeiro'
+                              : (_prestadores.isEmpty
+                              ? 'Sem prestadores para o filtro'
+                              : 'Escolha o prestador'),
+                        ),
                       ),
                     PrestadorDetailCard(prestador: _selPrest),
                   ],
@@ -528,14 +593,14 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Submit
               SizedBox(
                 height: 48,
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: kBrand,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onPressed: _formOk && !_saving ? _onSubmit : null,
                   child: _saving
@@ -543,11 +608,15 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
                     height: 22,
                     width: 22,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white)),
+                      strokeWidth: 2,
+                      valueColor:
+                      AlwaysStoppedAnimation(Colors.white),
+                    ),
                   )
-                      : const Text('Continuar',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
+                      : const Text(
+                    'Continuar',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
               ),
             ],
@@ -564,15 +633,20 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     contentPadding:
     const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+    ),
     enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+    ),
     focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: kBrand, width: 1.6)),
+      borderRadius: BorderRadius.circular(12),
+      borderSide:
+      const BorderSide(color: kBrand, width: 1.6),
+    ),
   );
+
   Future<void> _capturePhoto() async {
     try {
       if (_imagens.length >= 2) return;
@@ -592,14 +666,14 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
       }
 
       setState(() {
-        _imagens = [..._imagens, shot].take(2).toList(); // mistura com as já escolhidas
+        _imagens =
+            [..._imagens, shot].take(2).toList();
       });
     } catch (_) {
       if (!mounted) return;
       AppAlert.toast(context, 'Falha ao abrir a câmera.');
     }
   }
-
 }
 
 // Modelo simples só para esta tela
@@ -607,7 +681,11 @@ class _Beneficiario {
   final int idMat;
   final int idDep;
   final String nome;
-  const _Beneficiario({required this.idMat, required this.idDep, required this.nome});
+  const _Beneficiario({
+    required this.idMat,
+    required this.idDep,
+    required this.nome,
+  });
 }
 
 extension<T> on List<T> {
