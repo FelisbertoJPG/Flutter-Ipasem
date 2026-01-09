@@ -1,38 +1,91 @@
 // lib/main_local.dart
+import 'dart:io';
+import 'dart:ui'; // PlatformDispatcher
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'config/app_config.dart';
-import 'config/params.dart';
+import 'common/certificado/ipasem_http_overrides.dart';
+import 'common/config/app_config.dart';
+import 'common/config/params.dart';
+import 'common/config/api_router.dart';
+import 'common/services/polling/exame_bg_worker.dart';
+import 'common/state/notification_bridge.dart';
+import 'frontend/views/screens/home_screen.dart';
+import 'frontend/views/screens/home_servicos.dart';
+import 'frontend/views/screens/login_screen.dart';
+import 'frontend/views/screens/privacidade_screen.dart';
+import 'frontend/views/screens/profile_screen.dart';
+import 'frontend/views/screens/sobre_screen.dart';
+import 'frontend/views/screens/termos_screen.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
-
-// TELAS
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/home_servicos.dart';
-import 'screens/sobre_screen.dart';
-import 'screens/privacidade_screen.dart';
-import 'screens/termos_screen.dart';
-
-// IMPORT CONDICIONAL (tem que ficar no TOPO, fora de funções!)
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
 
-void main() async {
+import 'package:workmanager/workmanager.dart';
+
+
+// Base local: por padrão .98; pode sobrescrever com --dart-define=API_BASE=http://host
+const String kLocalBase = String.fromEnvironment(
+  'API_BASE',
+  defaultValue: 'http://192.9.200.98',
+);
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Registra implementação da WebView no Web (no-op nas outras plataformas)
+  //ignora o https
+  HttpOverrides.global = IpasemHttpOverrides();
+
+  // Handlers de erro para evitar "travamento silencioso"
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+    debugPrintStack(stackTrace: details.stack);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Uncaught: $error');
+    debugPrintStack(stackTrace: stack);
+    return true;
+  };
+
+  // Registra implementação da WebView no Web (no-op nas demais)
   ensureWebViewRegisteredForWeb();
 
   // Warm-up do SharedPreferences
   await SharedPreferences.getInstance();
 
-  // Carrega parâmetros apenas do cliente (sem dados sensíveis)
-  final params = AppParams.fromEnv();
-  // Se preferir fixar localmente, use:
-  // final params = AppParams(baseApiUrl: 'http://192.9.200.98', passwordMinLength: 4);
+  // Bridge de notificações: idempotente (no Web vira no-op)
+  await NotificationBridge.I.attach();
+
+  // Parâmetros do app (sem dados sensíveis)
+  final params = AppParams(
+    baseApiUrl: kLocalBase,
+    passwordMinLength: 4,
+    firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
+  );
+
+  // === Fonte única de verdade ===
+  ApiRouter.configure(params.baseApiUrl);
+  await ApiRouter.persistToPrefs(); // <- garante que o worker verá a mesma base
+
+  // Agenda worker apenas fora do Web (após persistir a base)
+  if (!kIsWeb) {
+    await Workmanager().initialize(
+      exameBgDispatcher, // @pragma('vm:entry-point')
+      isInDebugMode: kDebugMode,
+    );
+
+    await Workmanager().registerPeriodicTask(
+      kExameBgUniqueName,                 // uniqueName
+      kExameBgUniqueName,                 // taskName
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+      constraints: Constraints(networkType: NetworkType.connected),
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 5),
+    );
+  }
 
   runApp(
     AppConfig(
@@ -109,8 +162,7 @@ class LoginSlidesOverSplashLocal extends StatefulWidget {
       _LoginSlidesOverSplashLocalState();
 }
 
-class _LoginSlidesOverSplashLocalState
-    extends State<LoginSlidesOverSplashLocal>
+class _LoginSlidesOverSplashLocalState extends State<LoginSlidesOverSplashLocal>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));
@@ -126,7 +178,9 @@ class _LoginSlidesOverSplashLocalState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await precacheImage(AssetImage(widget.splashImage), context);
+      try {
+        await precacheImage(AssetImage(widget.splashImage), context);
+      } catch (_) { /* evita crash se o asset faltar */ }
       await Future.delayed(const Duration(milliseconds: 16));
       if (!mounted) return;
       await _c.forward();

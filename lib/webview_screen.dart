@@ -8,15 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-
-import 'services/ipasem_js.dart';
-import 'services/session_manager.dart';
-import 'ui/widgets/ipasem_alert.dart';
-
-import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
-import 'services/file_upload_manager.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart'
     show AndroidWebViewController, FileSelectorMode;
+
+import 'backend/controller/file_upload_manager.dart';
+import 'common/services/ipasem_js.dart';
+import 'common/services/session_manager.dart';
+import 'frontend/views/ui/widgets/ipasem_alert.dart';
 
 class WebViewScreen extends StatefulWidget {
   final String url;
