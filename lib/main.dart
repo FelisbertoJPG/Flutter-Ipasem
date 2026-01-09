@@ -1,35 +1,42 @@
-// lib/main_local.dart
+// lib/main.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'config/app_config.dart';
-import 'config/params.dart';
+import 'common/certificado/ipasem_http_overrides.dart';
+import 'common/config/app_config.dart';
+import 'common/config/params.dart';
+import 'common/config/api_router.dart';
+import 'common/services/polling/exame_bg_worker.dart';
+import 'common/state/notification_bridge.dart';
+import 'frontend/views/screens/home_screen.dart';
+import 'frontend/views/screens/home_servicos.dart';
+import 'frontend/views/screens/login_screen.dart';
+import 'frontend/views/screens/privacidade_screen.dart';
+import 'frontend/views/screens/profile_screen.dart';
+import 'frontend/views/screens/sobre_screen.dart';
+import 'frontend/views/screens/termos_screen.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
-
-// TELAS
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/home_servicos.dart';
-import 'screens/sobre_screen.dart';
-import 'screens/privacidade_screen.dart';
-import 'screens/termos_screen.dart';
-
-// IMPORT CONDICIONAL (tem que ficar no TOPO, fora de funções!)
 import 'web/webview_initializer_stub.dart'
 if (dart.library.html) 'web/webview_initializer_web.dart';
+// ==== background polling (workmanager) ====
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:workmanager/workmanager.dart';
 
-// Base local: por padrão .18; pode sobrescrever com --dart-define=API_BASE=http://host
-const String kLocalBase =
-String.fromEnvironment(
+
+// Base prod: por padrão assistweb; pode sobrescrever com --dart-define=API_BASE=...
+const String kLocalBase = String.fromEnvironment(
   'API_BASE',
   defaultValue: 'https://assistweb.ipasemnh.com.br',
 );
-//String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
+// String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  //ignora o https
+  HttpOverrides.global = IpasemHttpOverrides();
+
 
   // Registra implementação da WebView no Web (no-op nas outras plataformas)
   ensureWebViewRegisteredForWeb();
@@ -37,17 +44,42 @@ void main() async {
   // Warm-up do SharedPreferences
   await SharedPreferences.getInstance();
 
+  // Liga o bridge de notificações (idempotente).
+  await NotificationBridge.I.attach();
+
   // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
   final params = AppParams(
-    baseApiUrl: kLocalBase, // <- Só o 18 por padrão
+    baseApiUrl: kLocalBase,
     passwordMinLength: 4,
     firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
   );
 
+  // === Fonte única de verdade ===
+  ApiRouter.configure(params.baseApiUrl);
+  await ApiRouter.persistToPrefs(); // <- garante que o worker verá a mesma base
+
+  // Inicializa e agenda o worker em background (após persistir a base)
+  if (!kIsWeb) {
+    await Workmanager().initialize(
+      exameBgDispatcher, // entrypoint @pragma('vm:entry-point')
+      isInDebugMode: kDebugMode,
+    );
+
+    await Workmanager().registerPeriodicTask(
+      kExameBgUniqueName,                 // uniqueName
+      kExameBgUniqueName,                 // taskName
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+      constraints: Constraints(networkType: NetworkType.connected),
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 5),
+    );
+  }
+
   runApp(
     AppConfig(
       params: params,
-      flavor: 'local',
+      flavor: 'prod', // diferencie dos builds locais nos logs/analytics
       child: const MyAppLocal(),
     ),
   );
@@ -69,8 +101,7 @@ class MyAppLocal extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
       // Suaviza as primeiras animações
-      builder: (context, child) =>
-          AnimationWarmUp(child: child ?? const SizedBox()),
+      builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
       initialRoute: '/__splash_login',
       routes: {
         '/__splash_login': (_) => const _SplashRouteWrapper(),
@@ -115,12 +146,10 @@ class LoginSlidesOverSplashLocal extends StatefulWidget {
   });
 
   @override
-  State<LoginSlidesOverSplashLocal> createState() =>
-      _LoginSlidesOverSplashLocalState();
+  State<LoginSlidesOverSplashLocal> createState() => _LoginSlidesOverSplashLocalState();
 }
 
-class _LoginSlidesOverSplashLocalState
-    extends State<LoginSlidesOverSplashLocal>
+class _LoginSlidesOverSplashLocalState extends State<LoginSlidesOverSplashLocal>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));
