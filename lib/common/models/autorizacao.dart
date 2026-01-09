@@ -1,3 +1,4 @@
+//lib/common/models/autorizacao.dart
 class AutorizacaoResumo {
   final int numero;
   final String paciente;

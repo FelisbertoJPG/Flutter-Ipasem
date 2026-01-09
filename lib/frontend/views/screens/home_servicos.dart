@@ -1,7 +1,12 @@
 // lib/screens/home_servicos.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../common/services/session.dart';
+import '../../../common/models/dependent.dart';
+import '../../../common/config/api_router.dart';
+import '../../../common/repositories/dependents_repository.dart';
+
 import '../components/quick_actions.dart';
 import '../components/cards/section_card.dart';
 import '../components/services_visitor.dart';
@@ -27,7 +32,15 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
   int? _matricula; // usada para emissão da carteirinha e relatórios
 
-  late final ServiceLauncher launcher = ServiceLauncher(context, takePrewarmed);
+  /// Indica se o login atual é de DEPENDENTE (não titular).
+  bool _isDependentLogin = false;
+
+  late final ServiceLauncher launcher =
+  ServiceLauncher(context, takePrewarmed);
+
+  // Repositório para detectar se o login atual é de dependente
+  late final DependentsRepository _depsRepo =
+  DependentsRepository(ApiRouter.client());
 
   @override
   void initState() {
@@ -42,16 +55,51 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
     final prefs = await SharedPreferences.getInstance();
     _isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
-    // Apenas carrega a matrícula para os fluxos que exigem idmatricula.
+    _matricula = null;
+    _isDependentLogin = false;
+
     if (_isLoggedIn) {
       try {
         final prof = await Session.getProfile();
-        _matricula = prof?.id;
+        if (prof != null) {
+          _matricula = prof.id;
+
+          // === DETECÇÃO DE LOGIN DE DEPENDENTE ============================
+          //
+          // Regra: se dentro desta matrícula existir um dependente
+          // (iddependente != 0) com CPF igual ao CPF do profile,
+          // consideramos que o login é de dependente.
+          try {
+            List<Dependent> deps = const [];
+            try {
+              deps = await _depsRepo.listByMatricula(prof.id);
+            } catch (_) {
+              deps = const [];
+            }
+
+            final cpfPerfilDigits =
+            (prof.cpf ?? '').replaceAll(RegExp(r'\D'), '');
+
+            for (final d in deps) {
+              final dc = d.cpf;
+              if (dc == null || dc.isEmpty) continue;
+              final dcDigits = dc.replaceAll(RegExp(r'\D'), '');
+              if (d.iddependente != 0 && dcDigits == cpfPerfilDigits) {
+                _isDependentLogin = true;
+                break;
+              }
+            }
+          } catch (_) {
+            // Em caso de erro na detecção, mantemos _isDependentLogin = false
+          }
+          // ================================================================
+        }
       } catch (_) {
         _matricula = null;
       }
     } else {
       _matricula = null;
+      _isDependentLogin = false;
     }
 
     if (mounted) setState(() => _loading = false);
@@ -76,10 +124,14 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
       QuickActionItems.retornoExames(
         context: context,
       ),
-      QuickActionItems.extratoCoparticipacao(
-        context: context,
-        idMatricula: m,
-      ),
+
+      // Extrato de coparticipação APENAS para TITULAR
+      if (!_isDependentLogin)
+        QuickActionItems.extratoCoparticipacao(
+          context: context,
+          idMatricula: m,
+        ),
+
       QuickActionItems.site(
         onTap: () => launcher.openUrl(HomeServicos._siteUrl, 'Site'),
       ),
