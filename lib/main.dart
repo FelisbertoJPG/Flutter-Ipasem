@@ -1,74 +1,144 @@
 // lib/main.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'screens/login_screen.dart';
+import 'common/certificado/ipasem_http_overrides.dart';
+import 'common/config/app_config.dart';
+import 'common/config/params.dart';
+import 'common/config/api_router.dart';
+import 'common/services/polling/exame_bg_worker.dart';
+import 'common/state/notification_bridge.dart';
+import 'frontend/views/screens/home_screen.dart';
+import 'frontend/views/screens/home_servicos.dart';
+import 'frontend/views/screens/login_screen.dart';
+import 'frontend/views/screens/privacidade_screen.dart';
+import 'frontend/views/screens/profile_screen.dart';
+import 'frontend/views/screens/sobre_screen.dart';
+import 'frontend/views/screens/termos_screen.dart';
 import 'update_enforcer.dart';
 import 'animation_warmup.dart';
-import 'root_nav_shell.dart'; // << usa o shell com BottomNav + Drawer (mantido se for usado após login)
+import 'web/webview_initializer_stub.dart'
+if (dart.library.html) 'web/webview_initializer_web.dart';
+// ==== background polling (workmanager) ====
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:workmanager/workmanager.dart';
 
-// [CONFIG] Imports para configuração
-import 'config/app_config.dart';
-import 'config/params.dart';
 
-void main() async {
+// Base prod: por padrão assistweb; pode sobrescrever com --dart-define=API_BASE=...
+const String kLocalBase = String.fromEnvironment(
+  'API_BASE',
+  defaultValue: 'https://assistweb.ipasemnh.com.br',
+);
+// String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.18');
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SharedPreferences.getInstance(); // pré-aquecimento do prefs
 
-  // [CONFIG] Carrega parâmetros a partir de --dart-define
-  final params = AppParams.fromEnv();
+  //ignora o https
+  HttpOverrides.global = IpasemHttpOverrides();
 
-  // [CONFIG] Define o flavor conforme seu processo (ajuste se desejar)
-  const flavor = String.fromEnvironment('APP_FLAVOR', defaultValue: 'prod');
+
+  // Registra implementação da WebView no Web (no-op nas outras plataformas)
+  ensureWebViewRegisteredForWeb();
+
+  // Warm-up do SharedPreferences
+  await SharedPreferences.getInstance();
+
+  // Liga o bridge de notificações (idempotente).
+  await NotificationBridge.I.attach();
+
+  // Parâmetros do app (sem dados sensíveis) — ponto único da base da API
+  final params = AppParams(
+    baseApiUrl: kLocalBase,
+    passwordMinLength: 4,
+    firstAccessUrl: 'https://assistweb.ipasemnh.com.br/site/recuperar-senha',
+  );
+
+  // === Fonte única de verdade ===
+  ApiRouter.configure(params.baseApiUrl);
+  await ApiRouter.persistToPrefs(); // <- garante que o worker verá a mesma base
+
+  // Inicializa e agenda o worker em background (após persistir a base)
+  if (!kIsWeb) {
+    await Workmanager().initialize(
+      exameBgDispatcher, // entrypoint @pragma('vm:entry-point')
+      isInDebugMode: kDebugMode,
+    );
+
+    await Workmanager().registerPeriodicTask(
+      kExameBgUniqueName,                 // uniqueName
+      kExameBgUniqueName,                 // taskName
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+      constraints: Constraints(networkType: NetworkType.connected),
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 5),
+    );
+  }
 
   runApp(
-    // [CONFIG] Injeta AppConfig no topo da árvore
     AppConfig(
       params: params,
-      flavor: flavor,
-      child: const MyApp(),
+      flavor: 'prod', // diferencie dos builds locais nos logs/analytics
+      child: const MyAppLocal(),
     ),
   );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+class MyAppLocal extends StatelessWidget {
+  const MyAppLocal({super.key});
   static const splashBg = Color(0xFFFFFFFF);
 
   @override
   Widget build(BuildContext context) {
-    // [CONFIG] Exemplo: acesso aos params se precisar configurar tema/rotas por ambiente
-    // final cfg = AppConfig.of(context);
-    // debugPrint('Flavor: ${cfg.flavor}, supportEmail: ${cfg.params.supportEmail}');
-
     return MaterialApp(
-      title: 'IpasemNH',
+      title: 'IpasemNH (Local)',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        useMaterial3: true, // NavigationBar (Material 3)
+        useMaterial3: true,
         scaffoldBackgroundColor: splashBg,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF143C8D)),
+        fontFamily: 'Roboto',
       ),
-      // injeta o warm-up de animação DENTRO do MaterialApp
-      builder: (context, child) =>
-          AnimationWarmUp(child: child ?? const SizedBox()),
-      home: PlayUpdateEnforcer(
-        child: const LoginSlidesOverSplash(
-          splashColor: MyApp.splashBg,
-          splashImage: 'assets/images/icons/splash_logo.png',
-          durationMs: 420,
-        ),
+      // Suaviza as primeiras animações
+      builder: (context, child) => AnimationWarmUp(child: child ?? const SizedBox()),
+      initialRoute: '/__splash_login',
+      routes: {
+        '/__splash_login': (_) => const _SplashRouteWrapper(),
+        '/':            (_) => const HomeScreen(),
+        '/login':       (_) => const LoginScreen(),
+        '/perfil':      (_) => const ProfileScreen(),
+        '/servicos':    (_) => const HomeServicos(),
+        '/sobre':       (_) => const SobreScreen(),
+        '/privacidade': (_) => const PrivacidadeScreen(),
+        '/termos':      (_) => const TermosScreen(),
+      },
+    );
+  }
+}
+
+/// Envelopa o splash com o enforcer
+class _SplashRouteWrapper extends StatelessWidget {
+  const _SplashRouteWrapper();
+
+  @override
+  Widget build(BuildContext context) {
+    return PlayUpdateEnforcer(
+      child: const LoginSlidesOverSplashLocal(
+        splashColor: MyAppLocal.splashBg,
+        splashImage: 'assets/images/icons/splash_logo.png',
+        durationMs: 420,
       ),
     );
   }
 }
 
-class LoginSlidesOverSplash extends StatefulWidget {
+class LoginSlidesOverSplashLocal extends StatefulWidget {
   final Color splashColor;
   final String splashImage;
   final int durationMs;
 
-  const LoginSlidesOverSplash({
+  const LoginSlidesOverSplashLocal({
     super.key,
     required this.splashColor,
     required this.splashImage,
@@ -76,13 +146,14 @@ class LoginSlidesOverSplash extends StatefulWidget {
   });
 
   @override
-  State<LoginSlidesOverSplash> createState() => _LoginSlidesOverSplashState();
+  State<LoginSlidesOverSplashLocal> createState() => _LoginSlidesOverSplashLocalState();
 }
 
-class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
+class _LoginSlidesOverSplashLocalState extends State<LoginSlidesOverSplashLocal>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
   AnimationController(vsync: this, duration: Duration(milliseconds: widget.durationMs));
+
   late final Animation<Offset> _slide = Tween<Offset>(
     begin: const Offset(0, 1),
     end: Offset.zero,
@@ -117,14 +188,17 @@ class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
             child: Container(
               color: widget.splashColor,
               alignment: Alignment.center,
-              child: Image.asset(widget.splashImage, width: 180, fit: BoxFit.contain),
+              child: Image.asset(
+                widget.splashImage,
+                width: 180,
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         Positioned.fill(
           child: ClipRect(
             child: SlideTransition(
               position: _slide,
-              // >> AQUI: após o splash, entra a tela inicial (LoginScreen, que depois pode navegar ao RootNavShell)
               child: const LoginScreen(),
             ),
           ),
@@ -132,17 +206,4 @@ class _LoginSlidesOverSplashState extends State<LoginSlidesOverSplash>
       ],
     );
   }
-}
-
-Route<T> slideUpRoute<T>(Widget page, {int durationMs = 420}) {
-  return PageRouteBuilder<T>(
-    transitionDuration: Duration(milliseconds: durationMs),
-    reverseTransitionDuration: const Duration(milliseconds: 320),
-    pageBuilder: (_, __, ___) => page,
-    transitionsBuilder: (_, animation, __, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-      final offset = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero).animate(curved);
-      return SlideTransition(position: offset, child: child);
-    },
-  );
 }
