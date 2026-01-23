@@ -1,150 +1,191 @@
-// lib/services/api_router.dart
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_config.dart';
-import 'dev_api.dart';
 
-/// Fonte única da base da API/gateway para todo o app.
-/// Suporta:
-///  - http(s)://host
-///  - http(s)://host/
-///  - http(s)://host/api-dev.php
+/// Fonte única da base da API para todo o app.
+///
+/// Backend (Yii):
+///   'api/v1/<controller:[-\w]+>/<action:[-\w]+>' => 'api/<controller>/<action>'
+///
+/// Flutter:
+///   ApiRouter.apiRootUri         -> https://host/api/v1
+///   ApiRouter.endpoint('exame/historico')
+///     -> https://host/api/v1/exame/historico
 class ApiRouter {
+  // ===== Defaults =====
   static const String _defaultBase = 'https://assistweb.ipasemnh.com.br';
-  static const String _defaultGatewayPath = '/api-dev.php';
+  static const String _defaultApiPrefix = '/api/v1';
 
+  // Chaves para SharedPreferences
   static const String _prefsBaseKey = 'api_base';
-  static const String _prefsPathKey = 'api_path';
+  static const String _prefsPrefixKey = 'api_prefix';
 
-  static String _base = _defaultBase;      // ex.: https://assistweb.ipasemnh.com.br
-  static String _apiPath = _defaultGatewayPath; // ex.: /api-dev.php
+  static String _base = _defaultBase;
+  static String _apiPrefix = _defaultApiPrefix;
   static bool _configured = false;
 
-  /// Chame 1x no bootstrap (entrypoint) com a base definida pela flavor.
-  /// Aceita:
-  ///  - http://host
-  ///  - http://host/
-  ///  - http://host/api-dev.php
-  static void configure(String baseOrGateway, {String defaultGatewayPath = _defaultGatewayPath}) {
-    var raw = baseOrGateway.trim();
+  // =====================================================================
+  // Configuração
+  // =====================================================================
 
-    while (raw.endsWith('/')) {
-      raw = raw.substring(0, raw.length - 1);
+  /// Configure em main() se quiser sobrepor os defaults/env.
+  ///
+  /// Exemplos:
+  ///   ApiRouter.configure('http://192.9.200.98');
+  ///   ApiRouter.configure('https://assistweb.ipasemnh.com.br');
+  static void configure(
+      String baseUrl, {
+        String apiPrefix = _defaultApiPrefix,
+      }) {
+    _base = _normalizeBase(baseUrl);
+
+    _apiPrefix = apiPrefix.trim().isEmpty
+        ? _defaultApiPrefix
+        : (apiPrefix.startsWith('/') ? apiPrefix : '/$apiPrefix');
+
+    _configured = true;
+  }
+
+  /// Persiste a configuração atual (para isolates de background, etc.).
+  static Future<void> persistToPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsBaseKey, _base);
+    await prefs.setString(_prefsPrefixKey, _apiPrefix);
+  }
+
+  /// Recarrega a configuração a partir de SharedPreferences.
+  static Future<void> configureFromPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedBase = prefs.getString(_prefsBaseKey);
+    final savedPrefix = prefs.getString(_prefsPrefixKey);
+
+    if (savedBase != null && savedBase.isNotEmpty) {
+      _base = _normalizeBase(savedBase);
     }
-
-    if (raw.toLowerCase().endsWith('.php')) {
-      // veio como gateway completo
-      final cut = raw.lastIndexOf('/');
-      _base = raw.substring(0, cut);     // http(s)://host
-      _apiPath = raw.substring(cut);     // /api-dev.php
-    } else {
-      _base = raw;                       // http(s)://host
-      _apiPath = defaultGatewayPath;     // /api-dev.php (ou o informado)
-    }
-
-    // Garante que o path começa com '/'
-    if (_apiPath.isNotEmpty && !_apiPath.startsWith('/')) {
-      _apiPath = '/$_apiPath';
+    if (savedPrefix != null && savedPrefix.isNotEmpty) {
+      _apiPrefix =
+      savedPrefix.startsWith('/') ? savedPrefix : '/$savedPrefix';
     }
 
     _configured = true;
   }
 
-  /// Persiste a configuração atual para outros isolates (ex.: Workmanager).
-  static Future<void> persistToPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsBaseKey, _base);
-    await prefs.setString(_prefsPathKey, _apiPath);
-  }
-
-  /// Recarrega a configuração do SharedPreferences (use no isolate do worker).
-  static Future<void> configureFromPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedBase = prefs.getString(_prefsBaseKey);
-    final savedPath = prefs.getString(_prefsPathKey);
-
-    if ((savedBase != null && savedBase.isNotEmpty) &&
-        (savedPath != null && savedPath.isNotEmpty)) {
-      _base = _normalizeBase(savedBase);
-      _apiPath = savedPath.startsWith('/') ? savedPath : '/$savedPath';
-      _configured = true;
-    }
-  }
-
-  /// Fallback de ambiente se ninguém configurou (mantém compat com seu código atual).
+  /// Fallback se ninguém chamou `configure(...)` explicitamente.
+  ///
+  /// Usa:
+  ///   --dart-define=API_BASE
+  ///   --dart-define=API_PREFIX
   static void _ensureConfiguredSync() {
     if (_configured) return;
 
-    // Tenta env var (síncrono)
-    final env = const String.fromEnvironment(
+    final envBase = const String.fromEnvironment(
       'API_BASE',
-      defaultValue: '$_defaultBase$_defaultGatewayPath',
+      defaultValue: _defaultBase,
     );
-    configure(env);
+    final envPrefix = const String.fromEnvironment(
+      'API_PREFIX',
+      defaultValue: _defaultApiPrefix,
+    );
+
+    configure(envBase, apiPrefix: envPrefix);
   }
 
-  /// Cliente síncrono — assume que já foi configurado no entrypoint
-  /// (ou cai no fallback via --dart-define).
-  static DevApi client() {
-    _ensureConfiguredSync();
-    return DevApi(_base, apiPath: _apiPath);
-  }
+  /// Configura a partir do AppConfig (se existir no contexto).
+  ///
+  /// Se não houver AppConfig, cai para os valores de env/default.
+  static void configureFromContext(BuildContext? context) {
+    final cfgBase = context != null
+        ? AppConfig.maybeOf(context)?.params.baseApiUrl
+        : null;
 
-  /// Cliente assíncrono — garante tentar prefs antes de cair no env.
-  /// Útil em isolates (ex.: worker) onde você não chamou `configure(...)` antes.
-  static Future<DevApi> clientAsync() async {
-    if (!_configured) {
-      await configureFromPrefs();
-      if (!_configured) {
-        _ensureConfiguredSync();
-      }
-    }
-    return DevApi(_base, apiPath: _apiPath);
-  }
-
-  /// Conveniência: tenta ler do AppConfig (se houver no contexto) e configura.
-  /// Nunca usa `context!`; funciona mesmo com `context == null`.
-  static DevApi fromContext(BuildContext? context) {
-    final cfgBase = context != null ? AppConfig.maybeOf(context)?.params.baseApiUrl : null;
     if (cfgBase != null && cfgBase.isNotEmpty) {
       configure(cfgBase);
     } else {
       _ensureConfiguredSync();
     }
-    return DevApi(_base, apiPath: _apiPath);
   }
 
-  /// Base atual (ex.: https://host)
-  static String get base => _base;
-
-  /// Path do gateway atual (ex.: /api-dev.php)
-  static String get apiPath => _apiPath;
-
-  /// URL completa do gateway (ex.: https://host/api-dev.php)
-  static Uri get gatewayUri {
-    final root = Uri.parse(_base.endsWith('/') ? _base : '$_base/');
-    final rel = Uri.parse(_apiPath.startsWith('/') ? _apiPath.substring(1) : _apiPath);
-    return root.resolveUri(rel);
+  /// Compat: alguns pontos do app podem chamar `ApiRouter.fromContext(context)`
+  /// só para garantir que o Router foi configurado. Aqui apenas chamamos
+  /// `configureFromContext` e devolvemos uma instância vazia.
+  static ApiRouter fromContext(BuildContext context) {
+    configureFromContext(context);
+    return ApiRouter();
   }
 
-  /// Helper para montar URL do gateway com query (ex.: action=..., outros params)
-  static Uri gatewayWithQuery(Map<String, dynamic> query) {
-    final u = gatewayUri;
-    return u.replace(queryParameters: {
-      ...u.queryParameters,
-      ...query.map((k, v) => MapEntry(k, v?.toString() ?? '')),
-    });
+  // =====================================================================
+  // Acesso à base / raiz da API
+  // =====================================================================
+
+  /// Host base atual (sem /api/v1), ex.: https://assistweb.ipasemnh.com.br
+  static String get base {
+    _ensureConfiguredSync();
+    return _base;
   }
 
-  // ===== Internos =====
+  /// Prefixo da API, ex.: /api/v1
+  static String get apiPrefix {
+    _ensureConfiguredSync();
+    return _apiPrefix;
+  }
+
+  /// URI da raiz da API, ex.: https://host/api/v1
+  static Uri get apiRootUri {
+    _ensureConfiguredSync();
+    final normalizedBase = _normalizeBase(_base);
+    return Uri.parse('$normalizedBase$_apiPrefix');
+  }
+
+  /// Monta uma URI para um endpoint da API a partir de um caminho relativo.
+  ///
+  /// Exemplos:
+  ///   ApiRouter.endpoint('system/ping')
+  ///     -> https://host/api/v1/system/ping
+  ///   ApiRouter.endpoint('/exame/historico')
+  ///     -> https://host/api/v1/exame/historico
+  static Uri endpoint(String path) {
+    _ensureConfiguredSync();
+    final root = apiRootUri;
+    final cleaned = path.startsWith('/') ? path.substring(1) : path;
+    return root.resolve(cleaned);
+  }
+
+  // =====================================================================
+  // Endpoints de conveniência (opcionais)
+  // =====================================================================
+
+  /// GET api/v1/system/ping  -> api/SystemController::actionPing
+  static Uri get systemPing => endpoint('system/ping');
+
+  /// GET api/v1/system/time  -> api/SystemController::actionTime
+  static Uri get systemTime => endpoint('system/time');
+
+  /// POST api/v1/auth/login  -> (se você tiver AuthController separado)
+  static Uri get authLogin => endpoint('auth/login');
+
+  /// POST api/v1/dependente/login -> api/DependenteController::actionLogin
+  static Uri get dependenteLogin => endpoint('dependente/login');
+
+  /// POST api/v1/exame/historico -> api/ExameController::actionHistorico
+  static Uri get exameHistorico => endpoint('exame/historico');
+
+  /// POST api/v1/carteirinha/emitir -> api/CarteirinhaController::actionEmitir
+  static Uri get carteirinhaEmitir => endpoint('carteirinha/emitir');
+
+  /// POST api/v1/carteirinha/dados -> api/CarteirinhaController::actionDados
+  static Uri get carteirinhaDados => endpoint('carteirinha/dados');
+
+  // =====================================================================
+  // Internos
+  // =====================================================================
 
   static String _normalizeBase(String base) {
     var b = base.trim();
     while (b.endsWith('//')) {
       b = b.substring(0, b.length - 1);
     }
-    while (b.endsWith('/')) {
+    if (b.endsWith('/')) {
       b = b.substring(0, b.length - 1);
     }
     return b;

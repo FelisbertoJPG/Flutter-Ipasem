@@ -1,3 +1,4 @@
+//lib/common/config/params.dart
 class AppParams {
   /// URL base da sua API (ex.: http://192.9.200.98)
 
