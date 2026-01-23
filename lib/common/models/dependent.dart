@@ -1,4 +1,4 @@
-// lib/models/dependent.dart
+// lib/common/models/dependent.dart
 class Dependent {
   final String nome;
   final int idmatricula;

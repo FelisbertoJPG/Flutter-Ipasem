@@ -9,7 +9,9 @@ class AutorizacoesRepository {
   final DevApi api;
   AutorizacoesRepository(this.api);
 
-  /// Médico / Odonto
+  /// Grava autorização Médico / Odonto.
+  ///
+  /// POST /api/v1/autorizacao/gravar
   Future<int> gravar({
     required int idMatricula,
     required int idDependente,
@@ -18,7 +20,7 @@ class AutorizacoesRepository {
     required String tipoPrestador,
   }) async {
     final res = await api.post(
-      '/api-dev.php?action=gravar_autorizacao',
+      '/autorizacao/gravar',
       data: {
         'id_matricula':     idMatricula,
         'id_dependente':    idDependente,
@@ -27,18 +29,21 @@ class AutorizacoesRepository {
         'tipo_prestador':   tipoPrestador,
       },
     );
+
     return _extractNumeroOrThrow(res);
   }
 
-  /// Exames
+  /// Grava autorização de EXAMES.
+  ///
+  /// POST /api/v1/exame/gravar
   Future<int> gravarExame({
     required int idMatricula,
     required int idDependente,
     required int idPrestador,
     required String tipoPrestador,
   }) async {
-    final res = await api.postAction<Map<String, dynamic>>(
-      'gravar_exame',
+    final res = await api.post(
+      '/exame/gravar',
       data: {
         'id_matricula':   idMatricula,
         'id_dependente':  idDependente,
@@ -47,31 +52,20 @@ class AutorizacoesRepository {
       },
     );
 
-    final body = (res.data ?? {});
-    if (body['ok'] == true) {
-      final data = (body['data'] as Map?) ?? const {};
-      final raw  = data['o_nro_autorizacao'] ?? data['numero'];
-      final numAut = raw is int ? raw : int.tryParse('$raw') ?? 0;
-      if (numAut > 0) return numAut;
-    }
-
-    throw DioException(
-      requestOptions: res.requestOptions,
-      response: res,
-      type: DioExceptionType.badResponse,
-      error: body['error'],
-    );
+    // Assume o mesmo envelope { ok, data: { o_nro_autorizacao|numero } }
+    return _extractNumeroOrThrow(res);
   }
 
   /// Upload das imagens da requisição do exame (até 2).
-  /// Recebe **XFile** para funcionar em mobile/desktop e também no **Web**.
+  ///
+  /// POST /api/v1/exame/upload-imagens (multipart/form-data)
   Future<void> enviarImagensExame({
     required int numero,
     required List<XFile> files,
   }) async {
     if (files.isEmpty) return;
 
-    // util pra extrair um nome de arquivo consistente
+    // Util para extrair um nome de arquivo consistente.
     String _fileName(XFile x) {
       if (x.name.isNotEmpty) return x.name;
       final p = x.path;
@@ -79,26 +73,43 @@ class AutorizacoesRepository {
       return a.split(r'\').last;
     }
 
-    final parts = <MultipartFile>[];
+    final form = FormData();
+
+    // Campo simples
+    form.fields.add(MapEntry('numero', '$numero'));
+
+    // Máx 2 imagens, todas no campo "images"
     for (final x in files.take(2)) {
       final fname = _fileName(x);
       if (kIsWeb) {
         final bytes = await x.readAsBytes();
-        parts.add(MultipartFile.fromBytes(bytes, filename: fname));
+        form.files.add(
+          MapEntry(
+            'images',
+            MultipartFile.fromBytes(bytes, filename: fname),
+          ),
+        );
       } else {
-        parts.add(await MultipartFile.fromFile(x.path, filename: fname));
+        form.files.add(
+          MapEntry(
+            'images',
+            await MultipartFile.fromFile(
+              x.path,
+              filename: fname,
+            ),
+          ),
+        );
       }
     }
 
     try {
-      final res = await api.uploadAction(
-        'upload_exame_imagens',
-        fields: {'numero': '$numero'},
-        files: parts,                    // mesmo campo 'images' repetido (ver DevApi)
-        fileFieldName: 'images',
+      final res = await api.post<Map<String, dynamic>>(
+        '/exame/upload-imagens',
+        data: form,
+        options: Options(contentType: 'multipart/form-data'),
       );
 
-      final body = (res.data as Map).cast<String, dynamic>();
+      final body = res.data ?? const <String, dynamic>{};
       if (body['ok'] != true) {
         if (!kReleaseMode) debugPrint('Upload error body: $body');
         throw DioException(
@@ -110,18 +121,25 @@ class AutorizacoesRepository {
       }
     } on DioException catch (e) {
       if (!kReleaseMode) {
-        debugPrint('Upload DioException: status=${e.response?.statusCode} data=${e.response?.data}');
+        debugPrint(
+          'Upload DioException: status=${e.response?.statusCode} '
+              'data=${e.response?.data}',
+        );
       }
       rethrow;
     }
   }
 
   // ----------------- Helpers -----------------
+
+  /// Lê `{ ok: true, data: { o_nro_autorizacao|numero } }` e devolve o número.
   int _extractNumeroOrThrow(Response res) {
     final body = (res.data as Map).cast<String, dynamic>();
+
     if (body['ok'] == true) {
       final data = (body['data'] as Map?) ?? const {};
-      final raw  = data['o_nro_autorizacao'] ?? data['numero'];
+      final raw = data['o_nro_autorizacao'] ?? data['numero'];
+
       final numAut = raw is int ? raw : int.tryParse('$raw') ?? 0;
       if (numAut > 0) return numAut;
 

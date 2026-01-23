@@ -1,5 +1,4 @@
-import '../../common/api/api_myadmin.dart';
-
+//lib/backend/models/models.dart
 class RequerimentoResumo {
   final String titulo;
   final String status;
@@ -36,17 +35,5 @@ class ComunicadoResumo {
     return '$base…';
   }
 
-  /// Mapper a partir do DTO completo.
-  factory ComunicadoResumo.fromComunicado(Comunicado c, {int maxLen = 160}) {
-    final desc = c.resumo?.trim().isNotEmpty == true
-        ? c.resumo!.trim()
-        : _ellipsis(c.corpo.trim(), max: maxLen);
-    return ComunicadoResumo(
-      id: c.id,
-      titulo: c.titulo,
-      descricao: desc.isEmpty ? null : desc,
-      data: c.publicadoEm,
-    );
-  }
 }
 
