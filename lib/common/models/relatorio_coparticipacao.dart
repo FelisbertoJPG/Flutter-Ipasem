@@ -1,6 +1,6 @@
 // lib/models/relatorio_coparticipacao.dart
 //
-// Modelos para o endpoint: action=relatorio_coparticipacao
+// Modelos para o endpoint: relatorio/coparticipacao
 // JSON esperado (exemplo):
 // {
 //   "ok": true,
@@ -15,8 +15,8 @@
 //     "totaisPagos": {"totalpago": 0, "valortotal": 0},
 //     "copar": [{"tipo_caixa": 1, "total": 123.45}]
 //   },
-//   "meta": null,
-//   "error": {"eid": "abcd..."}
+//   "meta": {"eid": "..."},
+//   "error": null
 // }
 
 import 'dart:convert';
@@ -87,10 +87,16 @@ class RelatorioResponse {
   factory RelatorioResponse.fromMap(Map<String, dynamic> m) => RelatorioResponse(
     ok: _asBool(m['ok']),
     data: m['data'] is Map<String, dynamic>
-        ? RelatorioCoparticipacaoData.fromMap(m['data'] as Map<String, dynamic>)
+        ? RelatorioCoparticipacaoData.fromMap(
+      m['data'] as Map<String, dynamic>,
+    )
         : null,
-    meta: m['meta'] is Map<String, dynamic> ? (m['meta'] as Map<String, dynamic>) : null,
-    error: m['error'] is Map<String, dynamic> ? RelatorioError.fromMap(m['error'] as Map<String, dynamic>) : null,
+    meta: m['meta'] is Map<String, dynamic>
+        ? (m['meta'] as Map<String, dynamic>)
+        : null,
+    error: m['error'] is Map<String, dynamic>
+        ? RelatorioError.fromMap(m['error'] as Map<String, dynamic>)
+        : null,
   );
 
   static RelatorioResponse fromJson(String s) =>
@@ -102,10 +108,24 @@ class RelatorioError {
   final String? code;
   final String? message;
 
-  RelatorioError({this.eid, this.code, this.message});
+  RelatorioError({
+    this.eid,
+    this.code,
+    this.message,
+  });
 
+  /// Hoje o backend manda:
+  /// {
+  ///   ok: false,
+  ///   data: null,
+  ///   meta: { eid: '...' },
+  ///   error: { code: 'X', message: 'Y', details: ... }
+  /// }
+  ///
+  /// Aqui estamos mapeando apenas o objeto `error` em si.
+  /// Se quiser o EID, você já tem em `RelatorioResponse.meta['eid']`.
   factory RelatorioError.fromMap(Map<String, dynamic> m) => RelatorioError(
-    eid: m['eid']?.toString(),
+    eid: m['eid']?.toString(), // pode vir vazio no padrão atual
     code: m['code']?.toString(),
     message: m['message']?.toString(),
   );
@@ -130,22 +150,29 @@ class RelatorioCoparticipacaoData {
     required this.copar,
   });
 
-  factory RelatorioCoparticipacaoData.fromMap(Map<String, dynamic> m) => RelatorioCoparticipacaoData(
-    periodo: RelatorioPeriodo.fromMap((m['periodo'] ?? const {}) as Map<String, dynamic>),
-    usuario: m['usuario'] is Map<String, dynamic>
-        ? RelatorioUsuario.fromMap(m['usuario'] as Map<String, dynamic>)
-        : null,
-    extratos: (m['extratos'] as List<dynamic>? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(ExtratoItem.fromMap)
-        .toList(),
-    totais: RelatorioTotais.fromMap((m['totais'] ?? const {}) as Map<String, dynamic>),
-    totaisPagos: RelatorioTotaisPagos.fromMap((m['totaisPagos'] ?? const {}) as Map<String, dynamic>),
-    copar: (m['copar'] as List<dynamic>? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(RelatorioCoparItem.fromMap)
-        .toList(),
-  );
+  factory RelatorioCoparticipacaoData.fromMap(Map<String, dynamic> m) =>
+      RelatorioCoparticipacaoData(
+        periodo: RelatorioPeriodo.fromMap(
+          (m['periodo'] ?? const {}) as Map<String, dynamic>,
+        ),
+        usuario: m['usuario'] is Map<String, dynamic>
+            ? RelatorioUsuario.fromMap(m['usuario'] as Map<String, dynamic>)
+            : null,
+        extratos: (m['extratos'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(ExtratoItem.fromMap)
+            .toList(),
+        totais: RelatorioTotais.fromMap(
+          (m['totais'] ?? const {}) as Map<String, dynamic>,
+        ),
+        totaisPagos: RelatorioTotaisPagos.fromMap(
+          (m['totaisPagos'] ?? const {}) as Map<String, dynamic>,
+        ),
+        copar: (m['copar'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(RelatorioCoparItem.fromMap)
+            .toList(),
+      );
 
   bool get isEmpty =>
       extratos.isEmpty &&
@@ -163,11 +190,18 @@ class RelatorioPeriodo {
   final RelatorioPeriodoEntrada entrada;
   final RelatorioPeriodoEfetivo efetivo;
 
-  RelatorioPeriodo({required this.entrada, required this.efetivo});
+  RelatorioPeriodo({
+    required this.entrada,
+    required this.efetivo,
+  });
 
   factory RelatorioPeriodo.fromMap(Map<String, dynamic> m) => RelatorioPeriodo(
-    entrada: RelatorioPeriodoEntrada.fromMap((m['entrada'] ?? const {}) as Map<String, dynamic>),
-    efetivo: RelatorioPeriodoEfetivo.fromMap((m['efetivo'] ?? const {}) as Map<String, dynamic>),
+    entrada: RelatorioPeriodoEntrada.fromMap(
+      (m['entrada'] ?? const {}) as Map<String, dynamic>,
+    ),
+    efetivo: RelatorioPeriodoEfetivo.fromMap(
+      (m['efetivo'] ?? const {}) as Map<String, dynamic>,
+    ),
   );
 }
 
@@ -175,12 +209,16 @@ class RelatorioPeriodoEntrada {
   final String? dataInicio; // "MM/YYYY"
   final String? dataFim; // "MM/YYYY"
 
-  RelatorioPeriodoEntrada({this.dataInicio, this.dataFim});
+  RelatorioPeriodoEntrada({
+    this.dataInicio,
+    this.dataFim,
+  });
 
-  factory RelatorioPeriodoEntrada.fromMap(Map<String, dynamic> m) => RelatorioPeriodoEntrada(
-    dataInicio: m['data_inicio']?.toString(),
-    dataFim: m['data_fim']?.toString(),
-  );
+  factory RelatorioPeriodoEntrada.fromMap(Map<String, dynamic> m) =>
+      RelatorioPeriodoEntrada(
+        dataInicio: m['data_inicio']?.toString(),
+        dataFim: m['data_fim']?.toString(),
+      );
 }
 
 class RelatorioPeriodoEfetivo {
@@ -196,19 +234,23 @@ class RelatorioPeriodoEfetivo {
     this.mesFim,
   });
 
-  factory RelatorioPeriodoEfetivo.fromMap(Map<String, dynamic> m) => RelatorioPeriodoEfetivo(
-    anoInicio: _asInt(m['ano_inicio']),
-    mesInicio: _asInt(m['mes_inicio']),
-    anoFim: _asInt(m['ano_fim']),
-    mesFim: _asInt(m['mes_fim']),
-  );
+  factory RelatorioPeriodoEfetivo.fromMap(Map<String, dynamic> m) =>
+      RelatorioPeriodoEfetivo(
+        anoInicio: _asInt(m['ano_inicio']),
+        mesInicio: _asInt(m['mes_inicio']),
+        anoFim: _asInt(m['ano_fim']),
+        mesFim: _asInt(m['mes_fim']),
+      );
 }
 
 class RelatorioUsuario {
   final int? idmatricula;
   final String? nomeTitular;
 
-  RelatorioUsuario({this.idmatricula, this.nomeTitular});
+  RelatorioUsuario({
+    this.idmatricula,
+    this.nomeTitular,
+  });
 
   factory RelatorioUsuario.fromMap(Map<String, dynamic> m) => RelatorioUsuario(
     idmatricula: _asInt(m['idmatricula']),
@@ -242,15 +284,20 @@ class RelatorioTotais {
   });
 
   factory RelatorioTotais.fromMap(Map<String, dynamic> m) => RelatorioTotais(
-    A_saldoMesesAnteriores: _asDouble(m['A_saldo_meses_anteriores']) ?? 0.0,
-    B_totalCoparticipacao: _asDouble(m['B_total_coparticipacao']) ?? 0.0,
+    A_saldoMesesAnteriores:
+    _asDouble(m['A_saldo_meses_anteriores']) ?? 0.0,
+    B_totalCoparticipacao:
+    _asDouble(m['B_total_coparticipacao']) ?? 0.0,
     C_debitosAvulsos: _asDouble(m['C_debitos_avulsos']) ?? 0.0,
-    D_descontadoCopart: _asDouble(m['D_descontado_copart']) ?? 0.0,
+    D_descontadoCopart:
+    _asDouble(m['D_descontado_copart']) ?? 0.0,
     E_creditosAvulsos: _asDouble(m['E_creditos_avulsos']) ?? 0.0,
     ABC_debitosTotal: _asDouble(m['ABC_debitos_total']) ?? 0.0,
-    DE_creditosTotal: _asDouble(m['DE_creditos_total']) ?? 0.0,
-    saldoATransportar: _asDouble(m['saldo_a_transportar']) ?? 0.0,
-    totalEnviadoDesconto: _asDouble(m['total_enviado_desconto']) ?? 0.0,
+    DE_creditosTotal: _asDouble(m['DE_creditros_total'] ?? m['DE_creditos_total']) ?? 0.0,
+    saldoATransportar:
+    _asDouble(m['saldo_a_transportar']) ?? 0.0,
+    totalEnviadoDesconto:
+    _asDouble(m['total_enviado_desconto']) ?? 0.0,
   );
 }
 
@@ -258,12 +305,16 @@ class RelatorioTotaisPagos {
   final double? totalPago;
   final double? valorTotal;
 
-  RelatorioTotaisPagos({this.totalPago, this.valorTotal});
+  RelatorioTotaisPagos({
+    this.totalPago,
+    this.valorTotal,
+  });
 
-  factory RelatorioTotaisPagos.fromMap(Map<String, dynamic> m) => RelatorioTotaisPagos(
-    totalPago: _asDouble(m['totalpago']),
-    valorTotal: _asDouble(m['valortotal']),
-  );
+  factory RelatorioTotaisPagos.fromMap(Map<String, dynamic> m) =>
+      RelatorioTotaisPagos(
+        totalPago: _asDouble(m['totalpago']),
+        valorTotal: _asDouble(m['valortotal']),
+      );
 }
 
 /// --------------------------- Itens (copar/extrato) ------------------------
@@ -279,11 +330,12 @@ class RelatorioCoparItem {
     this.total,
   });
 
-  factory RelatorioCoparItem.fromMap(Map<String, dynamic> m) => RelatorioCoparItem(
-    raw: m,
-    tipoCaixa: _asInt(m['tipo_caixa'] ?? m['tipoCaixa'] ?? m['tipo']),
-    total: _asDouble(m['total'] ?? m['valor'] ?? m['vl']),
-  );
+  factory RelatorioCoparItem.fromMap(Map<String, dynamic> m) =>
+      RelatorioCoparItem(
+        raw: m,
+        tipoCaixa: _asInt(m['tipo_caixa'] ?? m['tipoCaixa'] ?? m['tipo']),
+        total: _asDouble(m['total'] ?? m['valor'] ?? m['vl']),
+      );
 }
 
 /// Itens de extrato podem variar por ambiente. Expomos campos comuns
@@ -305,9 +357,17 @@ class ExtratoItem {
 
   factory ExtratoItem.fromMap(Map<String, dynamic> m) => ExtratoItem(
     raw: m,
-    descricao: (m['descricao'] ?? m['desc'] ?? m['historico'] ?? m['evento'])?.toString(),
+    descricao: (m['descricao'] ??
+        m['desc'] ??
+        m['historico'] ??
+        m['evento'])
+        ?.toString(),
     valor: _asDouble(m['valor'] ?? m['vl'] ?? m['total']),
-    competencia: (m['competencia'] ?? m['mes_ano'] ?? m['ref'] ?? m['periodo'])?.toString(),
+    competencia: (m['competencia'] ??
+        m['mes_ano'] ??
+        m['ref'] ??
+        m['periodo'])
+        ?.toString(),
     tipoCaixa: _asInt(m['tipo_caixa'] ?? m['tipo']),
   );
 }

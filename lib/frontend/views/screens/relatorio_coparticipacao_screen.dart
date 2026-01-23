@@ -1,10 +1,12 @@
-// lib/screens/relatorio_coparticipacao_screen.dart
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
+
+import '../../../backend/controller/pdf_controller/pdf_relatorios_coparticipacao_builder.dart';
+import '../../../common/config/dev_api.dart';
 import '../../../common/models/relatorio_coparticipacao.dart';
-import '../../../common/config/api_router.dart';
+import '../../../common/models/relatorio_irpf.dart';
 import '../../theme/colors.dart';
 import '../components/cards/section_card.dart';
 import '../layouts/app_shell.dart';
@@ -28,7 +30,16 @@ class _RelatorioCoparticipacaoScreenState
   final _inicioCtrl = TextEditingController();
   final _fimCtrl = TextEditingController();
 
+  // Ano para o IRPF (AAAA)
+  final _anoIrpfCtrl = TextEditingController();
+
+  // Cliente central da API (/api/v1) – usa ApiRouter.apiRootUri por baixo
+  final DevApi _api = DevApi();
+
   bool _busy = false;
+  bool _generatingPdf = false;
+  bool _generatingIrpfPdf = false;
+
   RelatorioCoparticipacaoData? _data;
   String? _error;
 
@@ -42,12 +53,16 @@ class _RelatorioCoparticipacaoScreenState
     final mm = now.month.toString().padLeft(2, '0');
     _inicioCtrl.text = '$mm/${now.year}';
     _fimCtrl.text = '$mm/${now.year}';
+
+    // Ano atual para IRPF
+    _anoIrpfCtrl.text = now.year.toString();
   }
 
   @override
   void dispose() {
     _inicioCtrl.dispose();
     _fimCtrl.dispose();
+    _anoIrpfCtrl.dispose();
     super.dispose();
   }
 
@@ -141,25 +156,22 @@ class _RelatorioCoparticipacaoScreenState
     });
 
     try {
-      final dio = ApiRouter.client(); // mesmo cliente central
-
-      final resp = await dio.post(
-        '',
-        queryParameters: {'action': 'relatorio_coparticipacao'},
+      // Endpoint REST atual: POST /api/v1/relatorio/coparticipacao
+      final resp = await _api.postRest<dynamic>(
+        '/relatorio/coparticipacao',
         data: {
           'idmatricula': widget.idMatricula,
           'data_inicio': _inicioCtrl.text.trim(), // "MM/YYYY"
-          'data_fim': _fimCtrl.text.trim(),       // "MM/YYYY"
+          'data_fim': _fimCtrl.text.trim(), // "MM/YYYY"
         },
-        options: Options(
-          contentType: Headers.formUrlEncodedContentType,
-        ),
       );
 
-      final payload = resp.data is Map<String, dynamic>
-          ? resp.data as Map<String, dynamic>
-          : json.decode(resp.data as String) as Map<String, dynamic>;
+      final raw = resp.data;
+      if (raw is! Map) {
+        throw Exception('Resposta inesperada do servidor.');
+      }
 
+      final payload = raw.cast<String, dynamic>();
       final parsed = RelatorioResponse.fromMap(payload);
 
       if (!parsed.ok) {
@@ -200,6 +212,137 @@ class _RelatorioCoparticipacaoScreenState
     }
   }
 
+  /// Gera e abre o PDF do extrato atual usando o builder em
+  /// pdf_relatorios_coparticipacao_builder.dart.
+  Future<void> _exportExtratoPdf() async {
+    final data = _data;
+    if (data == null) return;
+
+    setState(() {
+      _generatingPdf = true;
+    });
+
+    try {
+      final bytes = await buildExtratoCoparticipacaoPdf(data);
+
+      // Abre o preview/diálogo de impressão nativo (mobile/web/desktop)
+      await Printing.layoutPdf(
+        onLayout: (format) async => bytes,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Falha ao gerar PDF: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _generatingPdf = false;
+        });
+      }
+    }
+  }
+
+  /// Validação simples de ano AAAA.
+  String? _validateYear(String? v) {
+    final s = (v ?? '').trim();
+    if (!RegExp(r'^\d{4}$').hasMatch(s)) {
+      return 'Use o formato AAAA';
+    }
+    return null;
+  }
+
+  /// Consulta o backend de IRPF e gera o PDF anual.
+  ///
+  /// Ajuste o endpoint '/relatorio/irpf' se no teu backend o caminho for outro.
+  Future<void> _exportIrpfPdf() async {
+    final err = _validateYear(_anoIrpfCtrl.text);
+    if (err != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(err)),
+      );
+      return;
+    }
+
+    final ano = int.parse(_anoIrpfCtrl.text.trim());
+
+    setState(() {
+      _generatingIrpfPdf = true;
+      // não mexe em _data / _busy; é uma consulta independente
+    });
+
+    try {
+      final resp = await _api.postRest<dynamic>(
+        '/relatorio/irpf',
+        data: {
+          'idmatricula': widget.idMatricula,
+          'ano_inicio': ano, // <- o que o backend está pedindo
+          'ano_fim': ano,    // se a API aceitar intervalo, já manda igual
+        },
+      );
+
+
+      final raw = resp.data;
+      if (raw is! Map) {
+        throw Exception('Resposta inesperada do servidor.');
+      }
+
+      final payload = raw.cast<String, dynamic>();
+
+      if (payload['ok'] != true) {
+        final msg = _extractBackendError(
+          payload,
+          fallback: 'Falha ao consultar IRPF. Tente novamente.',
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+        return;
+      }
+
+      final dataMap = payload['data'];
+      if (dataMap is! Map) {
+        throw Exception('Dados do IRPF ausentes.');
+      }
+
+      final irpfData =
+      RelatorioIrpfData.fromMap(dataMap.cast<String, dynamic>());
+
+      final bytes = await buildIrpfDemonstrativoPdf(irpfData);
+      await Printing.layoutPdf(onLayout: (format) async => bytes);
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = data != null
+          ? _extractBackendError(
+        data,
+        fallback: e.message ?? 'Erro de rede.',
+      )
+          : (e.message ?? 'Erro de rede.');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao gerar IRPF: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _generatingIrpfPdf = false;
+        });
+      }
+    }
+  }
+
   String _brMoney(num? v) {
     if (v == null) return '—';
     return _fmtCurrency.format(v);
@@ -233,64 +376,137 @@ class _RelatorioCoparticipacaoScreenState
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            // === Extrato mensal ===
             SectionCard(
-              title: 'Período',
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: _inicioCtrl,
-                            keyboardType: TextInputType.datetime,
-                            decoration: _deco(
-                              'Início',
-                              hint: 'MM/AAAA (ex.: 09/2025)',
+              title: 'Período (Extrato de Coparticipação)',
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _inicioCtrl,
+                              keyboardType: TextInputType.datetime,
+                              decoration: _deco(
+                                'Início',
+                                hint: 'MM/AAAA (ex.: 09/2025)',
+                              ),
+                              validator: _validateMonthYear,
                             ),
-                            validator: _validateMonthYear,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _fimCtrl,
+                              keyboardType: TextInputType.datetime,
+                              decoration: _deco(
+                                'Fim',
+                                hint: 'MM/AAAA (ex.: 11/2025)',
+                              ),
+                              validator: _validateMonthYear,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: kBrand,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: _busy ? null : _fetch,
+                          child: _busy
+                              ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                              AlwaysStoppedAnimation(Colors.white),
+                            ),
+                          )
+                              : const Text(
+                            'Consultar Extrato',
+                            style:
+                            TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
-                            controller: _fimCtrl,
-                            keyboardType: TextInputType.datetime,
-                            decoration: _deco(
-                              'Fim',
-                              hint: 'MM/AAAA (ex.: 11/2025)',
+                      ),
+                      if (_data != null) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: OutlinedButton.icon(
+                            onPressed:
+                            _generatingPdf ? null : _exportExtratoPdf,
+                            icon: _generatingPdf
+                                ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2),
+                            )
+                                : const Icon(Icons.receipt_long_outlined),
+                            label: const Text(
+                              'Baixar Extrato em PDF',
+                              style: TextStyle(fontWeight: FontWeight.w600),
                             ),
-                            validator: _validateMonthYear,
                           ),
                         ),
                       ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // === IRPF anual ===
+            SectionCard(
+              title: 'Extrato de coparticipação - IRPF',
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _anoIrpfCtrl,
+                      keyboardType: TextInputType.number,
+                      maxLength: 4,
+                      decoration: _deco(
+                        'Ano',
+                        hint: 'AAAA (ex.: ${DateTime.now().year})',
+                      ).copyWith(counterText: ''),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       height: 44,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: kBrand,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: _busy ? null : _fetch,
-                        child: _busy
+                      child: OutlinedButton.icon(
+                        onPressed:
+                        _generatingIrpfPdf ? null : _exportIrpfPdf,
+                        icon: _generatingIrpfPdf
                             ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                            AlwaysStoppedAnimation(Colors.white),
-                          ),
+                          width: 20,
+                          height: 20,
+                          child:
+                          CircularProgressIndicator(strokeWidth: 2),
                         )
-                            : const Text(
-                          'Consultar',
-                          style: TextStyle(fontWeight: FontWeight.w700),
+                            : const Icon(Icons.article_outlined),
+                        label: const Text(
+                          'Baixar Demonstrativo IRPF (PDF)',
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
@@ -306,45 +522,12 @@ class _RelatorioCoparticipacaoScreenState
 
             if (_data != null) ...[
               const SizedBox(height: 12),
-              _buildPeriodoUsuario(_data!),
-              const SizedBox(height: 12),
               _buildTotais(_data!),
               const SizedBox(height: 12),
-              _buildCopar(_data!),
-              const SizedBox(height: 12),
-              _buildExtratos(_data!),
+              //_buildCopar(_data!),
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildPeriodoUsuario(RelatorioCoparticipacaoData d) {
-    final en = d.periodo.entrada;
-    final ef = d.periodo.efetivo;
-
-    return SectionCard(
-      title: 'Resumo do Período',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _kv('Entrada', '${en.dataInicio ?? '—'} → ${en.dataFim ?? '—'}'),
-          const SizedBox(height: 6),
-          _kv(
-            'Efetivo',
-            '${ef.mesInicio?.toString().padLeft(2, '0') ?? '--'}/${ef.anoInicio ?? '----'}'
-                ' → ${ef.mesFim?.toString().padLeft(2, '0') ?? '--'}/${ef.anoFim ?? '----'}',
-          ),
-          if (d.usuario?.idmatricula != null) ...[
-            const SizedBox(height: 6),
-            _kv('Matrícula', d.usuario!.idmatricula.toString()),
-          ],
-          if ((d.usuario?.nomeTitular ?? '').isNotEmpty) ...[
-            const SizedBox(height: 6),
-            _kv('Titular', d.usuario!.nomeTitular!),
-          ],
-        ],
       ),
     );
   }
@@ -481,100 +664,7 @@ class _RelatorioCoparticipacaoScreenState
     );
   }
 
-  Widget _buildCopar(RelatorioCoparticipacaoData d) {
-    if (d.copar.isEmpty) {
-      return const SectionCard(
-        title: 'Caixas do Período',
-        child: Text('Sem lançamentos no período.'),
-      );
-    }
 
-    return SectionCard(
-      title: 'Caixas do Período',
-      child: Column(
-        children: [
-          for (final it in d.copar)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: kPanelBg,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kPanelBorder),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Tipo ${it.tipoCaixa ?? '-'}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  Text(_brMoney(it.total)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExtratos(RelatorioCoparticipacaoData d) {
-    if (d.extratos.isEmpty) {
-      return const SectionCard(
-        title: 'Extratos',
-        child: Text('Nenhum item de extrato retornado para o período.'),
-      );
-    }
-
-    return SectionCard(
-      title: 'Extratos',
-      child: Column(
-        children: [
-          for (final e in d.extratos)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kCardBorder),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 5,
-                    child: Text(
-                      e.descricao ?? '—',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      e.competencia ?? '—',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Color(0xFF475467)),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        _brMoney(e.valor),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 
   String? _validateMonthYear(String? v) {
     final s = (v ?? '').trim();
@@ -583,22 +673,6 @@ class _RelatorioCoparticipacaoScreenState
     final mm = int.tryParse(s.substring(0, 2)) ?? 0;
     if (mm < 1 || mm > 12) return 'Mês inválido';
     return null;
-  }
-
-  Widget _kv(String k, String v) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$k: ',
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: kBrand,
-          ),
-        ),
-        Expanded(child: Text(v)),
-      ],
-    );
   }
 }
 
