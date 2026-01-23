@@ -17,6 +17,7 @@ import '../../../common/repositories/dependents_repository.dart';
 import '../../../common/repositories/exames_repository.dart';
 
 import '../../../common/services/comunicados_service/comunicados_service.dart';
+import '../../../common/services/carterinha_service/carteirinha_service.dart';
 
 import '../components/comunicados_comp/comunicado_detail_sheet.dart';
 import '../components/comunicados_comp/comunicados_card.dart';
@@ -78,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen>
     super.didChangeDependencies();
     if (_ctrlReady) return;
 
-    _api = ApiRouter.client();
+    _api = DevApi();
 
     final depsRepo = DependentsRepository(_api);
     _exRepo = ExamesRepository(_api);
@@ -154,42 +155,36 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ==========================================================================
-  // Sexo (via carteirinha)
+  // Sexo (via carteirinha – API nova)
   // ==========================================================================
 
   Future<void> _loadSexoForMatricula(int idMatricula) async {
     if (_sexoLoading) return;
     _sexoLoading = true;
     try {
-      final res = await _api.postAction<dynamic>(
-        'carteirinha',
-        data: {'idmatricula': idMatricula},
-      );
-      final root = (res.data as Map).cast<String, dynamic>();
-      if (root['ok'] == true && root['data'] is Map) {
-        final data = (root['data'] as Map).cast<String, dynamic>();
-        final titularRaw = data['titular'];
-        String? sexoTxt;
-        if (titularRaw is Map) {
-          final tit = titularRaw.cast<String, dynamic>();
-          sexoTxt = (tit['sexo_txt'] ??
-              tit['sexoTxt'] ??
-              tit['sexo'])
-              ?.toString();
-        }
+      // Usa o mesmo serviço da DigitalCardView (API nova /carteirinha/dados)
+      final svc = CarteirinhaService.fromContext(context);
+      final data = await svc.carregarDados(idMatricula: idMatricula);
 
-        if (!mounted) return;
-        setState(() {
-          _sexoTxtHome = sexoTxt;
-          _sexoLoadedForMatricula = idMatricula;
-        });
+      String? sexoTxt;
+      final titularRaw = data['titular'];
+      if (titularRaw is Map) {
+        final tit = titularRaw.cast<String, dynamic>();
+        sexoTxt =
+            (tit['sexo_txt'] ?? tit['sexoTxt'] ?? tit['sexo'])?.toString();
       }
+
+      if (!mounted) return;
+      setState(() {
+        _sexoTxtHome = sexoTxt;
+        _sexoLoadedForMatricula = idMatricula;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _sexoTxtHome = null;
-        _sexoLoadedForMatricula =
-            idMatricula; // evita bater sem parar em caso de erro
+        // evita bater sem parar em caso de erro
+        _sexoLoadedForMatricula = idMatricula;
       });
     } finally {
       _sexoLoading = false;
@@ -224,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     try {
       final list = await _comSvc.listar(
-        limit: 3,          // quantidade exibida no card
+        limit: 3, // quantidade exibida no card
         categoria: 'home', // ou null / outra categoria se quiser
         q: null,
         forceRefresh: forceRefresh,

@@ -1,12 +1,14 @@
 // lib/frontend/views/screens/dependente_login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import 'package:ipasemnhdigital/frontend/views/screens/privacidade_screen.dart';
 import 'package:ipasemnhdigital/frontend/views/screens/termos_screen.dart';
 
 import '../../../../../backend/config/validators.dart';
 import '../../../../../backend/controller/login_dependente_controller.dart';
-import '../../../../../common/config/api_router.dart';
+import '../../../../../common/config/dev_api.dart';
 import '../../../../../common/config/app_config.dart';
 import '../../../../../common/data/consent_store.dart';
 import '../../../../../common/repositories/auth_repository.dart';
@@ -39,7 +41,8 @@ class _DependenteLoginScreenState extends State<DependenteLoginScreen> {
     super.didChangeDependencies();
     if (_controllerReady) return;
 
-    final repo = AuthRepository(ApiRouter.client());
+    final api = DevApi();              // <- aqui o novo client
+    final repo = AuthRepository(api);
     _c = DependentLoginController(
       repo: repo,
       appConfig: AppConfig.maybeOf(context),
@@ -113,6 +116,65 @@ class _DependenteLoginScreenState extends State<DependenteLoginScreen> {
     }
     _snack('É necessário aceitar os termos para continuar.');
     return false;
+  }
+
+  /// Monta a URL de "primeiro acesso do dependente" conforme o ambiente (98 x produção).
+  String _buildPrimeiroAcessoUrl() {
+    final baseApiUrl =
+        AppConfig.maybeOf(context)?.params.baseApiUrl ?? '';
+
+    Uri? u;
+    try {
+      u = Uri.parse(baseApiUrl);
+    } catch (_) {
+      u = null;
+    }
+
+    final host = (u?.host ?? '').toLowerCase();
+
+    // Produção (assistweb/ipasemnh.com.br)
+    if (host.contains('ipasemnh.com.br')) {
+      return 'https://assistweb.ipasemnh.com.br/dependente/primeiro-acesso-dependente';
+    }
+
+    // Ambiente 98 (testes)
+    if (host == '192.9.200.98') {
+      // Se precisar de porta 81 aqui, basta ajustar:
+      // return 'http://192.9.200.98:81/dependente/primeiro-acesso-dependente';
+      return 'http://192.9.200.98/dependente/primeiro-acesso-dependente';
+    }
+
+    // Fallback seguro
+    return 'https://assistweb.ipasemnh.com.br/dependente/primeiro-acesso-dependente';
+  }
+
+  /// Abre o fluxo de primeiro acesso do dependente no navegador,
+  /// reaproveitando o CPF digitado (se válido).
+  Future<void> _openPrimeiroAcessoDependente() async {
+    var url = _buildPrimeiroAcessoUrl();
+
+    // Reaproveita CPF digitado (somente dígitos, 11 posições)
+    final cpfDigits = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
+    if (cpfDigits.length == 11) {
+      final uri = Uri.parse(url);
+      url = uri
+          .replace(
+        queryParameters: {
+          ...uri.queryParameters,
+          'cpf': cpfDigits,
+        },
+      )
+          .toString();
+    }
+
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!ok && mounted) {
+      _snack('Não foi possível abrir o primeiro acesso do dependente.');
+    }
   }
 
   Future<void> _submit() async {
@@ -239,6 +301,7 @@ class _DependenteLoginScreenState extends State<DependenteLoginScreen> {
                         ),
                         const SizedBox(height: 16),
 
+                        // Botão de login
                         ValueListenableBuilder<bool>(
                           valueListenable: _c.loading,
                           builder: (_, busy, __) => SizedBox(
@@ -270,6 +333,17 @@ class _DependenteLoginScreenState extends State<DependenteLoginScreen> {
                                 ),
                               ),
                             ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // Link "Primeiro acesso?"
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _openPrimeiroAcessoDependente,
+                            child: const Text('Primeiro acesso?'),
                           ),
                         ),
                       ],

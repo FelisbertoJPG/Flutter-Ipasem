@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../backend/controller/login_controller.dart';
 import '../../../common/config/app_config.dart';
 import '../../../backend/config/validators.dart';
+import '../../../common/config/dev_api.dart';
 import '../../../common/data/consent_store.dart';
 import '../../../common/repositories/auth_repository.dart';
 import '../../../common/config/api_router.dart';
@@ -45,14 +46,19 @@ class _LoginScreenState extends State<LoginScreen> {
     super.didChangeDependencies();
     if (_controllerReady) return;
 
-    // Cliente HTTP via ApiRouter
-    final repo = AuthRepository(ApiRouter.client());
-    _c = LoginController(repo: repo, appConfig: AppConfig.maybeOf(context));
+    // Cliente HTTP via DevApi
+    final api = DevApi();
+    final repo = AuthRepository(api);
+
+    _c = LoginController(
+      repo: repo,
+      appConfig: AppConfig.maybeOf(context),
+    );
     _controllerReady = true;
 
-    // Restaura prefs (NÃO navega)
     _restoreFromController();
   }
+
 
   Future<void> _restoreFromController() async {
     await _c.init();

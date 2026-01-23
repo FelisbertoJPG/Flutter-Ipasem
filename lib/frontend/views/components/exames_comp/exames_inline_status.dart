@@ -1,12 +1,10 @@
-// lib/ui/components/exames_inline_status.dart
+// lib/frontend/views/components/exames_comp/exames_inline_status.dart
 import 'package:flutter/material.dart';
 
 import '../../../../common/models/exame.dart';
 import '../../../../common/repositories/exames_repository.dart';
-import '../../../../common/config/api_router.dart';
 import '../../../../common/services/session.dart';
 import '../../../../common/state/auth_events.dart';
-
 
 class ExamesInlineStatusList extends StatefulWidget {
   const ExamesInlineStatusList({
@@ -27,6 +25,8 @@ class ExamesInlineStatusList extends StatefulWidget {
 
 class _ExamesInlineStatusListState extends State<ExamesInlineStatusList> {
   late ExamesRepository _repo;
+  bool _repoConfiguredFromContext = false;
+
   bool _loading = false;
   List<ExameResumo> _items = const [];
 
@@ -39,6 +39,10 @@ class _ExamesInlineStatusListState extends State<ExamesInlineStatusList> {
   @override
   void initState() {
     super.initState();
+
+    // Repo inicial (fallback via env / API_BASE -> ApiRouter.apiRootUri)
+    _repo = ExamesRepository.client();
+
     _onIssued = () => _refreshThrottle();
     AuthEvents.instance.lastIssued.addListener(_onIssued!);
 
@@ -47,14 +51,18 @@ class _ExamesInlineStatusListState extends State<ExamesInlineStatusList> {
 
     _onStatusChanged = () => _refreshThrottle();
     AuthEvents.instance.exameStatusChanged.addListener(_onStatusChanged!);
-
-    // Inicializa o repositório já com o DevApi configurado via ApiRouter
-    _repo = ExamesRepository(ApiRouter.client());
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    // Ao ter contexto, reconfigura o repo com a base do AppConfig/flavor
+    if (!_repoConfiguredFromContext) {
+      _repo = ExamesRepository.fromContext(context);
+      _repoConfiguredFromContext = true;
+    }
+
     if (_items.isEmpty && !_loading) {
       _load();
     }
@@ -121,7 +129,8 @@ class _ExamesInlineStatusListState extends State<ExamesInlineStatusList> {
           ],
         ),
         const SizedBox(height: 10),
-        if (_loading) const _SkeletonList()
+        if (_loading)
+          const _SkeletonList()
         else if (_items.isEmpty)
           const _Empty()
         else
@@ -219,6 +228,7 @@ class _Empty extends StatelessWidget {
 
 class _ExamTile extends StatelessWidget {
   const _ExamTile({required this.exame, this.onTap});
+
   final ExameResumo exame;
   final VoidCallback? onTap;
 
@@ -226,9 +236,11 @@ class _ExamTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = (exame.status ?? '').toUpperCase();
     final isLiberado = st == 'A';
-    final chipColor = isLiberado ? const Color(0xFF12B76A) : const Color(0xFF7A5AF8);
-    final chipBg    = isLiberado ? const Color(0xFFEFFDF5) : const Color(0xFFF1EFFE);
-    final chipText  = isLiberado ? 'Liberado' : 'Pendente';
+    final chipColor =
+    isLiberado ? const Color(0xFF12B76A) : const Color(0xFF7A5AF8);
+    final chipBg =
+    isLiberado ? const Color(0xFFEFFDF5) : const Color(0xFFF1EFFE);
+    final chipText = isLiberado ? 'Liberado' : 'Pendente';
 
     return Material(
       color: Colors.transparent,
@@ -255,19 +267,26 @@ class _ExamTile extends StatelessWidget {
                       exame.prestador,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Color(0xFF667085), fontSize: 12.5),
+                      style: const TextStyle(
+                        color: Color(0xFF667085),
+                        fontSize: 12.5,
+                      ),
                     ),
                     const SizedBox(height: 1),
                     Text(
                       exame.dataHora.isEmpty ? '—' : exame.dataHora,
-                      style: const TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
+                      style: const TextStyle(
+                        color: Color(0xFF98A2B3),
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: chipBg,
                   borderRadius: BorderRadius.circular(999),

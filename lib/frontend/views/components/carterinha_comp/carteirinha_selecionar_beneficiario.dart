@@ -1,10 +1,10 @@
-// lib/screens/carteirinha_selecionar_beneficiario.dart
+// lib/frontend/views/components/carterinha_comp/carteirinha_selecionar_beneficiario.dart
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../../../common/models/dependent.dart';
-import '../../../../common/config/api_router.dart';
 import '../../../../common/config/dev_api.dart';
+import '../../../../common/repositories/dependents_repository.dart';
 import '../../../../common/services/session.dart';
 
 /// Abre um bottom-sheet para escolher o beneficiário (Titular ou dependentes).
@@ -37,8 +37,8 @@ class _BeneficiarySheet extends StatefulWidget {
 }
 
 class _BeneficiarySheetState extends State<_BeneficiarySheet> {
-  DevApi? _api; // resolvida em didChangeDependencies
-  bool _apiReady = false;
+  late final DependentsRepository _depsRepo;
+  bool _initialized = false;
 
   bool _loading = true;
   String? _warning; // mensagem leve quando cair em fallback
@@ -49,11 +49,12 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Resolve a API UMA vez: prioriza a injetada; senão usa a base padrão do app (ApiRouter)
-    if (!_apiReady) {
-      _api = widget.api ?? ApiRouter.client();
-      _apiReady = true;
-      _load(); // dispara o fetch após resolver a API correta
+    // Resolve o repositório UMA vez: prioriza o DevApi injetado; senão cria um novo.
+    if (!_initialized) {
+      final api = widget.api ?? DevApi();
+      _depsRepo = DependentsRepository(api);
+      _initialized = true;
+      _load(); // dispara o fetch após resolver o repo correto
     }
   }
 
@@ -72,7 +73,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
       List<Dependent> list = const [];
 
       try {
-        list = await _api!.fetchDependentes(widget.idMatricula);
+        // Nova chamada via repositório (REST /api/v1/titular/dependentes)
+        list = await _depsRepo.listByMatricula(widget.idMatricula);
       } catch (_) {
         // Se falhar a chamada, seguimos com lista vazia e usamos fallback abaixo
         list = const [];
@@ -248,8 +250,9 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
 
     final dd = dt.day.toString().padLeft(2, '0');
     final mm = dt.month.toString().padLeft(2, '0');
-    final year =
-    short ? (dt.year % 100).toString().padLeft(2, '0') : dt.year.toString().padLeft(4, '0');
+    final year = short
+        ? (dt.year % 100).toString().padLeft(2, '0')
+        : dt.year.toString().padLeft(4, '0');
     return '$dd-$mm-$year';
   }
 
@@ -268,7 +271,11 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
             color: surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
             boxShadow: const [
-              BoxShadow(blurRadius: 16, offset: Offset(0, -4), color: Colors.black26)
+              BoxShadow(
+                blurRadius: 16,
+                offset: Offset(0, -4),
+                color: Colors.black26,
+              )
             ],
           ),
           child: SafeArea(
@@ -297,7 +304,6 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                   ),
                 ),
                 const SizedBox(height: 8),
-
                 if (_loading)
                   const Padding(
                     padding: EdgeInsets.all(24),
@@ -309,14 +315,18 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline,
-                              size: 18, color: theme.colorScheme.secondary),
+                          Icon(
+                            Icons.info_outline,
+                            size: 18,
+                            color: theme.colorScheme.secondary,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _warning!,
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: theme.colorScheme.secondary),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.secondary,
+                              ),
                             ),
                           ),
                         ],
@@ -348,20 +358,23 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                             onTap: () =>
                                 setState(() => _selectedIdDep = d.iddependente),
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                              padding:
+                              const EdgeInsets.fromLTRB(8, 6, 8, 6),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Radio<int>(
                                     value: d.iddependente,
                                     groupValue: _selectedIdDep,
-                                    onChanged: (v) =>
-                                        setState(() => _selectedIdDep = v ?? 0),
+                                    onChanged: (v) => setState(
+                                          () => _selectedIdDep = v ?? 0,
+                                    ),
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                       children: [
                                         Row(
                                           children: [
@@ -380,15 +393,19 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                               Container(
                                                 padding:
                                                 const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4),
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
                                                 decoration: BoxDecoration(
                                                   borderRadius:
-                                                  BorderRadius.circular(999),
-                                                  color: theme.colorScheme.primary
+                                                  BorderRadius.circular(
+                                                      999),
+                                                  color: theme
+                                                      .colorScheme.primary
                                                       .withOpacity(0.10),
                                                   border: Border.all(
-                                                    color: theme.colorScheme.primary
+                                                    color: theme
+                                                        .colorScheme.primary
                                                         .withOpacity(0.35),
                                                   ),
                                                 ),
@@ -397,8 +414,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                                   style: TextStyle(
                                                     fontSize: 11,
                                                     fontWeight: FontWeight.w600,
-                                                    color:
-                                                    theme.colorScheme.primary,
+                                                    color: theme
+                                                        .colorScheme.primary,
                                                   ),
                                                 ),
                                               ),
@@ -410,9 +427,11 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                           runSpacing: 2,
                                           children: [
                                             if ((d.cpf ?? '').isNotEmpty)
-                                              Text('CPF: ${d.cpf}',
-                                                  style: theme
-                                                      .textTheme.bodySmall),
+                                              Text(
+                                                'CPF: ${d.cpf}',
+                                                style: theme
+                                                    .textTheme.bodySmall,
+                                              ),
                                             if (d.dtNasc != null &&
                                                 d.dtNasc!.isNotEmpty)
                                               Text(
@@ -421,13 +440,15 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                                     .textTheme.bodySmall,
                                               ),
                                             if (d.idade != null)
-                                              Text('Idade: ${d.idade}',
-                                                  style: theme
-                                                      .textTheme.bodySmall),
+                                              Text(
+                                                'Idade: ${d.idade}',
+                                                style: theme
+                                                    .textTheme.bodySmall,
+                                              ),
                                             Text(
                                               'Matr.: ${d.idmatricula}-${d.iddependente}',
-                                              style:
-                                              theme.textTheme.bodySmall,
+                                              style: theme
+                                                  .textTheme.bodySmall,
                                             ),
                                           ],
                                         ),
@@ -438,7 +459,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                                   const SizedBox(width: 8),
                                   CircleAvatar(
                                     radius: 18,
-                                    backgroundColor: theme.colorScheme.primary
+                                    backgroundColor: theme
+                                        .colorScheme.primary
                                         .withOpacity(0.10),
                                     child: Icon(
                                       _genderIcon(d.sexo),
@@ -455,7 +477,6 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                     ),
                   ),
                 ],
-
                 const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -472,7 +493,8 @@ class _BeneficiarySheetState extends State<_BeneficiarySheet> {
                         child: ElevatedButton(
                           onPressed: _loading
                               ? null
-                              : () => Navigator.pop(context, _selectedIdDep),
+                              : () =>
+                              Navigator.pop(context, _selectedIdDep),
                           child: const Text('Confirmar'),
                         ),
                       ),

@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../common/config/dev_api.dart';
 import '../../../common/services/session.dart';
 import '../../../common/models/dependent.dart';
 import '../../../common/config/api_router.dart';
@@ -40,7 +41,7 @@ class _HomeServicosState extends State<HomeServicos> with WebViewWarmup {
 
   // Repositório para detectar se o login atual é de dependente
   late final DependentsRepository _depsRepo =
-  DependentsRepository(ApiRouter.client());
+  DependentsRepository(DevApi());
 
   @override
   void initState() {

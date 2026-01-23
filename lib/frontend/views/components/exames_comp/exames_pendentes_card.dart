@@ -1,12 +1,12 @@
+// lib/frontend/views/components/exames_comp/exames_pendentes_card.dart
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../../../common/config/app_config.dart';
+
 import '../../../../common/models/exame.dart';
 import '../../../../common/repositories/exames_repository.dart';
-import '../../../../common/config/dev_api.dart';
 import '../../../../common/services/session.dart';
 import '../../../../common/state/auth_events.dart';
 import '../loading_placeholder.dart';
@@ -27,7 +27,6 @@ class ExamesPendentesCard extends StatefulWidget {
 }
 
 class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
-  late DevApi _api;
   late ExamesRepository _repo;
   bool _ready = false;
 
@@ -52,11 +51,8 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
     super.didChangeDependencies();
     if (_ready) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-
-    _api = DevApi(baseUrl);
-    _repo = ExamesRepository(_api);
+    // Usa a base/config atual via ApiRouter/AppConfig internamente
+    _repo = ExamesRepository.fromContext(context);
 
     // Auto-refresh quando uma autorização é emitida (issue) ou impressa (A->R)
     _issuedListener = () => Future.microtask(_load);
@@ -130,7 +126,9 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       });
     } catch (e) {
       setState(() {
-        _error = kDebugMode ? 'Erro ao carregar pendentes: $e' : 'Erro ao carregar pendentes.';
+        _error = kDebugMode
+            ? 'Erro ao carregar pendentes: $e'
+            : 'Erro ao carregar pendentes.';
         _loading = false;
       });
     }
@@ -173,7 +171,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: const Radius.circular(16)),
       ),
       builder: (_) => _ExamesPendentesModal(
         repo: _repo,
@@ -193,7 +191,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: const Radius.circular(16)),
       ),
       builder: (_) => _AtualizacoesModal(
         repo: _repo,
@@ -214,7 +212,7 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: const Radius.circular(16)),
       ),
       builder: (_) => ExameDetalheSheet(
         repo: _repo,
@@ -239,7 +237,10 @@ class _ExamesPendentesCardState extends State<ExamesPendentesCard> {
         title: 'Autorizações de Exames (pendentes)',
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Text(_error!, style: const TextStyle(color: Colors.red)),
+          child: Text(
+            _error!,
+            style: const TextStyle(color: Colors.red),
+          ),
         ),
       );
     }
@@ -292,7 +293,8 @@ class _TileResumo extends StatelessWidget {
       dense: true,
       leading: const Icon(Icons.hourglass_empty_outlined),
       title: Text(
-        '${a.paciente.isEmpty ? "Paciente" : a.paciente} • ${a.prestador.isEmpty ? "Prestador" : a.prestador}',
+        '${a.paciente.isEmpty ? "Paciente" : a.paciente} • '
+            '${a.prestador.isEmpty ? "Prestador" : a.prestador}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -342,7 +344,8 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
       });
     } catch (e) {
       setState(() {
-        _error = kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
+        _error =
+        kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
         _loading = false;
       });
     }
@@ -354,7 +357,7 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: const Radius.circular(16)),
       ),
       builder: (_) => ExameDetalheSheet(
         repo: widget.repo,
@@ -378,22 +381,36 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40, height: 5,
-                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
               const SizedBox(height: 10),
               const Text(
                 'Autorizações de Exames (pendentes)',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 8),
               Expanded(
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : (_error != null)
-                    ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                    ? Center(
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                )
                     : (_rows.isEmpty)
-                    ? const Center(child: Text('Nenhum exame pendente.'))
+                    ? const Center(
+                  child: Text('Nenhum exame pendente.'),
+                )
                     : ListView.builder(
                   controller: controller,
                   itemCount: _rows.length,
@@ -407,7 +424,8 @@ class _ExamesPendentesModalState extends State<_ExamesPendentesModal> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(a.dataHora),
-                      trailing: const Icon(Icons.chevron_right),
+                      trailing:
+                      const Icon(Icons.chevron_right),
                       onTap: () => _openDetail(a),
                     );
                   },
@@ -473,17 +491,21 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
 
         final isLiberada = liberadasSet.contains(n);
 
-        out.add(_StatusConsulta(
-          numero: n,
-          liberada: isLiberada,
-          dados: dados,
-        ));
+        out.add(
+          _StatusConsulta(
+            numero: n,
+            liberada: isLiberada,
+            dados: dados,
+          ),
+        );
       } catch (e) {
-        out.add(_StatusConsulta(
-          numero: n,
-          liberada: false,
-          erro: e.toString(),
-        ));
+        out.add(
+          _StatusConsulta(
+            numero: n,
+            liberada: false,
+            erro: e.toString(),
+          ),
+        );
       }
     }
     // Ordena: liberadas primeiro
@@ -497,7 +519,7 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: const Radius.circular(16)),
       ),
       builder: (_) => ExameDetalheSheet(
         repo: widget.repo,
@@ -523,13 +545,20 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40, height: 5,
-                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
               const SizedBox(height: 10),
               Text(
                 'Atualizações de situação (${widget.numeros.length} $plural)',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 8),
               Expanded(
@@ -539,13 +568,23 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
                     if (!snap.hasData) {
                       if (snap.hasError) {
                         return Center(
-                          child: Text('Erro: ${snap.error}', style: const TextStyle(color: Colors.red)),
+                          child: Text(
+                            'Erro: ${snap.error}',
+                            style:
+                            const TextStyle(color: Colors.red),
+                          ),
                         );
                       }
-                      return const Center(child: CircularProgressIndicator());
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
                     }
                     final rows = snap.data!;
-                    if (rows.isEmpty) return const Center(child: Text('Nada a mostrar.'));
+                    if (rows.isEmpty) {
+                      return const Center(
+                        child: Text('Nada a mostrar.'),
+                      );
+                    }
                     return ListView.builder(
                       controller: controller,
                       itemCount: rows.length,
@@ -557,9 +596,16 @@ class _AtualizacoesModalState extends State<_AtualizacoesModal> {
                             ? 'Falha ao consultar'
                             : 'Atualizada — toque para verificar');
                         return ListTile(
-                          leading: Icon(s.liberada ? Icons.check_circle_outline : Icons.info_outline),
+                          leading: Icon(
+                            s.liberada
+                                ? Icons.check_circle_outline
+                                : Icons.info_outline,
+                          ),
                           title: Text('Autorização nº ${s.numero}'),
-                          subtitle: Text(subt, maxLines: 2),
+                          subtitle: Text(
+                            subt,
+                            maxLines: 2,
+                          ),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => _openDetail(s),
                         );

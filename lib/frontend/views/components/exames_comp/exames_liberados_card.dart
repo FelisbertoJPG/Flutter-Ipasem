@@ -1,15 +1,13 @@
-// lib/ui/components/exames_liberados_card.dart
+// lib/frontend/views/components/exames_comp/exames_liberados_card.dart
 import 'package:flutter/material.dart';
-import '../../../../common/config/app_config.dart';
+
 import '../../../../common/models/exame.dart';
 import '../../../../common/repositories/exames_repository.dart';
-import '../../../../common/config/dev_api.dart';
 import '../../../../common/services/session.dart';
 import '../cards/section_card.dart';
 import '../loading_placeholder.dart';
 import '../../sheets/exame_detalhe_sheet.dart';
 import '../../ui/utils/print_helpers.dart';
-
 
 class ExamesLiberadosCard extends StatefulWidget {
   const ExamesLiberadosCard({super.key});
@@ -19,7 +17,6 @@ class ExamesLiberadosCard extends StatefulWidget {
 }
 
 class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
-  late DevApi _api;
   late ExamesRepository _repo;
   bool _ready = false;
 
@@ -32,10 +29,8 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
     super.didChangeDependencies();
     if (_ready) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-    _api = DevApi(baseUrl);
-    _repo = ExamesRepository(_api);
+    // Usa a base/config do AppConfig/ApiRouter via factory do repositório
+    _repo = ExamesRepository.fromContext(context);
 
     _ready = true;
     _load();
@@ -43,7 +38,11 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; _itens = const []; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      _itens = const [];
+    });
 
     try {
       final profile = await Session.getProfile();
@@ -57,20 +56,31 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         return;
       }
 
-      final rows = await _repo.listarLiberadas(idMatricula: profile.id, limit: 0);
+      final rows =
+      await _repo.listarLiberadas(idMatricula: profile.id, limit: 0);
       if (!mounted) return;
 
       rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
-      setState(() { _itens = rows; _loading = false; });
+      setState(() {
+        _itens = rows;
+        _loading = false;
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _error = 'Erro ao carregar autorizações.'; _loading = false; });
+      setState(() {
+        _error = 'Erro ao carregar autorizações.';
+        _loading = false;
+      });
     }
   }
 
   Future<void> _openPdfNoApp(int numero) async {
     if (!mounted) return;
-    await openPreviewFromNumeroExame(context, numero, useRootNavigator: true);
+    await openPreviewFromNumeroExame(
+      context,
+      numero,
+      useRootNavigator: true,
+    );
   }
 
   void _abrirDetalhe(ExameResumo a) async {
@@ -90,7 +100,6 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         numero: a.numero,
         resumo: a,
         onPdfNoApp: _openPdfNoApp,
-        // vindo da lista de "liberadas": força o botão habilitado se quiser
         // forcePodeImprimir: true,
       ),
     ).then((_) {
@@ -134,7 +143,10 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
         title: 'Autorizações de Exames (liberadas)',
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Text(_error!, style: const TextStyle(color: Colors.red)),
+          child: Text(
+            _error!,
+            style: const TextStyle(color: Colors.red),
+          ),
         ),
       );
     }
@@ -144,14 +156,18 @@ class _ExamesLiberadosCardState extends State<ExamesLiberadosCard> {
 
     return SectionCard(
       title: 'Autorizações de Exames (liberadas)',
-      trailing: TextButton(onPressed: _verTodas, child: const Text('Ver todas')),
+      trailing: TextButton(
+        onPressed: _verTodas,
+        child: const Text('Ver todas'),
+      ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         dense: true,
         leading: const Icon(Icons.check_circle_outline),
         title: Text(
           '${first.paciente} • ${first.prestador}',
-          maxLines: 1, overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(first.dataHora),
         trailing: const Icon(Icons.chevron_right),
@@ -189,15 +205,29 @@ class _LiberadasModalState extends State<_LiberadasModal> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; _rows = const []; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      _rows = const [];
+    });
+
     try {
-      final rows = await widget.repo.listarLiberadas(idMatricula: widget.idMatricula, limit: 0);
+      final rows = await widget.repo.listarLiberadas(
+        idMatricula: widget.idMatricula,
+        limit: 0,
+      );
       if (!mounted) return;
       rows.sort((a, b) => b.dataHora.compareTo(a.dataHora));
-      setState(() { _rows = rows; _loading = false; });
+      setState(() {
+        _rows = rows;
+        _loading = false;
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _error = 'Erro ao carregar.'; _loading = false; });
+      setState(() {
+        _error = 'Erro ao carregar.';
+        _loading = false;
+      });
     }
   }
 
@@ -236,35 +266,54 @@ class _LiberadasModalState extends State<_LiberadasModal> {
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40, height: 5,
-                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
               const SizedBox(height: 10),
               const Text(
                 'Autorizações de Exames (liberadas)',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 8),
               Expanded(
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : (_error != null)
-                    ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                    ? Center(
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                )
                     : (_rows.isEmpty)
-                    ? const Center(child: Text('Nenhuma autorização liberada.'))
+                    ? const Center(
+                  child: Text('Nenhuma autorização liberada.'),
+                )
                     : ListView.builder(
                   controller: controller,
                   itemCount: _rows.length,
                   itemBuilder: (_, i) {
                     final a = _rows[i];
                     return ListTile(
-                      leading: const Icon(Icons.check_circle_outline),
+                      leading: const Icon(
+                        Icons.check_circle_outline,
+                      ),
                       title: Text(
                         '${a.paciente} • ${a.prestador}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(a.dataHora),
-                      trailing: const Icon(Icons.chevron_right),
+                      trailing: const Icon(
+                        Icons.chevron_right,
+                      ),
                       onTap: () => _abrirDetalhe(a),
                     );
                   },
@@ -277,4 +326,3 @@ class _LiberadasModalState extends State<_LiberadasModal> {
     );
   }
 }
-

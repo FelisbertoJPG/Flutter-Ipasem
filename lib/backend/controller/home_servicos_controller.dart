@@ -1,9 +1,10 @@
+// lib/backend/controller/home_servicos_controller.dart
 import 'package:flutter/material.dart';
 
-import '../../common/config/app_config.dart';
+import '../../common/config/api_router.dart';
+import '../../common/config/dev_api.dart';
 import '../../common/models/reimpressao.dart';
 import '../../common/repositories/reimpressao_repository.dart';
-import '../../common/config/dev_api.dart';
 import '../../common/services/session.dart';
 
 class HomeServicosController {
@@ -14,10 +15,14 @@ class HomeServicosController {
 
   static Future<HomeServicosController> init(BuildContext context) async {
     final c = HomeServicosController._();
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-    c.api = DevApi(baseUrl);
+
+    // Garante que o ApiRouter use a base da flavor/AppConfig (se existir).
+    ApiRouter.configureFromContext(context);
+
+    // DevApi agora usa sempre ApiRouter.apiRootUri internamente (/api/v1).
+    c.api = DevApi();
     c.reimpRepo = ReimpressaoRepository(c.api);
+
     return c;
   }
 
@@ -42,7 +47,8 @@ class HomeServicosController {
     final profile = await Session.getProfile();
     return profile?.nome;
   }
-  // HomeServicosController
+
+  /// Aguarda até que o número apareça no histórico (polling leve).
   Future<bool> waitUntilInHistorico(
       int numero, {
         Duration maxWait = const Duration(seconds: 4),
@@ -53,10 +59,10 @@ class HomeServicosController {
     while (DateTime.now().difference(start) < maxWait) {
       final rows = await loadHistorico();
       if (rows.any((r) => r.numero == numero)) return true;
+
       await Future.delayed(delay);
       delay *= 2;
     }
     return false;
   }
-
 }

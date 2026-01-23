@@ -2,17 +2,18 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../frontend/views/components/app_alert.dart';
 import '../../config/dev_api.dart';
-import '../../services/session.dart';
 import '../../state/auth_events.dart';
-import 'package:flutter/widgets.dart';
+import '../session.dart';
 
 class ExameStatusChangedEvent {
   final int numero;
   final String novoStatus;    // 'A' (liberada) | 'I' (negada) | 'P' etc.
   final String? antigoStatus; // opcional
+
   ExameStatusChangedEvent({
     required this.numero,
     required this.novoStatus,
@@ -31,7 +32,7 @@ class ExameStatusPoller {
 
   ExameStatusPoller({
     required this.api,
-    this.interval = const Duration(seconds: 30), //duração
+    this.interval = const Duration(seconds: 30),
     this.contextProvider,
   });
 
@@ -51,42 +52,54 @@ class ExameStatusPoller {
   Future<void> _safePoll() async {
     if (_busy) return;
     _busy = true;
+
     try {
       final profile = await Session.getProfile();
       if (profile == null) return;
 
-      final res = await api.postAction('exames_historico', data: {
-        'id_matricula': profile.id,
-      });
+      // Nova chamada REST: GET /api/v1/exames/historico?id_matricula=...
+      final res = await api.get<dynamic>(
+        '/exames/historico',
+        queryParameters: {
+          'id_matricula': profile.id,
+        },
+      );
 
-      final body = (res.data as Map?) ?? const {};
+      final body = (res.data is Map)
+          ? (res.data as Map).cast<String, dynamic>()
+          : const <String, dynamic>{};
+
       if (body['ok'] != true) return;
 
       final rows = ((body['data'] as Map?)?['rows'] as List?) ?? const [];
       final current = <int, String>{};
+
       for (final r in rows) {
-        final m = (r as Map);
-        final num = int.tryParse('${m['nro_autorizacao'] ?? m['numero'] ?? 0}') ?? 0;
+        final m = (r as Map).cast<String, dynamic>();
+        final num =
+            int.tryParse('${m['nro_autorizacao'] ?? m['numero'] ?? 0}') ?? 0;
         if (num <= 0) continue;
+
         final st = (m['auditado'] ?? '').toString().trim().toUpperCase();
         current[num] = st;
       }
 
-      // detecta mudanças relevantes (P->A ou P->I, etc)
+      // Detecta mudanças relevantes (P->A, P->I, etc.)
       final changes = <ExameStatusChangedEvent>[];
       current.forEach((num, st) {
         final prev = _cache[num];
         if (prev != null && prev != st && (st == 'A' || st == 'I')) {
-          changes.add(ExameStatusChangedEvent(
-            numero: num,
-            novoStatus: st,
-            antigoStatus: prev,
-          ));
+          changes.add(
+            ExameStatusChangedEvent(
+              numero: num,
+              novoStatus: st,
+              antigoStatus: prev,
+            ),
+          );
         }
       });
 
       if (changes.isNotEmpty) {
-        // dispara evento global + toast
         final ctx = contextProvider?.call();
         for (final c in changes) {
           AuthEvents.instance.emitStatusChanged(c.numero, c.novoStatus);
@@ -102,6 +115,7 @@ class ExameStatusPoller {
       _cache = current;
       await _saveCache();
     } catch (_) {
+      // silencioso para não quebrar o loop
     } finally {
       _busy = false;
     }
@@ -114,7 +128,7 @@ class ExameStatusPoller {
       final map = (jsonDecode(raw) as Map).cast<String, dynamic>();
       _cache = {
         for (final e in map.entries)
-          int.parse(e.key): (e.value as String).toUpperCase()
+          int.parse(e.key): (e.value as String).toUpperCase(),
       };
     } catch (_) {
       _cache = {};
@@ -123,7 +137,9 @@ class ExameStatusPoller {
 
   Future<void> _saveCache() async {
     final prefs = await SharedPreferences.getInstance();
-    final enc = jsonEncode(_cache.map((k, v) => MapEntry(k.toString(), v)));
+    final enc = jsonEncode(
+      _cache.map((k, v) => MapEntry(k.toString(), v)),
+    );
     await prefs.setString('exames_status_cache', enc);
   }
 }

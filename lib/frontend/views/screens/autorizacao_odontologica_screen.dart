@@ -77,7 +77,7 @@ class _AutorizacaoOdontologicaScreenState
     if (_reposReady) return;
 
     // Fonte única de verdade para a base/gateway
-    _api = ApiRouter.client();
+    _api = DevApi();
     _depsRepo = DependentsRepository(_api);
     _espRepo = EspecialidadesRepository(_api);
     _prestRepo = PrestadoresRepository(_api);

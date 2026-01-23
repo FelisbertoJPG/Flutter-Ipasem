@@ -1,32 +1,41 @@
 // lib/repositories/exames_repository.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
-import 'package:flutter/widgets.dart'; // BuildContext para fromContext
+import 'package:flutter/widgets.dart';
 
 import '../models/exame.dart';
+import '../config/api_router.dart';
 import '../config/dev_api.dart';
-import '../config/api_router.dart'; // resolve base via AppConfig/env
 import '../state/auth_events.dart';
 
 class ExamesRepository {
   ExamesRepository(this._api);
+
   final DevApi _api;
 
   /// Usa a base do `AppConfig` do contexto atual (main ativo).
   factory ExamesRepository.fromContext(BuildContext context) {
-    return ExamesRepository(ApiRouter.fromContext(context));
+    // Garante que ApiRouter esteja configurado com base no AppConfig, se disponível.
+    ApiRouter.fromContext(context);
+    return ExamesRepository(DevApi());
   }
 
   /// Usa `API_BASE` (ou PROD como fallback) quando não há contexto.
   factory ExamesRepository.client({DevApi? api}) {
-    return ExamesRepository(api ?? ApiRouter.client());
+    return ExamesRepository(api ?? DevApi());
   }
 
   // --------------------------------- Constantes de status ---------------------------------
-  static const _stPendente   = 'P';
-  static const _stAprovado   = 'A';
-  static const _stImpresso   = 'R';
+  static const _stPendente = 'P';
+  static const _stAprovado = 'A';
+  static const _stImpresso = 'R';
   static const _stIndeferido = 'I';
+
+  // --------------------------------- Endpoints REST ---------------------------------------
+  // Ajuste aqui se seus paths forem outros.
+  static const String _epHistorico = '/exames/historico';
+  static const String _epConsulta = '/exames/consulta';
+  static const String _epConcluir = '/exames/concluir';
 
   // --------------------------------- Utilidades privadas ----------------------------------
 
@@ -75,7 +84,7 @@ class ExamesRepository {
       if (p.length == 3) {
         final dd = int.tryParse(p[0]) ?? 1;
         final mm = int.tryParse(p[1]) ?? 1;
-        var yy   = int.tryParse(p[2]) ?? 1970;
+        var yy = int.tryParse(p[2]) ?? 1970;
         if (yy < 100) yy += 2000;
 
         final nh = _normalizeH(h).split(':');
@@ -105,20 +114,37 @@ class ExamesRepository {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchHistoricoRaw(int idMatricula) async {
-    final res = await _api.postAction('exames_historico', data: {
-      'id_matricula': idMatricula,
-    });
+  Map<String, dynamic> _expectOkEnvelope(Response res) {
+    final data = res.data;
+    if (data is! Map) {
+      throw DioException(
+        requestOptions: res.requestOptions,
+        response: res,
+        type: DioExceptionType.badResponse,
+        error: 'Resposta inválida (não é JSON objeto).',
+      );
+    }
 
-    final body = (res.data as Map).cast<String, dynamic>();
+    final body = data.cast<String, dynamic>();
     if (body['ok'] != true) {
       throw DioException(
         requestOptions: res.requestOptions,
         response: res,
         type: DioExceptionType.badResponse,
-        error: body['error'],
+        error: body['error'] ?? body,
       );
     }
+
+    return body;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchHistoricoRaw(int idMatricula) async {
+    final res = await _api.get<dynamic>(
+      _epHistorico,
+      queryParameters: {'id_matricula': idMatricula},
+    );
+
+    final body = _expectOkEnvelope(res);
 
     final rows = ((body['data'] as Map?)?['rows'] as List?) ?? const [];
     return rows
@@ -212,7 +238,8 @@ class ExamesRepository {
     return fut;
   }
 
-  Future<List<ExameResumo>> _listarHistoricoOrdenadoImpl(int idMatricula) async {
+  Future<List<ExameResumo>> _listarHistoricoOrdenadoImpl(
+      int idMatricula) async {
     final rows = await _fetchHistoricoRaw(idMatricula);
     final itens = rows.map((m) => ExameResumo.fromJson(m)).toList();
     itens.sort((a, b) => _parseResumoDate(b).compareTo(_parseResumoDate(a)));
@@ -245,10 +272,12 @@ class ExamesRepository {
     final cut = (limit > 0) ? negadas.take(limit).toList() : negadas;
 
     return cut.map<ExameResumo>((r) {
-      final numero    = int.tryParse('${r['nro_autorizacao'] ?? 0}') ?? 0;
-      final paciente  = (r['nome_dependente'] ?? r['nome_paciente'] ?? '').toString();
-      final prestador = (r['nome_prestador'] ?? r['nome_prestador_exec'] ?? '').toString();
-      final dataHora  = _mkDataHora(r);
+      final numero = int.tryParse('${r['nro_autorizacao'] ?? 0}') ?? 0;
+      final paciente =
+      (r['nome_dependente'] ?? r['nome_paciente'] ?? '').toString();
+      final prestador =
+      (r['nome_prestador'] ?? r['nome_prestador_exec'] ?? '').toString();
+      final dataHora = _mkDataHora(r);
       return ExameResumo(
         numero: numero,
         paciente: paciente,
@@ -265,22 +294,20 @@ class ExamesRepository {
     required int numero,
     required int idMatricula,
   }) async {
-    final res = await _api.postAction('exame_consulta', data: {
-      'numero': numero,
-      'id_matricula': idMatricula,
-    });
+    final res = await _api.get<dynamic>(
+      _epConsulta,
+      queryParameters: {
+        'numero': numero,
+        'id_matricula': idMatricula,
+      },
+    );
 
-    final body = (res.data as Map).cast<String, dynamic>();
-    if (body['ok'] != true) {
-      throw DioException(
-        requestOptions: res.requestOptions,
-        response: res,
-        type: DioExceptionType.badResponse,
-        error: body['error'],
-      );
-    }
+    final body = _expectOkEnvelope(res);
 
-    final data = (body['data'] as Map).cast<String, dynamic>();
+    final data = (body['data'] is Map)
+        ? (body['data'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+
     final map = (data['dados'] is Map)
         ? (data['dados'] as Map).cast<String, dynamic>()
         : data;
@@ -292,23 +319,22 @@ class ExamesRepository {
 
   /// Marca a autorização como "R" (primeira impressão/conclusão).
   /// Use **somente após** o PDF ter sido aberto com sucesso.
-  /// Backend: `exame_concluir` → `SpConcluiAutorizacaoExamesRepository`.
   Future<void> registrarPrimeiraImpressao(int numero) async {
     try {
-      final res = await _api.postAction('exame_concluir', data: {'numero': numero});
-      final body = (res.data as Map?)?.cast<String, dynamic>();
-      if (body != null && body['ok'] != true) {
-        throw DioException(
-          requestOptions: res.requestOptions,
-          response: res,
-          type: DioExceptionType.badResponse,
-          error: body['error'],
-        );
-      }
+      final res = await _api.post<dynamic>(
+        _epConcluir,
+        data: {'numero': numero},
+      );
+
+      final body = _expectOkEnvelope(res);
 
       // Notifica a aplicação; telas/listas podem reagir e recarregar.
       AuthEvents.instance.emitPrinted(numero);
       AuthEvents.instance.emitStatusChanged(numero, _stImpresso);
+
+      // Se quiser, pode usar o envelope aqui (body) para algo futuro.
+      // ignore: unused_local_variable
+      final _ = body;
     } on DioException {
       rethrow;
     } catch (e) {
