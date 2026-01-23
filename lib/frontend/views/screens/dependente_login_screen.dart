@@ -8,7 +8,7 @@ import 'package:ipasemnhdigital/frontend/views/screens/termos_screen.dart';
 
 import '../../../../../backend/config/validators.dart';
 import '../../../../../backend/controller/login_dependente_controller.dart';
-import '../../../../../common/config/api_router.dart';
+import '../../../../../common/config/dev_api.dart';
 import '../../../../../common/config/app_config.dart';
 import '../../../../../common/data/consent_store.dart';
 import '../../../../../common/repositories/auth_repository.dart';
@@ -41,7 +41,8 @@ class _DependenteLoginScreenState extends State<DependenteLoginScreen> {
     super.didChangeDependencies();
     if (_controllerReady) return;
 
-    final repo = AuthRepository(ApiRouter.client());
+    final api = DevApi();              // <- aqui o novo client
+    final repo = AuthRepository(api);
     _c = DependentLoginController(
       repo: repo,
       appConfig: AppConfig.maybeOf(context),

@@ -1,11 +1,10 @@
+// lib/frontend/views/components/exames_comp/exames_negadas_card.dart
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:ipasemnhdigital/frontend/views/components/cards/section_card.dart';
 
-import '../../../../common/config/app_config.dart';
 import '../../../../common/models/exame.dart';
 import '../../../../common/repositories/exames_repository.dart';
-import '../../../../common/config/dev_api.dart';
 import '../../../../common/services/session.dart';
 import '../../sheets/exame_detalhe_sheet.dart';
 import '../loading_placeholder.dart';
@@ -18,7 +17,6 @@ class ExamesNegadasCard extends StatefulWidget {
 }
 
 class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
-  late DevApi _api;
   late ExamesRepository _repo;
   bool _ready = false;
 
@@ -31,11 +29,8 @@ class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
     super.didChangeDependencies();
     if (_ready) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl
-        ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://192.9.200.98');
-
-    _api = DevApi(baseUrl);
-    _repo = ExamesRepository(_api);
+    // Usa a base/config atual via ApiRouter/AppConfig internamente
+    _repo = ExamesRepository.fromContext(context);
 
     _ready = true;
     _load();
@@ -71,7 +66,8 @@ class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = kDebugMode ? 'Erro ao carregar negadas: $e' : 'Erro ao carregar.';
+        _error =
+        kDebugMode ? 'Erro ao carregar negadas: $e' : 'Erro ao carregar.';
       });
     }
   }
@@ -87,7 +83,8 @@ class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => _ExamesNegadasModal(repo: _repo, idMatricula: profile.id),
+      builder: (_) =>
+          _ExamesNegadasModal(repo: _repo, idMatricula: profile.id),
     ).then((_) => _load());
   }
 
@@ -125,7 +122,10 @@ class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
         title: 'Autorizações Negadas',
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Text(_error!, style: const TextStyle(color: Colors.red)),
+          child: Text(
+            _error!,
+            style: const TextStyle(color: Colors.red),
+          ),
         ),
       );
     }
@@ -140,7 +140,10 @@ class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
 
     return SectionCard(
       title: 'Autorizações Negadas',
-      trailing: TextButton(onPressed: _openAll, child: const Text('Ver todas')),
+      trailing: TextButton(
+        onPressed: _openAll,
+        child: const Text('Ver todas'),
+      ),
       child: Column(
         children: [
           ListTile(
@@ -148,7 +151,8 @@ class _ExamesNegadasCardState extends State<ExamesNegadasCard> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 12),
             leading: const Icon(Icons.block, color: Colors.red),
             title: Text(
-              '${a.paciente.isEmpty ? "Paciente" : a.paciente} • ${a.prestador.isEmpty ? "Prestador" : a.prestador}',
+              '${a.paciente.isEmpty ? "Paciente" : a.paciente} • '
+                  '${a.prestador.isEmpty ? "Prestador" : a.prestador}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -205,7 +209,8 @@ class _ExamesNegadasModalState extends State<_ExamesNegadasModal> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
+        _error =
+        kDebugMode ? 'Erro ao carregar: $e' : 'Erro ao carregar.';
       });
     }
   }
@@ -240,30 +245,48 @@ class _ExamesNegadasModalState extends State<_ExamesNegadasModal> {
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40, height: 5,
-                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
               const SizedBox(height: 10),
               const Text(
                 'Autorizações Negadas',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 8),
               Expanded(
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : (_error != null)
-                    ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                    ? Center(
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                )
                     : (_rows.isEmpty)
-                    ? const Center(child: Text('Nenhuma autorização negada.'))
+                    ? const Center(
+                  child: Text('Nenhuma autorização negada.'),
+                )
                     : ListView.separated(
                   controller: controller,
                   itemCount: _rows.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, __) =>
+                  const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final a = _rows[i];
                     return ListTile(
-                      leading: const Icon(Icons.block, color: Colors.red),
+                      leading: const Icon(
+                        Icons.block,
+                        color: Colors.red,
+                      ),
                       title: Text(
                         '${a.paciente} • ${a.prestador}',
                         maxLines: 1,

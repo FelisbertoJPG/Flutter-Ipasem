@@ -75,7 +75,7 @@ class _AutorizacaoMedicaScreenState extends State<AutorizacaoMedicaScreen> {
           defaultValue: 'http://192.9.200.98',
         );
 
-    _api = DevApi(baseUrl);
+    _api = DevApi();
     _depsRepo = DependentsRepository(_api);
     _espRepo = EspecialidadesRepository(_api);
     _prestRepo = PrestadoresRepository(_api);

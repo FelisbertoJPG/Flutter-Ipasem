@@ -65,7 +65,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             'API_BASE',
             defaultValue: 'https://assistweb.ipasemnh.com.br',
           );
-      _depsRepo = DependentsRepository(DevApi(baseUrl));
+      _depsRepo = DependentsRepository(DevApi());
       _depsReady = true;
     }
   }

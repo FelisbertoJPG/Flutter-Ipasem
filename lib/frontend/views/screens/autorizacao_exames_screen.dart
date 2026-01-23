@@ -1,9 +1,9 @@
+// lib/frontend/views/screens/autorizacao_exames_screen.dart
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../../common/config/app_config.dart';
 import '../../../common/models/dependent.dart';
 import '../../../common/models/especialidade.dart';
 import '../../../common/models/prestador.dart';
@@ -76,13 +76,8 @@ class _AutorizacaoExamesScreenState extends State<AutorizacaoExamesScreen> {
     super.didChangeDependencies();
     if (_reposReady) return;
 
-    final baseUrl = AppConfig.maybeOf(context)?.params.baseApiUrl ??
-        const String.fromEnvironment(
-          'API_BASE',
-          defaultValue: 'http://192.9.200.98',
-        );
-
-    _api = DevApi(baseUrl);
+    // DevApi agora é configurada centralmente (ApiRouter/main).
+    _api = DevApi();
     _depsRepo = DependentsRepository(_api);
     _espRepo = EspecialidadesRepository(_api);
     _prestRepo = PrestadoresRepository(_api);

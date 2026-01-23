@@ -1,9 +1,8 @@
-// lib/root_nav_shell.dart
+// lib/frontend/views/layouts/root_nav_shell.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../common/config/api_router.dart';
 import '../../../common/config/dev_api.dart';
 import '../../../common/services/polling/exame_status_poller.dart';
 import '../../../common/state/notification_bridge.dart';
@@ -13,8 +12,6 @@ import '../screens/autorizacao_odontologica_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/home_servicos.dart';
 import '../screens/profile_screen.dart';
-
-
 
 class RootNavShell extends StatefulWidget {
   const RootNavShell({super.key});
@@ -26,7 +23,8 @@ class RootNavShell extends StatefulWidget {
   State<RootNavShell> createState() => _RootNavShellState();
 }
 
-class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver {
+class _RootNavShellState extends State<RootNavShell>
+    with WidgetsBindingObserver {
   final _tabKeys = <int, GlobalKey<NavigatorState>>{
     0: GlobalKey<NavigatorState>(), // Início
     1: GlobalKey<NavigatorState>(), // Serviços
@@ -55,8 +53,8 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
     super.didChangeDependencies();
 
     if (_poller == null) {
-      // Usa a configuração central (definida no main/main_local)
-      final DevApi api = ApiRouter.client();
+      // DevApi atual não recebe parâmetros posicionais.
+      final api = DevApi();
 
       _poller = ExameStatusPoller(
         api: api,
@@ -118,9 +116,8 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
         bool switchTab = true,
       }) {
     // Normaliza: remove barra inicial e espaços acidentais
-    final routeName = name.trim().startsWith('/')
-        ? name.trim().substring(1)
-        : name.trim();
+    final routeName =
+    name.trim().startsWith('/') ? name.trim().substring(1) : name.trim();
 
     if (switchTab && _currentIndex != 1) {
       setState(() => _currentIndex = 1);
@@ -176,10 +173,6 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
   }
 
   Route<dynamic> _routeServicos(RouteSettings settings) {
-    // Log leve para ver o nome recebido
-    // (deixe ligado em debug se quiser investigar)
-    // debugPrint('SERVICOS onGenerateRoute: ${settings.name}');
-
     switch (settings.name) {
       case '/':
       case 'servicos-root':
@@ -243,7 +236,9 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
 
     final bottomBar = DecoratedBox(
       decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0xFFE6E9EF), width: 1)),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE6E9EF), width: 1),
+        ),
       ),
       child: NavigationBar(
         height: 56,
@@ -262,26 +257,50 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
         destinations: [
           NavigationDestination(
             tooltip: 'Início',
-            icon: IconTheme(data: iconTheme, child: const Icon(Icons.home_outlined)),
-            selectedIcon: IconTheme(data: iconTheme, child: const Icon(Icons.home)),
+            icon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.home_outlined),
+            ),
+            selectedIcon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.home),
+            ),
             label: 'Início',
           ),
           NavigationDestination(
             tooltip: 'Serviços',
-            icon: IconTheme(data: iconTheme, child: const Icon(Icons.grid_view_outlined)),
-            selectedIcon: IconTheme(data: iconTheme, child: const Icon(Icons.grid_view)),
+            icon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.grid_view_outlined),
+            ),
+            selectedIcon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.grid_view),
+            ),
             label: 'Serviços',
           ),
           NavigationDestination(
             tooltip: 'Perfil',
-            icon: IconTheme(data: iconTheme, child: const Icon(Icons.person_outline)),
-            selectedIcon: IconTheme(data: iconTheme, child: const Icon(Icons.person)),
+            icon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.person_outline),
+            ),
+            selectedIcon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.person),
+            ),
             label: 'Perfil',
           ),
           NavigationDestination(
             tooltip: 'Contatos',
-            icon: IconTheme(data: iconTheme, child: const Icon(Icons.headset_mic_outlined)),
-            selectedIcon: IconTheme(data: iconTheme, child: const Icon(Icons.headset_mic)),
+            icon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.headset_mic_outlined),
+            ),
+            selectedIcon: IconTheme(
+              data: iconTheme,
+              child: const Icon(Icons.headset_mic),
+            ),
             label: 'Contatos',
           ),
         ],
@@ -338,7 +357,13 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const Text('Contatos', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const Text(
+                  'Contatos',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 ListTile(
                   leading: const Icon(Icons.call_outlined),
@@ -375,7 +400,9 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível iniciar a ligação.')),
+        const SnackBar(
+          content: Text('Não foi possível iniciar a ligação.'),
+        ),
       );
     }
   }
@@ -390,17 +417,35 @@ class _RootNavShellState extends State<RootNavShell> with WidgetsBindingObserver
       final ok = await launchUrl(mail, mode: LaunchMode.externalApplication);
       if (ok) return;
     } catch (_) {}
-    final gmailWeb = Uri.https('mail.google.com', '/mail/', {
-      'view': 'cm', 'fs': '1', 'to': _email, 'su': _emailSubject, 'body': _emailBody,
-    });
+
+    final gmailWeb = Uri.https(
+      'mail.google.com',
+      '/mail/',
+      {
+        'view': 'cm',
+        'fs': '1',
+        'to': _email,
+        'su': _emailSubject,
+        'body': _emailBody,
+      },
+    );
+
     try {
-      final ok = await launchUrl(gmailWeb, mode: LaunchMode.externalApplication);
+      final ok = await launchUrl(
+        gmailWeb,
+        mode: LaunchMode.externalApplication,
+      );
       if (ok) return;
     } catch (_) {}
+
     await Clipboard.setData(const ClipboardData(text: _email));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Nenhum app de e-mail encontrado. Endereço copiado.')),
+      const SnackBar(
+        content: Text(
+          'Nenhum app de e-mail encontrado. Endereço copiado.',
+        ),
+      ),
     );
   }
 }
