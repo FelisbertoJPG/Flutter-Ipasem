@@ -1,175 +1,252 @@
-# IPASEM App (Flutter)
+IPASEM App (Flutter)
 
-Aplicativo Flutter do IPASEM com três telas principais: **Home**, **Serviços** (carteirinha/assistência) e **Perfil**. Interface consistente, responsiva e com navegação por **AppBar + Drawer** (menu hambúrguer).
+Aplicativo Flutter do IPASEM com três áreas principais: Home, Serviços e Perfil. Interface consistente, responsiva e com navegação por AppBar + Drawer.
 
-## Sumário
-- [Arquitetura & Telas](#arquitetura--telas)
-- [Padrões de UI/UX](#padrões-de-uiux)
-- [Estado e Preferências](#estado-e-preferências)
-- [WebView & Performance](#webview--performance)
-- [Estrutura de Pastas](#estrutura-de-pastas)
-- [Requisitos](#requisitos)
-- [Como rodar](#como-rodar)
-- [Build (Android/iOS)](#build-androidios)
-- [Ambiente & Configurações úteis](#ambiente--configurações-úteis)
-- [Roadmap](#roadmap)
-- [Contribuindo](#contribuindo)
-- [Licença](#licença)
+Sumário
 
----
+Arquitetura & Telas
 
-## Arquitetura & Telas
+Novidades (feats/fix)
 
-**Home**
-- Arquivo: `lib/home_screen.dart`
-- Classe: `HomeScreen`
-- Seções: Cabeçalho Visitante/Logado, Ações rápidas (navegam para Serviços), Minha Situação, Requerimentos em andamento, Comunicados.
-- Pull-to-refresh e layout responsivo.
+Padrões de UI/UX
 
-**Serviços**
-- Arquivo: `lib/home_servicos.dart`
-- Classe: `HomeServicos`
-- Ações: Autorizações (WebView + CPF), Carteirinha Digital, Site.
-- Pré-aquecimento de WebView com `OverlayEntry` para primeira navegação rápida.
+Estado e Preferências
 
-**Perfil**
-- Arquivo: `lib/profile_screen.dart`
-- Classe: `ProfileScreen`
-- Modo visitante por padrão, cards de dados bloqueados, itens informativos e **Sair**.
+Notificações (Android/iOS)
 
-**Outras telas utilitárias**
-- `login_screen.dart` (placeholder para fluxo de login real)
-- `webview_screen.dart` (renderização de páginas dentro do app)
+WebView & Performance
 
-Navegação entre telas via `Navigator.push` a partir do Drawer e das ações rápidas.
+Estrutura de Pastas
 
----
+Requisitos
 
-## Padrões de UI/UX
+Como rodar
 
-- **AppBar** com menu hambúrguer + logo (componente `_LogoAction`).
-- **Drawer** com seções: Serviços, Perfil, Sair.
-- Paleta compartilhada:
-  - `Color(0xFF143C8D)` (brand), `_cardBg`, `_cardBorder`, `_panelBg`, `_panelBorder`.
-- **Cards utilitários**: `_SectionCard`, `_StatusChip`, placeholders de loading e empty states.
-- **Responsividade**: `LayoutBuilder + ConstrainedBox`, botões largos, `Wrap` para 1–2 colunas.
+Build (Android/iOS)
 
----
+Ambiente & Configurações úteis
 
-## Estado e Preferências
+Roadmap
 
-Sem backend de autenticação por enquanto. O app usa `SharedPreferences`:
+Contribuindo
 
-- `is_logged_in: bool` — controla estado Visitante/Logado (padrão `false`).
-- `saved_cpf: String` — usado para autofill na tela de Autorizações/Carteirinha.
-- `auth_token: String?` — reservado para futura integração.
+Licença
 
-> Logout limpa `saved_cpf`, `auth_token` e seta `is_logged_in = false`.
+Arquitetura & Telas
 
----
+Home
+lib/screens/home_screen.dart
+Apresenta cabeçalhos para visitante/logado, Ações rápidas, situação do usuário e comunicados. Mostro também:
 
-## WebView & Performance
+Autorizações de Exames (liberadas) – ExamesLiberadosCard
 
-- **webview_flutter** com `JavaScriptMode.unrestricted`.
-- **Pré-aquecimento**: `home_servicos.dart` injeta um `WebViewWidget` invisível via `OverlayEntry` para acelerar a primeira navegação.
-- Transição customizada via `_softSlideRoute`.
+Autorizações de Exames (pendentes) – ExamesPendentesCard
 
----
+Histórico de Autorizações (resumo) – limitado às 5 mais recentes por data (com “Ver tudo”).
 
-## Estrutura de Pastas
+Serviços
+lib/screens/home_servicos.dart
+Acesso às funcionalidades principais:
 
-```
+Autorização Médica, Odontológica e Autorização de Exames (nova).
+
+Carteirinha Digital e Site.
+Pré-aqueço a WebView para navegações mais rápidas.
+
+Histórico de Autorizações (completo)
+lib/screens/historico_autorizacoes_screen.dart
+Lista paginada do histórico com 10 itens por página, ordenado por data/hora (mais recentes primeiro), integração com reimpressão e detalhes.
+
+Fluxos de autorização
+
+Médica: lib/screens/autorizacao_medica_screen.dart
+
+Odontológica: lib/screens/autorizacao_odontologica_screen.dart
+
+Exames (novo): lib/screens/autorizacao_exames_screen.dart
+
+PDF / Impressão local
+lib/ui/utils/print_helpers.dart
+Abro o preview/print do PDF pelo número da autorização, decidindo automaticamente o tipo.
+
+Novidades (feats/fix)
+
+Exames – nova solicitação com upload de até 2 imagens, escolha de especialidade, cidade e prestador.
+
+Cartões na Home
+
+Exames Liberados com acesso ao detalhe e atalho para imprimir no app.
+
+Exames Pendentes com banner de “mudança de situação” (sino/aviso) baseado em snapshot local.
+
+Histórico completo com paginação (10 por página) e ordenação por data/hora.
+
+Resumo do histórico na Home limitado às 5 últimas autorizações (ordenadas).
+
+Auto-refresh centralizado via AuthEvents:
+
+Atualizo cartões/listas quando uma autorização é emitida ou quando ocorre a primeira impressão.
+
+Notificações locais (Android/iOS):
+
+Serviço lib/services/notifier.dart com inicialização e canal padrão.
+
+Solicitação de permissão no primeiro uso (Android 13+ e iOS).
+
+Correções:
+
+Acesso a InheritedWidget movido de initState para didChangeDependencies nas telas que precisam de AppConfig.
+
+Normalização de “paciente” vazio com fallback do titular apenas para exibição (sem alterar o modelo).
+
+Padrões de UI/UX
+
+AppBar com menu hambúrguer + logo.
+
+Paleta compartilhada (brand #143C8D) e componentes reutilizáveis (SectionCard, placeholders, empty states).
+
+Layouts responsivos com LayoutBuilder e Wrap.
+
+Sheets de ação/detalhe para reimpressão:
+lib/ui/components/reimp_action_sheet.dart e lib/ui/components/reimp_detalhes_sheet.dart.
+
+Estado e Preferências
+
+Uso SharedPreferences para:
+
+is_logged_in: bool
+
+saved_cpf: String
+
+auth_token: String? (reservado)
+
+Snapshot de pendências de exames para detectar mudanças de situação.
+
+Logout limpa as chaves e retorna ao modo visitante.
+
+Notificações (Android/iOS)
+
+Biblioteca: flutter_local_notifications (17+).
+Serviço: lib/services/notifier.dart com AppNotifier.init() e AppNotifier.requestPermissionIfNeeded() no main.dart/main_local.dart.
+
+Android
+
+Manifest:
+
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
+android/app/build.gradle (KTS) – habilito desugaring (requisito do plugin):
+
+android {
+compileOptions {
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11
+isCoreLibraryDesugaringEnabled = true
+}
+}
+dependencies {
+coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+}
+
+
+O canal padrão é criado em AppNotifier.init().
+
+iOS
+
+Solicito permissão em tempo de execução via flutter_local_notifications.
+
+Revisar Info.plist caso haja necessidade de chaves de notificação/ATS.
+
+WebView & Performance
+
+webview_flutter com JavaScriptMode.unrestricted.
+
+Pré-aquecimento de WebView (overlay invisível) para reduzir o tempo da primeira navegação.
+
+Transições suaves com rota customizada.
+
+Estrutura de Pastas
 lib/
-  home_screen.dart         # Home
-  home_servicos.dart       # Serviços (carteirinha/autorizações/site)
-  profile_screen.dart      # Perfil
-  login_screen.dart        # (stub) fluxo de login
-  webview_screen.dart      # wrapper de WebView
-assets/
-  images/
-    icons/
-      logo_ipasem.png
-```
+config/                    # AppConfig + Params (flavors)
+controllers/               # HomeServicosController (histórico, detalhes)
+models/                    # Reimpressao, Exame, etc.
+pdf/                       # mapeadores/dados para PDF
+repositories/              # acesso à API (DevApi) e endpoints
+screens/
+home_screen.dart
+home_servicos.dart
+profile_screen.dart
+login_screen.dart
+historico_autorizacoes_screen.dart
+autorizacao_medica_screen.dart
+autorizacao_odontologica_screen.dart
+autorizacao_exames_screen.dart
+services/
+dev_api.dart
+notifier.dart            # notificações locais
+session.dart
+state/
+auth_events.dart         # eventos para auto-refresh (emit/observe)
+ui/
+app_shell.dart
+components/
+section_card.dart
+loading_placeholder.dart
+reimp_action_sheet.dart
+reimp_detalhes_sheet.dart
+exames_liberados_card.dart
+exames_pendentes_card.dart
+utils/
+print_helpers.dart
+service_launcher.dart
+webview_warmup.dart
+widgets/
+history_list.dart
 
-> Lembre-se de declarar os assets no `pubspec.yaml`:
-```yaml
-flutter:
-  assets:
-    - assets/images/icons/logo_ipasem.png
-```
+Requisitos
 
----
+Flutter (canal stable)
 
-## Requisitos
+Dart SDK (incluso no Flutter)
 
-- Flutter (canal stable) instalado.
-- Dart SDK vindo com o Flutter.
-- Android Studio / Xcode configurados para emuladores/dispositivos.
+Android Studio / Xcode configurados
 
----
-
-## Como rodar
-
-```bash
-# Verifique o ambiente
+Como rodar
 flutter doctor
-
-# Instale dependências
 flutter pub get
-
-# Rode no dispositivo/emulador conectado
 flutter run
-```
 
----
 
-## Build (Android/iOS)
+Para trocar a base da API em dev/local, uso --dart-define (ex.: API_BASE).
 
-**Android**
-```bash
+Build (Android/iOS)
+
+Android
+
 flutter build apk --release
 # ou
 flutter build appbundle --release
-```
-Permissões recomendadas (em `AndroidManifest.xml`):
-```xml
+
+
+Permissão obrigatória no AndroidManifest.xml:
+
 <uses-permission android:name="android.permission.INTERNET" />
-```
 
-**iOS**
-```bash
+
+Se for usar notificações, manter a permissão POST_NOTIFICATIONS e a configuração de desugaring acima.
+
+iOS
+
 flutter build ios --release
-```
-No iOS, revise `Info.plist` para `NSAppTransportSecurity` (ATS) caso acesse URLs não-HTTPS (ideal manter HTTPS).
 
----
 
-## Ambiente & Configurações úteis
+Revisar Info.plist para permissões e ATS. Testar em dispositivo físico para validar notificações.
 
-- **Chaves/Endpoints**: quando integrar backend, prefira `.env`/flavors.
-- **Logs**: use `debugPrint` e, futuramente, um serviço de logging/analytics.
-- **Acessibilidade**: fontes escaláveis, contraste adequado, labels em ícones.
+Ambiente & Configurações úteis
 
----
+AppConfig centraliza parâmetros (ex.: baseApiUrl) e flavors.
 
-## Roadmap
+Logs com debugPrint.
 
-- [ ] Integração real de login (autenticação + token).
-- [ ] Tela de “Minhas Autorizações” (histórico) e “Meus Documentos”.
-- [ ] Cache offline de carteirinha (com expiração).
-- [ ] Tema claro/escuro.
-- [ ] Testes widget/dart e CI.
-
----
-
-## Contribuindo
-
-1. Crie uma branch a partir de `main`.
-2. Faça commits pequenos e descritivos.
-3. Abra PR com descrição, screenshots e passos de teste.
-
----
-
-## Licença
-
-Defina a licença do projeto (ex.: MIT, Apache-2.0) em `LICENSE`.
+Acessibilidade: fontes escaláveis, labels e contraste verificados nos principais componentes.
