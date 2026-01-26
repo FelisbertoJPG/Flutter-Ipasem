@@ -14,6 +14,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // >>> NECESSÁRIO para flutter_local_notifications em minSdk < 26
+        isCoreLibraryDesugaringEnabled = true
+        // <<<
     }
 
     kotlinOptions {
@@ -42,4 +45,10 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // >>> NECESSÁRIO para desugar APIs Java time usadas pelo plugin de notificações
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // <<<
 }

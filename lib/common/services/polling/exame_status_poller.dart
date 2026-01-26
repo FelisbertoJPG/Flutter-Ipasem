@@ -1,0 +1,145 @@
+// lib/services/polling/exame_status_poller.dart
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../frontend/views/components/app_alert.dart';
+import '../../config/dev_api.dart';
+import '../../state/auth_events.dart';
+import '../session.dart';
+
+class ExameStatusChangedEvent {
+  final int numero;
+  final String novoStatus;    // 'A' (liberada) | 'I' (negada) | 'P' etc.
+  final String? antigoStatus; // opcional
+
+  ExameStatusChangedEvent({
+    required this.numero,
+    required this.novoStatus,
+    this.antigoStatus,
+  });
+}
+
+class ExameStatusPoller {
+  final DevApi api;
+  final Duration interval;
+  final BuildContext Function()? contextProvider; // onde mostrar toast (opcional)
+
+  Timer? _timer;
+  bool _busy = false;
+  Map<int, String> _cache = {}; // numero -> status
+
+  ExameStatusPoller({
+    required this.api,
+    this.interval = const Duration(seconds: 30),
+    this.contextProvider,
+  });
+
+  Future<void> start() async {
+    await _loadCache();
+    await pollNow();
+    _timer ??= Timer.periodic(interval, (_) => _safePoll());
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  Future<void> pollNow() => _safePoll();
+
+  Future<void> _safePoll() async {
+    if (_busy) return;
+    _busy = true;
+
+    try {
+      final profile = await Session.getProfile();
+      if (profile == null) return;
+
+      // Nova chamada REST: GET /api/v1/exames/historico?id_matricula=...
+      final res = await api.get<dynamic>(
+        '/exames/historico',
+        queryParameters: {
+          'id_matricula': profile.id,
+        },
+      );
+
+      final body = (res.data is Map)
+          ? (res.data as Map).cast<String, dynamic>()
+          : const <String, dynamic>{};
+
+      if (body['ok'] != true) return;
+
+      final rows = ((body['data'] as Map?)?['rows'] as List?) ?? const [];
+      final current = <int, String>{};
+
+      for (final r in rows) {
+        final m = (r as Map).cast<String, dynamic>();
+        final num =
+            int.tryParse('${m['nro_autorizacao'] ?? m['numero'] ?? 0}') ?? 0;
+        if (num <= 0) continue;
+
+        final st = (m['auditado'] ?? '').toString().trim().toUpperCase();
+        current[num] = st;
+      }
+
+      // Detecta mudanças relevantes (P->A, P->I, etc.)
+      final changes = <ExameStatusChangedEvent>[];
+      current.forEach((num, st) {
+        final prev = _cache[num];
+        if (prev != null && prev != st && (st == 'A' || st == 'I')) {
+          changes.add(
+            ExameStatusChangedEvent(
+              numero: num,
+              novoStatus: st,
+              antigoStatus: prev,
+            ),
+          );
+        }
+      });
+
+      if (changes.isNotEmpty) {
+        final ctx = contextProvider?.call();
+        for (final c in changes) {
+          AuthEvents.instance.emitStatusChanged(c.numero, c.novoStatus);
+          if (ctx != null) {
+            final msg = c.novoStatus == 'A'
+                ? 'Autorização #${c.numero} liberada.'
+                : 'Autorização #${c.numero} negada.';
+            AppAlert.toast(ctx, msg);
+          }
+        }
+      }
+
+      _cache = current;
+      await _saveCache();
+    } catch (_) {
+      // silencioso para não quebrar o loop
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<void> _loadCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('exames_status_cache') ?? '{}';
+    try {
+      final map = (jsonDecode(raw) as Map).cast<String, dynamic>();
+      _cache = {
+        for (final e in map.entries)
+          int.parse(e.key): (e.value as String).toUpperCase(),
+      };
+    } catch (_) {
+      _cache = {};
+    }
+  }
+
+  Future<void> _saveCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enc = jsonEncode(
+      _cache.map((k, v) => MapEntry(k.toString(), v)),
+    );
+    await prefs.setString('exames_status_cache', enc);
+  }
+}
